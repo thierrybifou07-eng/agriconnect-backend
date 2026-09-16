@@ -1,21 +1,25 @@
 {
-  "name": "agriconnect",
-  "version": "1.0.0",
+  "name": "agriconnect-backend",
+  "version": "2.0.0",
   "description": "Backend API pour AgriConnect - Marketplace agricole (MVP)",
-  "license": "ISC",
-  "author": "Gedeon Bifou",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "seed": "node prisma/seed.js",
+    "create:root": "node scripts/create-root.js"
+  },
+  "prisma": {
+    "seed": "node prisma/seed.js"
   },
   "dependencies": {
+    "@prisma/client": "^6.0.0",
     "bcrypt": "^6.0.0",
+    "cloudinary": "^2.4.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "ejs": "^6.0.1",
@@ -25,17 +29,11 @@
     "jsonwebtoken": "^9.0.3",
     "juice": "^12.1.2",
     "multer": "^2.3.0",
-    "mysql2": "^3.24.3",
-    "prisma": "^8.0.0-rc.13",
-    "socket.io": "^4.8.3",
-
-
-    "@prisma/client": "^5.18.0",
-    "bcryptjs": "^2.4.3",
-    "cloudinary": "^2.4.0"
-
+    "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "prisma": "^5.18.0"
+    "prisma": "^6.0.0",
+    "nodemailer": "^10.0.9"
+
   }
 }

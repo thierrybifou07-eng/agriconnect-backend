@@ -1,8 +1,8 @@
-const cloudinary = require('../config/cloudinary');
+import cloudinary from '../config/cloudinary.js';
 
-// Upload un buffer en mémoire vers Cloudinary (nécessaire car multer.memoryStorage()
-// ne passe pas par le disque - upload_stream est la façon officielle de gérer ce cas).
-function uploadBufferToCloudinary(buffer) {
+// Upload un buffer en mémoire vers Cloudinary (multer.memoryStorage() ne passe pas
+// par le disque - upload_stream est la façon officielle de gérer ce cas).
+export function uploadBufferToCloudinary(buffer) {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
@@ -17,5 +17,3 @@ function uploadBufferToCloudinary(buffer) {
     stream.end(buffer);
   });
 }
-
-module.exports = { uploadBufferToCloudinary };

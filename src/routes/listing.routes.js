@@ -1,24 +1,24 @@
-const express = require('express');
-const {
+import { Router } from 'express';
+import {
   getListings,
   getListingById,
   createListing,
   updateListing,
   deleteListing,
   uploadPhotos,
-} = require('../controllers/listing.controller');
-const { protect, requireRole } = require('../middlewares/auth.middleware');
-const upload = require('../middlewares/upload.middleware');
-const handleValidation = require('../middlewares/validate.middleware');
-const { createListingRules, updateListingRules } = require('../validators/listing.validator');
+} from '../controllers/listing.controller.js';
+import { protect, requireRole } from '../middlewares/auth.middleware.js';
+import upload from '../middlewares/upload.middleware.js';
+import { validate } from '../middlewares/validate.middleware.js';
+import { createListingSchema, updateListingSchema } from '../validators/listing.validator.js';
 
-const router = express.Router();
+const router = Router();
 
 router.get('/', getListings);
 router.get('/:id', getListingById);
-router.post('/', protect, requireRole('FARMER'), createListingRules, handleValidation, createListing);
-router.patch('/:id', protect, requireRole('FARMER'), updateListingRules, handleValidation, updateListing);
+router.post('/', protect, requireRole('FARMER'), validate(createListingSchema), createListing);
+router.patch('/:id', protect, requireRole('FARMER'), validate(updateListingSchema), updateListing);
 router.delete('/:id', protect, requireRole('FARMER'), deleteListing);
 router.post('/:id/photos', protect, requireRole('FARMER'), upload.array('photos', 5), uploadPhotos);
 
-module.exports = router;
+export default router;

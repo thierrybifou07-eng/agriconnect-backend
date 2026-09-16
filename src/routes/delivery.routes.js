@@ -1,13 +1,13 @@
-const express = require('express');
-const {
+import { Router } from 'express';
+import {
   getAvailableDeliveries,
   getMyDeliveries,
   acceptDelivery,
   updateDeliveryStatus,
-} = require('../controllers/delivery.controller');
-const { protect, requireRole } = require('../middlewares/auth.middleware');
+} from '../controllers/delivery.controller.js';
+import { protect, requireRole } from '../middlewares/auth.middleware.js';
 
-const router = express.Router();
+const router = Router();
 
 router.use(protect, requireRole('DRIVER'));
 
@@ -16,4 +16,4 @@ router.get('/mine', getMyDeliveries);
 router.post('/:id/accept', acceptDelivery);
 router.patch('/:id/status', updateDeliveryStatus);
 
-module.exports = router;
+export default router;

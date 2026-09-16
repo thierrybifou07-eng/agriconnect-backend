@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8" />
+<style>
+  body { font-family: Arial, sans-serif; background-color: #f4f6f4; margin: 0; padding: 0; }
+  .container { max-width: 480px; margin: 40px auto; background: #ffffff; border-radius: 8px; overflow: hidden; }
+  .header { background-color: #2e7d32; color: #ffffff; padding: 24px; text-align: center; }
+  .header h1 { margin: 0; font-size: 20px; }
+  .body { padding: 24px; color: #333333; line-height: 1.5; }
+  .footer { padding: 16px 24px; font-size: 12px; color: #999999; text-align: center; }
+  .badge { display: inline-block; background-color: #e8f5e9; color: #2e7d32; padding: 4px 10px; border-radius: 4px; font-size: 13px; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>Bienvenue sur AgriConnect</h1>
+    </div>
+    <div class="body">
+      <p>Bonjour <%= fullName %>,</p>
+      <p>Votre compte a bien été créé.</p>
+      <span class="badge"><%= roleLabel %></span>
+      <p>Vous pouvez dès maintenant vous connecter et commencer à utiliser l'application.</p>
+    </div>
+    <div class="footer">AgriConnect — Marketplace agricole</div>
+  </div>
+</body>
+</html>

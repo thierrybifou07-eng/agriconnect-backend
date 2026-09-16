@@ -1,8 +1,7 @@
-const { verifyToken } = require('../utils/jwt');
-const prisma = require('../config/prisma');
+import { verifyToken } from '../utils/jwt.js';
+import prisma from '../config/prisma.js';
 
-function initChatSocket(io) {
-  // Authentification du socket via le token JWT envoyé dans le handshake
+export default function initChatSocket(io) {
   io.use((socket, next) => {
     try {
       const token = socket.handshake.auth?.token;
@@ -42,5 +41,3 @@ function initChatSocket(io) {
     });
   });
 }
-
-module.exports = initChatSocket;

@@ -1,13 +1,13 @@
-const express = require('express');
-const {
+import { Router } from 'express';
+import {
   createConversation,
   getMyConversations,
   getMessages,
   sendMessage,
-} = require('../controllers/conversation.controller');
-const { protect } = require('../middlewares/auth.middleware');
+} from '../controllers/conversation.controller.js';
+import { protect } from '../middlewares/auth.middleware.js';
 
-const router = express.Router();
+const router = Router();
 
 router.use(protect);
 
@@ -16,4 +16,4 @@ router.post('/', createConversation);
 router.get('/:id/messages', getMessages);
 router.post('/:id/messages', sendMessage);
 
-module.exports = router;
+export default router;

@@ -1,8 +1,8 @@
-const express = require('express');
-const cors = require('cors');
-const routes = require('./routes');
-const { notFound, errorHandler } = require('./middlewares/error.middleware');
-const { apiLimiter } = require('./middlewares/rateLimit.middleware');
+import express from 'express';
+import cors from 'cors';
+import routes from './routes/index.js';
+import { notFound, errorHandler } from './middlewares/error.middleware.js';
+import { apiLimiter } from './middlewares/rateLimit.middleware.js';
 
 const app = express();
 
@@ -17,4 +17,4 @@ app.use('/api', apiLimiter, routes);
 app.use(notFound);
 app.use(errorHandler);
 
-module.exports = app;
+export default app;

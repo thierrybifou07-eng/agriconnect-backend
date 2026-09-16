@@ -1,47 +1,50 @@
-const prisma = require('../config/prisma');
-const asyncHandler = require('../utils/asyncHandler');
-const { uploadBufferToCloudinary } = require('../utils/cloudinaryUpload');
+import prisma from '../config/prisma.js';
+import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
+import { getLookupId } from '../utils/lookupCache.js';
 
-const farmerSelect = {
-  id: true,
-  fullName: true,
-  phone: true,
-  location: true,
-  avatarUrl: true,
+const farmerSelect = { id: true, fullName: true, phone: true, location: true };
+
+const listingInclude = {
+  farmer: { select: farmerSelect },
+  category: true,
+  status: true,
+  media: true,
 };
 
 // GET /api/listings?category=&location=&minPrice=&maxPrice=&search=&farmerId=&status=
-const getListings = asyncHandler(async (req, res) => {
+// Note MySQL : pas de "mode: insensitive" (non supporté par ce connecteur Prisma) -
+// la casse dépend de la collation de la base (utf8mb4_general_ci est insensible par défaut).
+export const getListings = async (req, res) => {
   const { category, location, minPrice, maxPrice, search, farmerId, status } = req.query;
 
   const where = {
-    ...(category && { category }),
-    ...(location && { location: { contains: location, mode: 'insensitive' } }),
+    ...(category && { category: { code: category } }),
+    ...(location && { location: { contains: location } }),
     ...(farmerId && { farmerId }),
-    status: status || 'ACTIVE',
+    status: { code: status || 'ACTIVE' },
     ...((minPrice || maxPrice) && {
       price: {
         ...(minPrice && { gte: parseFloat(minPrice) }),
         ...(maxPrice && { lte: parseFloat(maxPrice) }),
       },
     }),
-    ...(search && { title: { contains: search, mode: 'insensitive' } }),
+    ...(search && { title: { contains: search } }),
   };
 
   const listings = await prisma.listing.findMany({
     where,
     orderBy: { createdAt: 'desc' },
-    include: { farmer: { select: farmerSelect } },
+    include: listingInclude,
   });
 
   res.json(listings);
-});
+};
 
 // GET /api/listings/:id
-const getListingById = asyncHandler(async (req, res) => {
+export const getListingById = async (req, res) => {
   const listing = await prisma.listing.findUnique({
     where: { id: req.params.id },
-    include: { farmer: { select: farmerSelect } },
+    include: listingInclude,
   });
 
   if (!listing) {
@@ -49,33 +52,39 @@ const getListingById = asyncHandler(async (req, res) => {
   }
 
   res.json(listing);
-});
+};
 
-// POST /api/listings  (la validation de format est faite par express-validator en amont)
-const createListing = asyncHandler(async (req, res) => {
-  const { title, category, price, quantity, unit, location, description, photos, latitude, longitude } = req.body;
+// POST /api/listings  (category validé contre ListingCategory par Joi en amont)
+export const createListing = async (req, res) => {
+  const { title, category, price, quantity, unit, location, description, latitude, longitude } = req.body;
+
+  const [categoryId, statusId] = await Promise.all([
+    getLookupId('listingCategory', category),
+    getLookupId('listingStatus', 'ACTIVE'),
+  ]);
 
   const listing = await prisma.listing.create({
     data: {
       title,
-      category,
-      price: parseFloat(price),
-      quantity: parseFloat(quantity),
+      categoryId,
+      statusId,
+      price,
+      quantity,
       unit,
       location,
       description,
-      photos: photos || [],
       farmerId: req.user.id,
       ...(latitude !== undefined && { latitude }),
       ...(longitude !== undefined && { longitude }),
     },
+    include: listingInclude,
   });
 
   res.status(201).json(listing);
-});
+};
 
 // PATCH /api/listings/:id
-const updateListing = asyncHandler(async (req, res) => {
+export const updateListing = async (req, res) => {
   const listing = await prisma.listing.findUnique({ where: { id: req.params.id } });
 
   if (!listing) {
@@ -85,31 +94,35 @@ const updateListing = asyncHandler(async (req, res) => {
     return res.status(403).json({ error: "Vous n'êtes pas propriétaire de cette annonce" });
   }
 
-  const { title, category, price, quantity, unit, location, description, status, photos, latitude, longitude } =
-    req.body;
+  const { title, category, price, quantity, unit, location, description, status, latitude, longitude } = req.body;
+
+  const [categoryId, statusId] = await Promise.all([
+    category ? getLookupId('listingCategory', category) : Promise.resolve(null),
+    status ? getLookupId('listingStatus', status) : Promise.resolve(null),
+  ]);
 
   const updated = await prisma.listing.update({
     where: { id: req.params.id },
     data: {
       ...(title && { title }),
-      ...(category && { category }),
-      ...(price && { price: parseFloat(price) }),
-      ...(quantity && { quantity: parseFloat(quantity) }),
+      ...(categoryId && { categoryId }),
+      ...(price !== undefined && { price }),
+      ...(quantity !== undefined && { quantity }),
       ...(unit && { unit }),
       ...(location && { location }),
       ...(description !== undefined && { description }),
-      ...(status && { status }),
-      ...(photos && { photos }),
+      ...(statusId && { statusId }),
       ...(latitude !== undefined && { latitude }),
       ...(longitude !== undefined && { longitude }),
     },
+    include: listingInclude,
   });
 
   res.json(updated);
-});
+};
 
 // DELETE /api/listings/:id
-const deleteListing = asyncHandler(async (req, res) => {
+export const deleteListing = async (req, res) => {
   const listing = await prisma.listing.findUnique({ where: { id: req.params.id } });
 
   if (!listing) {
@@ -121,10 +134,10 @@ const deleteListing = asyncHandler(async (req, res) => {
 
   await prisma.listing.delete({ where: { id: req.params.id } });
   res.status(204).send();
-});
+};
 
-// POST /api/listings/:id/photos
-const uploadPhotos = asyncHandler(async (req, res) => {
+// POST /api/listings/:id/photos  -> crée des lignes Media
+export const uploadPhotos = async (req, res) => {
   const listing = await prisma.listing.findUnique({ where: { id: req.params.id } });
 
   if (!listing) {
@@ -133,19 +146,24 @@ const uploadPhotos = asyncHandler(async (req, res) => {
   if (listing.farmerId !== req.user.id) {
     return res.status(403).json({ error: "Vous n'êtes pas propriétaire de cette annonce" });
   }
-
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'Aucune photo fournie (champ "photos")' });
   }
 
-  const urls = await Promise.all(req.files.map((f) => uploadBufferToCloudinary(f.buffer)));
+  const mediaTypeId = await getLookupId('mediaType', 'IMAGE');
 
-  const updated = await prisma.listing.update({
-    where: { id: req.params.id },
-    data: { photos: { push: urls } },
-  });
+  const created = await Promise.all(
+    req.files.map(async (file) => {
+      const [url, mimeTypeId] = await Promise.all([
+        uploadBufferToCloudinary(file.buffer),
+        getLookupId('mimeType', file.mimetype),
+      ]);
 
-  res.json(updated);
-});
+      return prisma.media.create({
+        data: { ownerListingId: listing.id, mediaTypeId, mimeTypeId, url, fileSize: file.size },
+      });
+    })
+  );
 
-module.exports = { getListings, getListingById, createListing, updateListing, deleteListing, uploadPhotos };
+  res.status(201).json(created);
+};

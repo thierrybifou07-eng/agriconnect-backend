@@ -3,25 +3,125 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  FARMER
-  BUYER
-  DRIVER
+// ---------------------------------------------------------------------------
+// Tables de référence ("lookup tables")
+//
+// Choix : Role, statuts et catégories vivent dans des tables plutôt que des
+// enums Postgres, pour permettre d'ajouter une valeur (ex: une nouvelle
+// catégorie d'annonce) par une simple insertion en base, sans migration ni
+// déploiement de code.
+//
+// Exception assumée : OrderStatus et DeliveryStatus restent des enums Postgres.
+// Ce sont des machines à états dont chaque transition est déjà câblée dans le
+// code (VALID_TRANSITIONS) - les convertir en table ne dispenserait de toute
+// façon pas d'écrire le code qui gère un nouvel état, mais ferait perdre la
+// garantie d'intégrité native de la base.
+// ---------------------------------------------------------------------------
+
+model Role {
+  id        String   @id @default(uuid())
+  code      String   @unique // FARMER, BUYER, DRIVER, ADMIN, ROOT
+  label     String
+  level     Int      @default(10) // hiérarchie : 10 = opérationnel, 50 = admin, 100 = root
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users User[]
+
+  @@index([level])
 }
 
-enum ListingStatus {
-  ACTIVE
-  SOLD
-  INACTIVE
+model UserStatus {
+  id        String   @id @default(uuid())
+  code      String   @unique // ACTIVE, SUSPENDED
+  label     String
+  createdAt DateTime @default(now())
+
+  users User[]
 }
 
-enum DeliveryMode {
-  PICKUP
-  DELIVERY
+model ListingStatus {
+  id        String   @id @default(uuid())
+  code      String   @unique // ACTIVE, SOLD, INACTIVE
+  label     String
+  createdAt DateTime @default(now())
+
+  listings Listing[]
+}
+
+model ListingCategory {
+  id        String   @id @default(uuid())
+  code      String   @unique // CEREALES, LEGUMES, FRUITS, ...
+  label     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  listings Listing[]
+}
+
+model DeliveryMode {
+  id        String   @id @default(uuid())
+  code      String   @unique // PICKUP, DELIVERY
+  label     String
+  createdAt DateTime @default(now())
+
+  orders Order[]
+}
+
+model MediaType {
+  id        String   @id @default(uuid())
+  code      String   @unique // IMAGE, VIDEO, DOCUMENT
+  label     String
+  createdAt DateTime @default(now())
+
+  mimeTypes MimeType[]
+  media     Media[]
+}
+
+model MimeType {
+  id          String    @id @default(uuid())
+  code        String    @unique // image/jpeg, image/png, video/mp4, application/pdf...
+  extension   String    // .jpg, .png, .mp4, .pdf
+  mediaType   MediaType @relation(fields: [mediaTypeId], references: [id])
+  mediaTypeId String
+  createdAt   DateTime  @default(now())
+
+  media Media[]
+
+  @@index([mediaTypeId])
+}
+
+// ---------------------------------------------------------------------------
+// Media : table générique pour tous les fichiers uploadés (photos d'annonce,
+// avatar utilisateur), extensible demain à d'autres porteurs sans nouvelle
+// table. Exactement un des deux champs "owner" doit être renseigné - contrainte
+// vérifiée côté application (Prisma ne supporte pas nativement les CHECK
+// constraints déclaratifs de façon portable).
+// ---------------------------------------------------------------------------
+
+model Media {
+  id             String    @id @default(uuid())
+  ownerUser      User?     @relation(fields: [ownerUserId], references: [id])
+  ownerUserId    String?
+  ownerListing   Listing?  @relation(fields: [ownerListingId], references: [id])
+  ownerListingId String?
+  mediaType      MediaType @relation(fields: [mediaTypeId], references: [id])
+  mediaTypeId    String
+  mimeType       MimeType  @relation(fields: [mimeTypeId], references: [id])
+  mimeTypeId     String
+  url            String    @db.VarChar(500)
+  fileSize       Int?
+  width          Int?
+  height         Int?
+  isPrimary      Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+
+  @@index([ownerUserId])
+  @@index([ownerListingId])
 }
 
 enum OrderStatus {
@@ -42,20 +142,22 @@ enum DeliveryStatus {
 }
 
 model User {
-  id          String   @id @default(uuid())
-  fullName    String
-  phone       String   @unique
-  email       String?  @unique
-  password    String
-  role        Role
-  location    String?
-  avatarUrl   String?
-  latitude    Float?
-  longitude   Float?
-  isAvailable Boolean  @default(true)
-  vehicleType String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id           String     @id @default(uuid())
+  fullName     String
+  phone        String     @unique
+  email        String?    @unique
+  password     String
+  role         Role       @relation(fields: [roleId], references: [id])
+  roleId       String
+  userStatus   UserStatus @relation(fields: [userStatusId], references: [id])
+  userStatusId String
+  location     String?
+  latitude     Float?
+  longitude    Float?
+  isAvailable  Boolean    @default(true)
+  vehicleType  String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
   listings              Listing[]
   conversationsAsBuyer  Conversation[] @relation("BuyerConversations")
@@ -65,32 +167,39 @@ model User {
   ordersAsFarmer        Order[]        @relation("FarmerOrders")
   deliveriesAsDriver    Delivery[]     @relation("DriverDeliveries")
   refreshTokens         RefreshToken[]
+  media                 Media[]
+
+  @@index([roleId])
+  @@index([userStatusId])
 }
 
 model Listing {
-  id          String        @id @default(uuid())
-  farmer      User          @relation(fields: [farmerId], references: [id])
+  id          String          @id @default(uuid())
+  farmer      User            @relation(fields: [farmerId], references: [id])
   farmerId    String
   title       String
-  category    String
+  category    ListingCategory @relation(fields: [categoryId], references: [id])
+  categoryId  String
   price       Float
   quantity    Float
   unit        String
-  photos      String[]
   location    String
   latitude    Float?
   longitude   Float?
-  description String?
-  status      ListingStatus @default(ACTIVE)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  description String?  @db.Text
+  status      ListingStatus   @relation(fields: [statusId], references: [id])
+  statusId    String
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   conversations Conversation[]
   orders        Order[]
+  media         Media[]
 
-  @@index([category])
+  @@index([categoryId])
   @@index([location])
   @@index([farmerId])
+  @@index([statusId])
 }
 
 model Conversation {
@@ -114,7 +223,7 @@ model Message {
   conversationId String
   sender         User         @relation(fields: [senderId], references: [id])
   senderId       String
-  content        String
+  content        String       @db.Text
   read           Boolean      @default(false)
   createdAt      DateTime     @default(now())
 
@@ -132,8 +241,9 @@ model Order {
   quantity          Float
   unitPrice         Float
   totalPrice        Float
-  deliveryMode      DeliveryMode
-  deliveryAddress   String?
+  deliveryMode      DeliveryMode @relation(fields: [deliveryModeId], references: [id])
+  deliveryModeId    String
+  deliveryAddress   String?     @db.Text
   deliveryLatitude  Float?
   deliveryLongitude Float?
   status            OrderStatus  @default(PENDING)
@@ -145,6 +255,7 @@ model Order {
   @@index([buyerId])
   @@index([farmerId])
   @@index([listingId])
+  @@index([deliveryModeId])
 }
 
 model Delivery {

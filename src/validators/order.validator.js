@@ -1,11 +1,19 @@
-const { body } = require('express-validator');
+import Joi from 'joi';
+import prisma from '../config/prisma.js';
 
-const createOrderRules = [
-  body('listingId').isUUID().withMessage('listingId invalide'),
-  body('quantity').isFloat({ gt: 0 }).withMessage('quantity doit être un nombre supérieur à 0'),
-  body('deliveryMode').isIn(['PICKUP', 'DELIVERY']).withMessage('deliveryMode doit être PICKUP ou DELIVERY'),
-  body('deliveryLatitude').optional().isFloat({ min: -90, max: 90 }).withMessage('deliveryLatitude invalide'),
-  body('deliveryLongitude').optional().isFloat({ min: -180, max: 180 }).withMessage('deliveryLongitude invalide'),
-];
+const deliveryModeRule = Joi.string()
+  .required()
+  .external(async (code) => {
+    const exists = await prisma.deliveryMode.findUnique({ where: { code } });
+    if (!exists) throw new Error('deliveryMode invalide');
+    return code;
+  });
 
-module.exports = { createOrderRules };
+export const createOrderSchema = Joi.object({
+  listingId: Joi.string().uuid().required(),
+  quantity: Joi.number().greater(0).required(),
+  deliveryMode: deliveryModeRule,
+  deliveryAddress: Joi.string().optional().allow(null, ''),
+  deliveryLatitude: Joi.number().min(-90).max(90).optional(),
+  deliveryLongitude: Joi.number().min(-180).max(180).optional(),
+});

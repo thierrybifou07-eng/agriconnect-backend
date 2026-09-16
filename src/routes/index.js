@@ -1,12 +1,13 @@
-const express = require('express');
-const authRoutes = require('./auth.routes');
-const userRoutes = require('./user.routes');
-const listingRoutes = require('./listing.routes');
-const conversationRoutes = require('./conversation.routes');
-const orderRoutes = require('./order.routes');
-const deliveryRoutes = require('./delivery.routes');
+import { Router } from 'express';
+import authRoutes from './auth.routes.js';
+import userRoutes from './user.routes.js';
+import listingRoutes from './listing.routes.js';
+import conversationRoutes from './conversation.routes.js';
+import orderRoutes from './order.routes.js';
+import deliveryRoutes from './delivery.routes.js';
+import adminRoutes from './admin.routes.js';
 
-const router = express.Router();
+const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
@@ -14,5 +15,6 @@ router.use('/listings', listingRoutes);
 router.use('/conversations', conversationRoutes);
 router.use('/orders', orderRoutes);
 router.use('/deliveries', deliveryRoutes);
+router.use('/admin', adminRoutes);
 
-module.exports = router;
+export default router;

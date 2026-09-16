@@ -1,15 +1,18 @@
-const prisma = require('../config/prisma');
-const asyncHandler = require('../utils/asyncHandler');
+import prisma from '../config/prisma.js';
+import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
+import { getLookupId } from '../utils/lookupCache.js';
+
+const sanitize = ({ password, ...rest }) => rest;
 
 // GET /api/users/me
-const getMe = asyncHandler(async (req, res) => {
-  const { password, ...userSafe } = req.user;
-  res.json(userSafe);
-});
+export const getMe = async (req, res) => {
+  const media = await prisma.media.findMany({ where: { ownerUserId: req.user.id } });
+  res.json({ ...sanitize(req.user), media });
+};
 
 // PATCH /api/users/me
-const updateMe = asyncHandler(async (req, res) => {
-  const { fullName, email, location, avatarUrl } = req.body;
+export const updateMe = async (req, res) => {
+  const { fullName, email, location } = req.body;
 
   const updated = await prisma.user.update({
     where: { id: req.user.id },
@@ -17,17 +20,38 @@ const updateMe = asyncHandler(async (req, res) => {
       ...(fullName && { fullName }),
       ...(email !== undefined && { email }),
       ...(location !== undefined && { location }),
-      ...(avatarUrl !== undefined && { avatarUrl }),
     },
+    include: { role: true, userStatus: true },
   });
 
-  const { password, ...userSafe } = updated;
-  res.json(userSafe);
-});
+  res.json(sanitize(updated));
+};
+
+// POST /api/users/me/avatar  (remplace l'avatar existant s'il y en avait un)
+export const uploadAvatar = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Aucune image fournie (champ "avatar")' });
+  }
+
+  const [mediaTypeId, mimeTypeId] = await Promise.all([
+    getLookupId('mediaType', 'IMAGE'),
+    getLookupId('mimeType', req.file.mimetype),
+  ]);
+
+  const url = await uploadBufferToCloudinary(req.file.buffer);
+
+  const media = await prisma.$transaction(async (tx) => {
+    await tx.media.deleteMany({ where: { ownerUserId: req.user.id, mediaTypeId } });
+    return tx.media.create({
+      data: { ownerUserId: req.user.id, mediaTypeId, mimeTypeId, url, isPrimary: true },
+    });
+  });
+
+  res.status(201).json(media);
+};
 
 // PATCH /api/users/me/availability  (livreur uniquement)
-// Met à jour la position GPS courante et le statut de disponibilité du livreur
-const updateAvailability = asyncHandler(async (req, res) => {
+export const updateAvailability = async (req, res) => {
   const { isAvailable, latitude, longitude } = req.body;
 
   const updated = await prisma.user.update({
@@ -37,10 +61,8 @@ const updateAvailability = asyncHandler(async (req, res) => {
       ...(latitude !== undefined && { latitude }),
       ...(longitude !== undefined && { longitude }),
     },
+    include: { role: true, userStatus: true },
   });
 
-  const { password, ...userSafe } = updated;
-  res.json(userSafe);
-});
-
-module.exports = { getMe, updateMe, updateAvailability };
+  res.json(sanitize(updated));
+};

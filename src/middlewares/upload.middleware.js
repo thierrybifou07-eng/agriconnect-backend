@@ -1,8 +1,10 @@
-const multer = require('multer');
+import multer from 'multer';
 
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+// Doit correspondre exactement aux codes seedés dans MimeType (prisma/seed.js) :
+// un mimetype accepté ici mais absent de la table ferait échouer l'upload plus loin.
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-// Stockage en mémoire (buffer) : on envoie ensuite le buffer directement à Cloudinary
+// Stockage en mémoire (buffer) : le buffer est envoyé directement à Cloudinary
 // via uploader.upload_stream, sans jamais écrire sur le disque du serveur.
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -15,4 +17,4 @@ const upload = multer({
   },
 });
 
-module.exports = upload;
+export default upload;

@@ -1,112 +1,116 @@
 # AgriConnect — Backend (MVP)
 
-API REST + WebSocket pour la marketplace agricole AgriConnect (agriculteurs / acheteurs / livreurs).
+API REST + WebSocket pour la marketplace agricole AgriConnect (agriculteurs / acheteurs / livreurs / admin / root).
 
 ## Stack
 
-- Node.js + Express
-- PostgreSQL + Prisma (ORM)
+- Node.js (ESM natif, `"type": "module"`) + Express 5
+- MySQL + Prisma 7 (ORM)
 - JWT (access token courte durée + refresh token)
 - Socket.io (messagerie temps réel)
-- Cloudinary (stockage des photos, upload direct via buffer)
-- express-validator (validation d'entrée) + express-rate-limit (anti brute-force)
+- Cloudinary (stockage des médias, upload direct via buffer)
+- Joi (validation d'entrée) + express-rate-limit (anti brute-force)
+- bcrypt (natif), ejs + juice (scaffoldés pour de futurs emails transactionnels — non câblés, voir plus bas)
+
+## Corrections apportées à la stack demandée
+
+- **`prisma`/`@prisma/client` réalignés en 7.10.0** : la version fournie mélangeait `prisma@^8.0.0-rc.13` (release candidate, GA prévue octobre 2026) avec `@prisma/client@^5.18.0`. Les deux packages doivent être en version strictement assortie ; Prisma 7 est la version stable recommandée par l'éditeur en attendant la 8 finale.
+- **`bcryptjs` retiré**, doublon de `bcrypt` (gardé, plus rapide, versionné explicitement).
+- **`mysql2` retiré des dépendances directes** : inutile avec le générateur `prisma-client-js` classique (le moteur gère nativement la connexion MySQL). Il reste présent en **dépendance transitive du CLI `prisma`** (devDependency) - voir la section vulnérabilités ci-dessous.
 
 ## Installation
 
 ```bash
 npm install
 cp .env.example .env
-# -> renseigner DATABASE_URL, JWT_SECRET, et les identifiants Cloudinary
+# -> renseigner DATABASE_URL (mysql://...), JWT_SECRET, identifiants Cloudinary
 
 npm run prisma:migrate
+npm run seed          # peuple les tables de référence
+npm run create:root   # crée le compte ROOT en interactif - JAMAIS via l'API
 npm run dev
 ```
 
-Le serveur démarre sur `http://localhost:4000`. Vérification rapide : `GET /health`.
+**Validé dans l'environnement de build** : syntaxe ESM de tous les fichiers, câblage routes/controllers, `npm install`, et **chargement réel de l'application** (`import('./src/app.js')`) jusqu'au point où seule la génération du client Prisma (réseau vers `binaries.prisma.sh`, indisponible ici) bloque la suite — à faire chez toi, où l'accès est normal.
 
-**Note** : `npm install` a été testé et validé dans l'environnement de build. La génération Prisma (`prisma generate` / `migrate`) nécessite un accès réseau vers `binaries.prisma.sh`, indisponible dans le sandbox de développement — à exécuter chez toi, où l'accès est normal.
-
-## Structure du projet
-
-```
-src/
-  config/        -> Prisma, Cloudinary
-  controllers/    -> logique métier
-  middlewares/    -> auth JWT, rôles, rate-limit, validation, upload, erreurs
-  validators/     -> règles express-validator par ressource
-  routes/         -> endpoints REST
-  sockets/        -> messagerie temps réel
-  utils/          -> JWT, refresh token, distance/Haversine, upload Cloudinary
-prisma/
-  schema.prisma
+**Bug réel trouvé et corrigé en testant l'exécution** (pas juste la syntaxe) : `import { PrismaClient } from '@prisma/client'` échoue en interop CommonJS→ESM selon l'environnement Node. Utilisé à la place :
+```js
+import pkg from '@prisma/client';
+const { PrismaClient } = pkg;
 ```
 
-## Modèle de données
+## Vulnérabilités (`npm audit`)
 
-- **User** : `role` (`FARMER`\|`BUYER`\|`DRIVER`), `latitude`/`longitude`, `isAvailable`/`vehicleType` (livreur)
-- **Listing** : `price`, `quantity` (stock réel, décrémenté à la commande), `latitude`/`longitude` (point de retrait), `status` (`ACTIVE`\|`SOLD`\|`INACTIVE`)
-- **Conversation** / **Message** : chat libre entre acheteur et vendeur sur une annonce
-- **Order** : `deliveryMode` (`PICKUP`\|`DELIVERY`), `status` (`PENDING`→`READY_FOR_PICKUP`\|`IN_DELIVERY`→`DELIVERED`\|`CANCELLED`)
-- **Delivery** : créée automatiquement à la confirmation d'une commande en mode `DELIVERY`. `distanceKm`/`deliveryFee` calculés (Haversine + tarif de base + tarif/km)
-- **RefreshToken** : token haché, `expiresAt`, `revoked` — permet un access token court sans reconnexion fréquente
+4 failles **haute sévérité** signalées, mais **toutes dans des devDependencies du CLI `prisma`** (`mysql2`, `deepmerge-ts`), jamais dans `@prisma/client` (la librairie qui tourne réellement dans le serveur en production) :
+```
+mysql2@3.15.3 <- prisma@7.10.0 (devDependency) <- jamais utilisé au runtime
+```
+En déploiement avec `npm ci --omit=dev`, ces packages ne sont même pas installés. Un `npm audit fix --force` proposerait de downgrader vers `prisma@6.19.3` : **déconseillé**, ça sacrifie une version stable et récente pour corriger une faille qui n'affecte que l'outil de développement, pas le serveur exposé. À surveiller côté mises à jour Prisma plutôt qu'à corriger dans l'urgence.
 
-### Flux commande → livraison
+## Express 5 : simplifications obtenues
 
-1. Acheteur commande (`POST /api/orders`) → le stock est décrémenté **immédiatement** (transaction), commande `PENDING`
-2. Agriculteur confirme (`PATCH /api/orders/:id/confirm`) → `READY_FOR_PICKUP` (retrait) ou `IN_DELIVERY` + création atomique de la `Delivery` (livraison)
-3. Un livreur **disponible, sans course active** consulte `GET /api/deliveries/available` (triées par distance) et accepte (`POST /api/deliveries/:id/accept`) — premier arrivé, premier servi ; il devient indisponible pendant la course
-4. Progression : `ASSIGNED → PICKED_UP → IN_TRANSIT → DELIVERED`. À la livraison, la commande passe à `DELIVERED` et le livreur redevient disponible
-5. Une annulation (`PATCH /api/orders/:id/cancel`) restitue le stock, réactive l'annonce si besoin, annule la livraison et libère le livreur assigné — tout est transactionnel
+- Les erreurs (sync ou rejets de Promise) dans les controllers remontent **automatiquement** au middleware d'erreur — le wrapper `asyncHandler` utilisé dans les versions précédentes du backend a été **supprimé**, tous les controllers sont maintenant de simples fonctions `async`.
+- Le parseur de query string par défaut change en v5, ce qui **résout** la vulnérabilité `qs` qui affectait Express 4 (notée dans une itération précédente de ce projet).
 
-**Toujours volontairement absent** : assignation automatique par quota/zone (mode pull assumé tant qu'on n'a pas de données réelles de volume).
+## Validation avec Joi
 
-## Authentification
+`src/middlewares/validate.middleware.js` expose `validate(schema, property)`, utilisé en middleware de route (`validate(registerSchema)`). Utilise `schema.validateAsync()` pour supporter aussi bien les règles synchrones que les règles `.external()` asynchrones (ex: vérifier qu'une `category` existe bien dans `ListingCategory` avant de créer une annonce).
 
-- `POST /api/auth/register` / `login` → `{ user, accessToken, refreshToken }`
-- `POST /api/auth/refresh` → `{ refreshToken }` → nouvel `accessToken` (le refresh token n'est pas tourné, juste vérifié non expiré/non révoqué)
-- `POST /api/auth/logout` → `{ refreshToken }` → révoque ce token (déconnexion de cet appareil)
-- `JWT_EXPIRES_IN` par défaut à `1h` (avant : `7d` sans refresh — remplacé par ce mécanisme, plus sûr)
+## MySQL : différences avec PostgreSQL à connaître
+
+- **Pas de `mode: 'insensitive'`** sur les filtres `contains` : ce connecteur Prisma ne le supporte pas. La sensibilité à la casse dépend désormais de la **collation** de la base (`utf8mb4_general_ci`/`utf8mb4_0900_ai_ci` sont insensibles à la casse par défaut - vérifie la collation de tes tables si la recherche te semble trop stricte).
+- **Pas de champs `String[]`** : ce backend n'en avait déjà plus (le système `Media` remplace `photos[]`), donc rien à adapter ici.
+- Champs texte potentiellement longs passés en `@db.Text` explicitement (`Listing.description`, `Message.content`, `Order.deliveryAddress`) pour éviter la troncature à 191 caractères par défaut de Prisma sur MySQL.
+
+## Emails transactionnels (ejs + juice + nodemailer)
+
+Infrastructure complète et **testée en exécution réelle** (rendu de template + inlining CSS + envoi confirmés, pas juste vérifiés syntaxiquement) :
+
+- `src/config/mailer.js` : transport SMTP générique (compatible Gmail, SendGrid, Mailgun, tout serveur SMTP) via variables d'environnement
+- `src/utils/renderEmail.js` : rend un template EJS (`src/emails/templates/*.ejs`) puis inline le CSS avec `juice` (nécessaire car la plupart des clients email ignorent les balises `<style>`)
+- `src/utils/sendMail.js` : enveloppe l'envoi. **Si `SMTP_HOST` n'est pas renseigné, l'email est simplement journalisé** au lieu d'échouer - pratique en développement local sans configuration SMTP
+- Envoi toujours **non-bloquant** (`.catch()` côté appelant) : un échec d'email ne doit jamais faire échouer une inscription
+
+**Déclencheurs câblés** :
+- Email de bienvenue à l'inscription (`POST /api/auth/register`), si un email a été renseigné (il est optionnel)
+- Notification à la création d'un compte ADMIN par ROOT (jamais le mot de passe dans l'email)
+
+**Non câblé, à définir ensemble si besoin** : confirmation de commande, réinitialisation de mot de passe (nécessite un flux de token dédié, inexistant actuellement), notification de suspension. La même infrastructure (`sendMail` + un nouveau template `.ejs`) suffit pour les ajouter.
+
+## Architecture des rôles et tables de référence
+
+`Role` (avec hiérarchie `level` : 10 opérationnel / 50 ADMIN / 100 ROOT), `UserStatus`, `ListingStatus`, `ListingCategory`, `DeliveryMode`, `MediaType`, `MimeType` vivent en **tables**, extensibles sans déploiement. `OrderStatus`/`DeliveryStatus` restent des **enums Postgres... pardon, MySQL** (Prisma supporte les enums natifs sur MySQL) : ce sont des machines à états déjà câblées en code (`VALID_TRANSITIONS`).
+
+`ROOT` : créé uniquement via `npm run create:root` (jamais via l'API). Seul rôle habilité à créer un `ADMIN` (`POST /api/admin/users`). Un compte suspendu est bloqué à 3 niveaux : `protect`, `login`, `refresh`.
+
+## Système de médias
+
+`Listing.photos`/`User.avatarUrl` sont remplacés par la table **`Media`** (`ownerUserId` ou `ownerListingId` + `mediaType`/`mimeType`). Nouvel endpoint : `POST /api/users/me/avatar`.
+
+**Changement d'API côté Flutter** : `listing.category`/`listing.status` sont des objets (`{code, label}`), `listing.photos` devient `listing.media`, `user.avatarUrl` disparaît au profit de `GET /api/users/me` → champ `media`.
 
 ## Endpoints principaux
 
 | Ressource | Routes clés |
 |---|---|
 | Auth | `POST /register`, `/login`, `/refresh`, `/logout` |
-| Users | `GET/PATCH /me`, `PATCH /me/availability` (livreur) |
+| Users | `GET/PATCH /me`, `POST /me/avatar`, `PATCH /me/availability` |
 | Listings | `GET /`, `GET/PATCH/DELETE /:id`, `POST /`, `POST /:id/photos` |
 | Conversations | `GET/POST /`, `GET/POST /:id/messages` |
-| Orders | `POST /`, `GET /`, `GET/PATCH /:id/{confirm,cancel,complete}` |
+| Orders | `POST /`, `GET /`, `PATCH /:id/{confirm,cancel,complete}` |
 | Deliveries (livreur) | `GET /available`, `GET /mine`, `POST /:id/accept`, `PATCH /:id/status` |
+| Admin (niveau ≥ 50) | `GET /users`, `PATCH /users/:id/{suspend,reactivate}`, `POST /users` (ROOT), `GET /orders`, `GET /stats`, `PATCH /listings/:id/deactivate` |
 
-Toutes les routes protégées attendent `Authorization: Bearer <accessToken>`.
+## Flux commande → livraison
 
-## Sécurité et robustesse ajoutées dans cette itération
+1. Commande créée → stock décrémenté immédiatement (transaction)
+2. Confirmation agriculteur → `READY_FOR_PICKUP` ou `IN_DELIVERY` + création atomique de la `Delivery`
+3. Livreur disponible, sans course active, accepte (premier arrivé, premier servi) → devient indisponible
+4. `ASSIGNED → PICKED_UP → IN_TRANSIT → DELIVERED` → commande `DELIVERED`, livreur redisponible
+5. Annulation : restitution du stock, réactivation de l'annonce si besoin, libération du livreur - tout transactionnel
 
-- **Contrôle de stock** : commander plus que `listing.quantity` disponible est refusé ; le stock est décrémenté/restitué de façon transactionnelle (commande, confirmation, annulation)
-- **Transactions Prisma** (`$transaction`) partout où plusieurs écritures doivent réussir ou échouer ensemble (commande+stock, confirmation+livraison, annulation+restitution+libération livreur)
-- **Vérification de disponibilité livreur** avant d'accepter une course, et un livreur ne peut pas avoir deux courses actives simultanément
-- **Validation d'entrée** (express-validator) sur l'inscription, la connexion, les annonces et les commandes — formats vérifiés, pas juste la présence des champs
-- **Rate-limiting** : 10 tentatives/15 min sur les routes d'authentification, 300 req/15 min sur le reste de l'API
-- **Refresh token** : access token court (1h) + refresh token longue durée (30 jours, révocable), au lieu d'un token unique de 7 jours sans révocation possible
-- **Upload Cloudinary** : dépendance `multer-storage-cloudinary` retirée (jamais mise à jour pour Cloudinary v2, conflit de version qui cassait `npm install`) — upload direct via buffer + `upload_stream`, avec filtrage du type MIME
-- **Multer 2.x** : la 1.x contient des failles connues, corrigées en 2.x (API compatible, aucun changement de code nécessaire côté appelant)
+**Toujours volontairement absent** : dispatch automatique par quota (mode pull assumé).
 
-## Vulnérabilité connue (non corrigée)
+## Toujours hors MVP
 
-`npm audit` signale une faille modérée dans `qs` (dépendance interne d'Express 4.x, liée au parsing de query strings). Aucun correctif non-breaking n'existe côté Express à ce jour — la résolution nécessiterait une migration vers Express 5, qui est un changement d'architecture à part entière (routing, middlewares) et mérite sa propre discussion plutôt qu'un correctif improvisé.
-
-## Toujours hors MVP (choix de scope, pas des oublis)
-
-- Tests automatisés
-- Notifications push
-- Système d'avis/notation
-- Vérification du téléphone par OTP (nécessite un fournisseur SMS tiers)
-- Pagination sur les listes
-- Documentation API interactive (Swagger/OpenAPI)
-
-## Messagerie temps réel (Socket.io)
-
-```js
-const socket = io('http://localhost:4000', { auth: { token: '<accessToken>' } });
-```
-Événements : `join_conversation`, `send_message` (`{ conversationId, content }`), `new_message` (reçu).
+Tests automatisés, notifications push, avis/notation, OTP téléphone, pagination, Swagger/OpenAPI, confirmation de commande par email, réinitialisation de mot de passe.

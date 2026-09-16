@@ -1,59 +1,65 @@
-const prisma = require('../config/prisma');
-const asyncHandler = require('../utils/asyncHandler');
-const { haversineDistanceKm, calculateDeliveryFee } = require('../utils/distance');
+import prisma from '../config/prisma.js';
+import { haversineDistanceKm, calculateDeliveryFee } from '../utils/distance.js';
+import { getLookupId } from '../utils/lookupCache.js';
+
+const orderInclude = {
+  listing: { select: { id: true, title: true } },
+  buyer: { select: { id: true, fullName: true, phone: true } },
+  farmer: { select: { id: true, fullName: true, phone: true } },
+  deliveryMode: true,
+  delivery: true,
+};
 
 // POST /api/orders  (acheteur uniquement)
-// Réserve immédiatement la quantité commandée sur le stock de l'annonce (voir cancelOrder pour la restitution).
-// Tout se passe dans une transaction : relecture du stock + décrément + création de la commande sont atomiques,
-// ce qui évite la survente en cas de commandes concurrentes sur la même annonce.
-const createOrder = asyncHandler(async (req, res) => {
+// Réserve immédiatement la quantité commandée sur le stock de l'annonce (voir cancelOrder
+// pour la restitution). Transaction : relecture du stock + décrément + création atomiques.
+export const createOrder = async (req, res) => {
   const { listingId, quantity, deliveryMode, deliveryAddress, deliveryLatitude, deliveryLongitude } = req.body;
 
   if (deliveryMode === 'DELIVERY' && (deliveryLatitude === undefined || deliveryLongitude === undefined)) {
     return res.status(400).json({ error: 'deliveryLatitude et deliveryLongitude sont requis pour une livraison' });
   }
 
-  const qty = parseFloat(quantity);
+  const deliveryModeId = await getLookupId('deliveryMode', deliveryMode);
 
   const order = await prisma.$transaction(async (tx) => {
-    const listing = await tx.listing.findUnique({ where: { id: listingId } });
+    const listing = await tx.listing.findUnique({ where: { id: listingId }, include: { status: true } });
 
     if (!listing) {
       throw Object.assign(new Error('Annonce introuvable'), { statusCode: 404 });
     }
-    if (listing.status !== 'ACTIVE') {
+    if (listing.status.code !== 'ACTIVE') {
       throw Object.assign(new Error("Cette annonce n'est plus disponible"), { statusCode: 400 });
     }
     if (listing.farmerId === req.user.id) {
       throw Object.assign(new Error('Vous ne pouvez pas commander votre propre annonce'), { statusCode: 400 });
     }
-    if (qty > listing.quantity) {
+    if (quantity > listing.quantity) {
       throw Object.assign(
-        new Error(`Quantité demandée (${qty}) supérieure au stock disponible (${listing.quantity})`),
+        new Error(`Quantité demandée (${quantity}) supérieure au stock disponible (${listing.quantity})`),
         { statusCode: 400 }
       );
     }
 
-    const totalPrice = Math.round(listing.price * qty * 100) / 100;
-    const remaining = listing.quantity - qty;
+    const totalPrice = Math.round(listing.price * quantity * 100) / 100;
+    const remaining = listing.quantity - quantity;
 
-    await tx.listing.update({
-      where: { id: listingId },
-      data: {
-        quantity: remaining,
-        ...(remaining === 0 && { status: 'SOLD' }),
-      },
-    });
+    const listingUpdateData = { quantity: remaining };
+    if (remaining === 0) {
+      listingUpdateData.statusId = await getLookupId('listingStatus', 'SOLD');
+    }
+
+    await tx.listing.update({ where: { id: listingId }, data: listingUpdateData });
 
     return tx.order.create({
       data: {
         listingId,
         buyerId: req.user.id,
         farmerId: listing.farmerId,
-        quantity: qty,
+        quantity,
         unitPrice: listing.price,
         totalPrice,
-        deliveryMode,
+        deliveryModeId,
         deliveryAddress,
         ...(deliveryLatitude !== undefined && { deliveryLatitude }),
         ...(deliveryLongitude !== undefined && { deliveryLongitude }),
@@ -62,10 +68,10 @@ const createOrder = asyncHandler(async (req, res) => {
   });
 
   res.status(201).json(order);
-});
+};
 
-// GET /api/orders?status=  (mes commandes, en tant qu'acheteur ou agriculteur)
-const getMyOrders = asyncHandler(async (req, res) => {
+// GET /api/orders?status=
+export const getMyOrders = async (req, res) => {
   const { status } = req.query;
 
   const orders = await prisma.order.findMany({
@@ -73,28 +79,18 @@ const getMyOrders = asyncHandler(async (req, res) => {
       OR: [{ buyerId: req.user.id }, { farmerId: req.user.id }],
       ...(status && { status }),
     },
-    include: {
-      listing: { select: { id: true, title: true, photos: true } },
-      buyer: { select: { id: true, fullName: true, phone: true } },
-      farmer: { select: { id: true, fullName: true, phone: true } },
-      delivery: true,
-    },
+    include: orderInclude,
     orderBy: { createdAt: 'desc' },
   });
 
   res.json(orders);
-});
+};
 
 // GET /api/orders/:id
-const getOrderById = asyncHandler(async (req, res) => {
+export const getOrderById = async (req, res) => {
   const order = await prisma.order.findUnique({
     where: { id: req.params.id },
-    include: {
-      listing: true,
-      buyer: { select: { id: true, fullName: true, phone: true } },
-      farmer: { select: { id: true, fullName: true, phone: true } },
-      delivery: true,
-    },
+    include: { ...orderInclude, listing: true },
   });
 
   if (!order) return res.status(404).json({ error: 'Commande introuvable' });
@@ -103,13 +99,14 @@ const getOrderById = asyncHandler(async (req, res) => {
   }
 
   res.json(order);
-});
+};
 
 // PATCH /api/orders/:id/confirm  (agriculteur uniquement, propriétaire)
-// Transaction : statut de la commande + création de la livraison sont atomiques
-// (si l'une échoue, l'autre est annulée - jamais d'état incohérent).
-const confirmOrder = asyncHandler(async (req, res) => {
-  const order = await prisma.order.findUnique({ where: { id: req.params.id }, include: { listing: true } });
+export const confirmOrder = async (req, res) => {
+  const order = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: { listing: true, deliveryMode: true },
+  });
 
   if (!order) return res.status(404).json({ error: 'Commande introuvable' });
   if (order.farmerId !== req.user.id) {
@@ -119,7 +116,7 @@ const confirmOrder = asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Seule une commande en attente peut être confirmée' });
   }
 
-  const isDelivery = order.deliveryMode === 'DELIVERY';
+  const isDelivery = order.deliveryMode.code === 'DELIVERY';
 
   const updated = await prisma.$transaction(async (tx) => {
     const updatedOrder = await tx.order.update({
@@ -152,12 +149,10 @@ const confirmOrder = asyncHandler(async (req, res) => {
   });
 
   res.json(updated);
-});
+};
 
-// PATCH /api/orders/:id/cancel  (acheteur ou agriculteur, propriétaire)
-// Restitue le stock réservé, réactive l'annonce si besoin, annule la livraison associée
-// et libère le livreur assigné le cas échéant - le tout dans une seule transaction.
-const cancelOrder = asyncHandler(async (req, res) => {
+// PATCH /api/orders/:id/cancel
+export const cancelOrder = async (req, res) => {
   const order = await prisma.order.findUnique({ where: { id: req.params.id } });
 
   if (!order) return res.status(404).json({ error: 'Commande introuvable' });
@@ -169,20 +164,16 @@ const cancelOrder = asyncHandler(async (req, res) => {
   }
 
   const updated = await prisma.$transaction(async (tx) => {
-    const cancelled = await tx.order.update({
-      where: { id: order.id },
-      data: { status: 'CANCELLED' },
-    });
+    const cancelled = await tx.order.update({ where: { id: order.id }, data: { status: 'CANCELLED' } });
 
     const listing = await tx.listing.findUnique({ where: { id: order.listingId } });
     if (listing) {
-      await tx.listing.update({
-        where: { id: order.listingId },
-        data: {
-          quantity: listing.quantity + order.quantity,
-          ...(listing.status === 'SOLD' && { status: 'ACTIVE' }),
-        },
-      });
+      const soldStatusId = await getLookupId('listingStatus', 'SOLD');
+      const listingUpdateData = { quantity: listing.quantity + order.quantity };
+      if (listing.statusId === soldStatusId) {
+        listingUpdateData.statusId = await getLookupId('listingStatus', 'ACTIVE');
+      }
+      await tx.listing.update({ where: { id: order.listingId }, data: listingUpdateData });
     }
 
     const delivery = await tx.delivery.findUnique({ where: { orderId: order.id } });
@@ -197,28 +188,23 @@ const cancelOrder = asyncHandler(async (req, res) => {
   });
 
   res.json(updated);
-});
+};
 
-// PATCH /api/orders/:id/complete  (mode PICKUP uniquement : l'acheteur a récupéré la marchandise)
-const completeOrder = asyncHandler(async (req, res) => {
-  const order = await prisma.order.findUnique({ where: { id: req.params.id } });
+// PATCH /api/orders/:id/complete  (mode PICKUP uniquement)
+export const completeOrder = async (req, res) => {
+  const order = await prisma.order.findUnique({ where: { id: req.params.id }, include: { deliveryMode: true } });
 
   if (!order) return res.status(404).json({ error: 'Commande introuvable' });
   if (![order.buyerId, order.farmerId].includes(req.user.id)) {
     return res.status(403).json({ error: "Vous n'avez pas accès à cette commande" });
   }
-  if (order.deliveryMode !== 'PICKUP' || order.status !== 'READY_FOR_PICKUP') {
+  if (order.deliveryMode.code !== 'PICKUP' || order.status !== 'READY_FOR_PICKUP') {
     return res
       .status(400)
       .json({ error: 'Cette action ne concerne que les commandes en retrait, prêtes à récupérer' });
   }
 
-  const updated = await prisma.order.update({
-    where: { id: order.id },
-    data: { status: 'DELIVERED' },
-  });
+  const updated = await prisma.order.update({ where: { id: order.id }, data: { status: 'DELIVERED' } });
 
   res.json(updated);
-});
-
-module.exports = { createOrder, getMyOrders, getOrderById, confirmOrder, cancelOrder, completeOrder };
+};

@@ -1,14 +1,14 @@
-const express = require('express');
-const { register, login, refresh, logout } = require('../controllers/auth.controller');
-const { authLimiter } = require('../middlewares/rateLimit.middleware');
-const handleValidation = require('../middlewares/validate.middleware');
-const { registerRules, loginRules, refreshRules } = require('../validators/auth.validator');
+import { Router } from 'express';
+import { register, login, refresh, logout } from '../controllers/auth.controller.js';
+import { authLimiter } from '../middlewares/rateLimit.middleware.js';
+import { validate } from '../middlewares/validate.middleware.js';
+import { registerSchema, loginSchema, refreshSchema } from '../validators/auth.validator.js';
 
-const router = express.Router();
+const router = Router();
 
-router.post('/register', authLimiter, registerRules, handleValidation, register);
-router.post('/login', authLimiter, loginRules, handleValidation, login);
-router.post('/refresh', authLimiter, refreshRules, handleValidation, refresh);
+router.post('/register', authLimiter, validate(registerSchema), register);
+router.post('/login', authLimiter, validate(loginSchema), login);
+router.post('/refresh', authLimiter, validate(refreshSchema), refresh);
 router.post('/logout', logout);
 
-module.exports = router;
+export default router;

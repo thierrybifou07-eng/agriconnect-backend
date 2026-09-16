@@ -1,13 +1,10 @@
-const prisma = require('../config/prisma');
-const asyncHandler = require('../utils/asyncHandler');
-const { haversineDistanceKm } = require('../utils/distance');
+import prisma from '../config/prisma.js';
+import { haversineDistanceKm } from '../utils/distance.js';
 
 const ACTIVE_DELIVERY_STATUSES = ['ASSIGNED', 'PICKED_UP', 'IN_TRANSIT'];
 
 // GET /api/deliveries/available  (livreur uniquement)
-// Liste les livraisons non assignées, triées par proximité si la position du livreur est connue.
-// Pas d'assignation automatique : le livreur choisit lui-même (mode pull, cf. décision sur les quotas).
-const getAvailableDeliveries = asyncHandler(async (req, res) => {
+export const getAvailableDeliveries = async (req, res) => {
   const deliveries = await prisma.delivery.findMany({
     where: { status: 'PENDING', driverId: null },
     include: {
@@ -37,10 +34,10 @@ const getAvailableDeliveries = asyncHandler(async (req, res) => {
   }
 
   res.json(withDistance);
-});
+};
 
 // GET /api/deliveries/mine  (livreur uniquement)
-const getMyDeliveries = asyncHandler(async (req, res) => {
+export const getMyDeliveries = async (req, res) => {
   const deliveries = await prisma.delivery.findMany({
     where: { driverId: req.user.id },
     include: {
@@ -56,12 +53,10 @@ const getMyDeliveries = asyncHandler(async (req, res) => {
   });
 
   res.json(deliveries);
-});
+};
 
 // POST /api/deliveries/:id/accept  (livreur uniquement)
-// Vérifie que le livreur est disponible ET n'a pas déjà une course active, puis réclame la
-// livraison de façon atomique (le premier arrivé la remporte) et se marque indisponible.
-const acceptDelivery = asyncHandler(async (req, res) => {
+export const acceptDelivery = async (req, res) => {
   if (!req.user.isAvailable) {
     return res.status(400).json({ error: "Passez votre statut en disponible avant d'accepter une livraison" });
   }
@@ -91,16 +86,16 @@ const acceptDelivery = asyncHandler(async (req, res) => {
   });
 
   res.json(delivery);
-});
+};
 
-// PATCH /api/deliveries/:id/status  (livreur uniquement, assigné)  body: { status }
 const VALID_TRANSITIONS = {
   ASSIGNED: ['PICKED_UP'],
   PICKED_UP: ['IN_TRANSIT'],
   IN_TRANSIT: ['DELIVERED'],
 };
 
-const updateDeliveryStatus = asyncHandler(async (req, res) => {
+// PATCH /api/deliveries/:id/status  (livreur uniquement, assigné)
+export const updateDeliveryStatus = async (req, res) => {
   const { status } = req.body;
 
   const delivery = await prisma.delivery.findUnique({ where: { id: req.params.id } });
@@ -119,15 +114,11 @@ const updateDeliveryStatus = asyncHandler(async (req, res) => {
   const updated = await prisma.$transaction(async (tx) => {
     const updatedDelivery = await tx.delivery.update({
       where: { id: req.params.id },
-      data: {
-        status,
-        ...(timestampField && { [timestampField]: new Date() }),
-      },
+      data: { status, ...(timestampField && { [timestampField]: new Date() }) },
     });
 
     if (status === 'DELIVERED') {
       await tx.order.update({ where: { id: delivery.orderId }, data: { status: 'DELIVERED' } });
-      // Le livreur redevient disponible pour une prochaine course
       await tx.user.update({ where: { id: req.user.id }, data: { isAvailable: true } });
     }
 
@@ -135,6 +126,4 @@ const updateDeliveryStatus = asyncHandler(async (req, res) => {
   });
 
   res.json(updated);
-});
-
-module.exports = { getAvailableDeliveries, getMyDeliveries, acceptDelivery, updateDeliveryStatus };
+};

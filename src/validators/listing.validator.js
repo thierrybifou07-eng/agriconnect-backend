@@ -1,22 +1,47 @@
-const { body } = require('express-validator');
+import Joi from 'joi';
+import prisma from '../config/prisma.js';
 
-const createListingRules = [
-  body('title').trim().isLength({ min: 3 }).withMessage('Le titre doit contenir au moins 3 caractères'),
-  body('category').trim().notEmpty().withMessage('category est requis'),
-  body('price').isFloat({ gt: 0 }).withMessage('price doit être un nombre supérieur à 0'),
-  body('quantity').isFloat({ gt: 0 }).withMessage('quantity doit être un nombre supérieur à 0'),
-  body('unit').trim().notEmpty().withMessage('unit est requis'),
-  body('location').trim().notEmpty().withMessage('location est requis'),
-  body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('latitude invalide'),
-  body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('longitude invalide'),
-];
+const categoryRule = Joi.string()
+  .trim()
+  .external(async (code) => {
+    if (code === undefined) return code;
+    const exists = await prisma.listingCategory.findUnique({ where: { code } });
+    if (!exists) throw new Error('category invalide');
+    return code;
+  });
 
-const updateListingRules = [
-  body('price').optional().isFloat({ gt: 0 }).withMessage('price doit être un nombre supérieur à 0'),
-  body('quantity').optional().isFloat({ gt: 0 }).withMessage('quantity doit être un nombre supérieur à 0'),
-  body('status').optional().isIn(['ACTIVE', 'SOLD', 'INACTIVE']).withMessage('status invalide'),
-  body('latitude').optional().isFloat({ min: -90, max: 90 }).withMessage('latitude invalide'),
-  body('longitude').optional().isFloat({ min: -180, max: 180 }).withMessage('longitude invalide'),
-];
+const statusRule = Joi.string()
+  .trim()
+  .external(async (code) => {
+    if (code === undefined) return code;
+    const exists = await prisma.listingStatus.findUnique({ where: { code } });
+    if (!exists) throw new Error('status invalide');
+    return code;
+  });
 
-module.exports = { createListingRules, updateListingRules };
+export const createListingSchema = Joi.object({
+  title: Joi.string().trim().min(3).required().messages({
+    'string.min': 'Le titre doit contenir au moins 3 caractères',
+  }),
+  category: categoryRule.required(),
+  price: Joi.number().greater(0).required(),
+  quantity: Joi.number().greater(0).required(),
+  unit: Joi.string().trim().required(),
+  location: Joi.string().trim().required(),
+  description: Joi.string().optional().allow(null, ''),
+  latitude: Joi.number().min(-90).max(90).optional(),
+  longitude: Joi.number().min(-180).max(180).optional(),
+});
+
+export const updateListingSchema = Joi.object({
+  title: Joi.string().trim().min(3).optional(),
+  category: categoryRule.optional(),
+  price: Joi.number().greater(0).optional(),
+  quantity: Joi.number().greater(0).optional(),
+  unit: Joi.string().trim().optional(),
+  location: Joi.string().trim().optional(),
+  description: Joi.string().optional().allow(null, ''),
+  status: statusRule.optional(),
+  latitude: Joi.number().min(-90).max(90).optional(),
+  longitude: Joi.number().min(-180).max(180).optional(),
+});
