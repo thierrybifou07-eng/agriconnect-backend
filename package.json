@@ -1,13 +1,18 @@
 {
   "name": "agriconnect",
   "version": "1.0.0",
-  "description": "Backend du projet AgriConnect",
+  "description": "Backend API pour AgriConnect - Marketplace agricole (MVP)",
   "license": "ISC",
   "author": "Gedeon Bifou",
   "type": "module",
-  "main": "server.js",
+  "main": "src/server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
   },
   "dependencies": {
     "bcrypt": "^6.0.0",
@@ -22,6 +27,15 @@
     "multer": "^2.3.0",
     "mysql2": "^3.24.3",
     "prisma": "^8.0.0-rc.13",
-    "socket.io": "^4.8.3"
+    "socket.io": "^4.8.3",
+
+
+    "@prisma/client": "^5.18.0",
+    "bcryptjs": "^2.4.3",
+    "cloudinary": "^2.4.0"
+
+  },
+  "devDependencies": {
+    "prisma": "^5.18.0"
   }
 }

@@ -1,0 +1,183 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  FARMER
+  BUYER
+  DRIVER
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  INACTIVE
+}
+
+enum DeliveryMode {
+  PICKUP
+  DELIVERY
+}
+
+enum OrderStatus {
+  PENDING
+  READY_FOR_PICKUP
+  IN_DELIVERY
+  DELIVERED
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  CANCELLED
+}
+
+model User {
+  id          String   @id @default(uuid())
+  fullName    String
+  phone       String   @unique
+  email       String?  @unique
+  password    String
+  role        Role
+  location    String?
+  avatarUrl   String?
+  latitude    Float?
+  longitude   Float?
+  isAvailable Boolean  @default(true)
+  vehicleType String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  listings              Listing[]
+  conversationsAsBuyer  Conversation[] @relation("BuyerConversations")
+  conversationsAsFarmer Conversation[] @relation("FarmerConversations")
+  messages              Message[]
+  ordersAsBuyer         Order[]        @relation("BuyerOrders")
+  ordersAsFarmer        Order[]        @relation("FarmerOrders")
+  deliveriesAsDriver    Delivery[]     @relation("DriverDeliveries")
+  refreshTokens         RefreshToken[]
+}
+
+model Listing {
+  id          String        @id @default(uuid())
+  farmer      User          @relation(fields: [farmerId], references: [id])
+  farmerId    String
+  title       String
+  category    String
+  price       Float
+  quantity    Float
+  unit        String
+  photos      String[]
+  location    String
+  latitude    Float?
+  longitude   Float?
+  description String?
+  status      ListingStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  conversations Conversation[]
+  orders        Order[]
+
+  @@index([category])
+  @@index([location])
+  @@index([farmerId])
+}
+
+model Conversation {
+  id        String   @id @default(uuid())
+  listing   Listing  @relation(fields: [listingId], references: [id])
+  listingId String
+  buyer     User     @relation("BuyerConversations", fields: [buyerId], references: [id])
+  buyerId   String
+  farmer    User     @relation("FarmerConversations", fields: [farmerId], references: [id])
+  farmerId  String
+  createdAt DateTime @default(now())
+
+  messages Message[]
+
+  @@unique([listingId, buyerId])
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversationId String
+  sender         User         @relation(fields: [senderId], references: [id])
+  senderId       String
+  content        String
+  read           Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+model Order {
+  id                String       @id @default(uuid())
+  listing           Listing      @relation(fields: [listingId], references: [id])
+  listingId         String
+  buyer             User         @relation("BuyerOrders", fields: [buyerId], references: [id])
+  buyerId           String
+  farmer            User         @relation("FarmerOrders", fields: [farmerId], references: [id])
+  farmerId          String
+  quantity          Float
+  unitPrice         Float
+  totalPrice        Float
+  deliveryMode      DeliveryMode
+  deliveryAddress   String?
+  deliveryLatitude  Float?
+  deliveryLongitude Float?
+  status            OrderStatus  @default(PENDING)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  delivery Delivery?
+
+  @@index([buyerId])
+  @@index([farmerId])
+  @@index([listingId])
+}
+
+model Delivery {
+  id               String         @id @default(uuid())
+  order            Order          @relation(fields: [orderId], references: [id])
+  orderId          String         @unique
+  driver           User?          @relation("DriverDeliveries", fields: [driverId], references: [id])
+  driverId         String?
+  status           DeliveryStatus @default(PENDING)
+  pickupLatitude   Float?
+  pickupLongitude  Float?
+  dropoffLatitude  Float?
+  dropoffLongitude Float?
+  distanceKm       Float?
+  deliveryFee      Float?
+  assignedAt       DateTime?
+  pickedUpAt       DateTime?
+  deliveredAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([driverId])
+  @@index([status])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  user      User     @relation(fields: [userId], references: [id])
+  userId    String
+  expiresAt DateTime
+  revoked   Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
