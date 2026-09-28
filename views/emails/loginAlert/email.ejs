@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nouvelle connexion d&eacute;tect&eacute;e</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Nouvelle connexion d&eacute;tect&eacute;e"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <div style="text-align:center; margin-bottom:20px;">
+        <span class="badge badge-warning">Connexion non reconnue</span>
+      </div>
+
+      <h2>Bonjour <%= username %>,</h2>
+      <p>Une connexion &agrave; votre compte RentHub a &eacute;t&eacute; d&eacute;tect&eacute;e depuis un nouvel appareil ou emplacement.</p>
+
+      <div style="background:#f8fafc; border-radius:10px; padding:16px 20px; margin:20px 0;">
+        <table style="width:100%; font-size:14px; color:#334155; border-collapse:collapse;">
+          <tr>
+            <td style="padding:4px 8px; color:#64748b; width:100px;">Date</td>
+            <td style="padding:4px 8px; font-weight:600;"><%= date %></td>
+          </tr>
+          <tr>
+            <td style="padding:4px 8px; color:#64748b;">Appareil</td>
+            <td style="padding:4px 8px; font-weight:600;"><%= deviceInfo %></td>
+          </tr>
+          <tr>
+            <td style="padding:4px 8px; color:#64748b;">Adresse IP</td>
+            <td style="padding:4px 8px; font-weight:600;"><%= ipAddress %></td>
+          </tr>
+        </table>
+      </div>
+
+      <p style="font-size:15px;">Si c'&eacute;tait bien vous, vous pouvez ignorer cet email en toute s&eacute;r&eacute;nit&eacute;.</p>
+
+      <div style="background:#fffbeb; border-radius:10px; padding:16px 20px; margin:20px 0; border:1px solid #fde68a;">
+        <p style="margin:0; color:#92400e; font-size:14px;">
+          <strong>Ce n'&eacute;tait pas vous ?</strong><br>
+          Contactez imm&eacute;diatement notre support &agrave; <a href="mailto:support@renthub.com">support@renthub.com</a> pour s&eacute;curiser votre compte.
+        </p>
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Cet email est un message automatique de s&eacute;curit&eacute;. Merci de ne pas y r&eacute;pondre.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

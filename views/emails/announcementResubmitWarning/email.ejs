@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Avertissement - Soumission répétée</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Avertissement important"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <div style="text-align:center; margin-bottom:20px;">
+        <span class="badge badge-error">Avertissement</span>
+      </div>
+
+      <h2>Bonjour <%= username %>,</h2>
+      <p>Votre annonce <strong>&laquo;&nbsp;<%= announcementTitle %>&nbsp;&raquo;</strong> a été soumise <strong>plusieurs fois</strong> pour modération.</p>
+
+      <div style="background:#fef2f2; border-radius:10px; padding:16px 20px; margin:20px 0; border:1px solid #fecaca;">
+        <p style="margin:0; color:#991b1b; font-size:15px;">
+          <strong>Attention :</strong> Les soumissions répétées d'une annonce non conforme peuvent entraîner sa suppression définitive par notre équipe d'administration.
+        </p>
+      </div>
+
+      <p>Nous vous recommandons de créer une nouvelle annonce plutôt que de resoumettre celle-ci, ou de contacter le support si vous pensez qu'il s'agit d'une erreur.</p>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Notre équipe reste à votre disposition pour toute question.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

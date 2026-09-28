@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compte utilisateur v&eacute;rifi&eacute;</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "F&eacute;licitations !"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <div style="text-align:center; margin-bottom:20px;">
+        <span class="badge badge-success">Compte utilisateur v&eacute;rifi&eacute; &check;</span>
+      </div>
+
+      <h2 style="text-align:center;">Votre compte est confirm&eacute;</h2>
+      <p>Bonjour <%= username %>, votre compte a &eacute;t&eacute; v&eacute;rifi&eacute; avec succ&egrave;s. Vous pouvez d&eacute;sormais pleinement profiter de tous les services avanc&eacute;s de RentHub.</p>
+
+      <div style="background:#f0fdf4; border-radius:10px; padding:16px 20px; margin:20px 0;">
+        <p style="margin:0; color:#166534; font-size:14px; text-align:center;">
+          <strong>Prochaines &eacute;tapes :</strong> Parcourez davantages d'annonces, vous obtiendrez un badge de verification.
+        </p>
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Si vous n'&ecirc;tes pas &agrave; l'origine de cette v&eacute;rification, veuillez contacter notre support imm&eacute;diatement.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

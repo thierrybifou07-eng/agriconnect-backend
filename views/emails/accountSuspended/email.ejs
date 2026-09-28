@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compte suspendu</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Compte suspendu"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <div style="text-align:center; margin-bottom:20px;">
+        <span class="badge badge-error">Compte suspendu</span>
+      </div>
+
+      <h2>Bonjour <%= username %>,</h2>
+      <p>Nous vous informons que votre compte RentHub a &eacute;t&eacute; suspendu pour la raison suivante :</p>
+
+      <div style="background:#fef2f2; border-radius:10px; padding:16px 20px; margin:20px 0; border:1px solid #fecaca;">
+        <p style="margin:0; color:#991b1b; font-size:15px;">
+          <strong>Motif :</strong><br>
+          <%= reason %>
+        </p>
+      </div>
+
+      <p>Si vous souhaitez contester cette d&eacute;cision ou obtenir plus d'informations, veuillez nous contacter &agrave; l'adresse suivante :</p>
+
+      <div class="info-row" style="background:#fef2f2;">
+        <a href="mailto:<%= supportEmail %>" style="color:#dc2626; font-weight:600;"><%= supportEmail %></a>
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Nous vous r&eacute;pondrons dans les plus brefs d&eacute;lais.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

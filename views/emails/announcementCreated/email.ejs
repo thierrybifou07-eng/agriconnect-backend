@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Annonce soumise</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Annonce soumise avec succ&egrave;s"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <h2>Bonjour <%= username %>,</h2>
+      <p>Votre annonce <strong>&laquo;&nbsp;<%= announcementTitle %>&nbsp;&raquo;</strong> a bien &eacute;t&eacute; soumise et est en attente de v&eacute;rification par notre &eacute;quipe.</p>
+
+      <div style="text-align:center; margin:24px 0;">
+        <span class="badge badge-warning">En attente de mod&eacute;ration</span>
+      </div>
+
+      <div class="info-row">
+        Le processus de v&eacute;rification prend g&eacute;n&eacute;ralement moins de 24 heures ouvr&eacute;es. Vous recevrez un email d&egrave;s que votre annonce sera approuv&eacute;e.
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        En attendant, vous pouvez modifier votre annonce ou en pr&eacute;parer une nouvelle depuis votre tableau de bord.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nouvelle question sur votre annonce</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Nouvelle question sur votre annonce"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <h2>Bonjour <%= ownerName %>,</h2>
+      <p><strong><%= inquirerName %></strong> vous a envoy&eacute; une question concernant votre annonce <strong>&laquo;&nbsp;<%= announcementTitle %>&nbsp;&raquo;</strong>.</p>
+
+      <div style="background:#f8fafc; border-radius:10px; padding:20px; margin:20px 0; border-left:4px solid #1a56db;">
+        <p style="margin:0; color:#334155; font-style:italic; line-height:1.7;">
+          &ldquo;<%= message %>&rdquo;
+        </p>
+      </div>
+
+      <div class="info-row">
+        Connectez-vous &agrave; votre compte pour r&eacute;pondre &agrave; cette demande.
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Un r&eacute;ponse rapide augmente vos chances de conclure une location. Merci de votre r&eacute;activit&eacute;.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

@@ -1,0 +1,20 @@
+<%- include('../_shared/header', { title: 'Abonnement activé' }) %>
+<table role="presentation" class="content">
+  <tr>
+    <td>
+      <h1>Abonnement activé !</h1>
+      <p>Bonjour <strong><%= username %></strong>,</p>
+      <p>Votre abonnement <strong><%= planLabel %></strong> a été activé avec succès.</p>
+      <p>Vous bénéficiez désormais d'une meilleure visibilité pour vos annonces sur RentHub.</p>
+      <p>Valable jusqu'au <strong><%= endDate %></strong>.</p>
+      <table role="presentation" class="btn-primary">
+        <tr>
+          <td>
+            <a href="<%= appUrl %>/subscriptions/me">Voir mon abonnement</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<%- include('../_shared/footer') %>

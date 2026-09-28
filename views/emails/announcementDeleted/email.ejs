@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Annonce supprimée</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Annonce supprimée"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <div style="text-align:center; margin-bottom:20px;">
+        <span class="badge badge-error">Supprimée</span>
+      </div>
+
+      <h2>Bonjour <%= username %>,</h2>
+      <p>Votre annonce <strong>&laquo;&nbsp;<%= announcementTitle %>&nbsp;&raquo;</strong> a été <strong>définitivement supprimée</strong> par l'équipe d'administration.</p>
+
+      <div style="background:#fef2f2; border-radius:10px; padding:16px 20px; margin:20px 0; border:1px solid #fecaca;">
+        <p style="margin:0; color:#991b1b; font-size:15px;">
+          <strong>Motif :</strong><br>
+          <%= reason %>
+        </p>
+      </div>
+
+      <p>Si vous souhaitez publier une nouvelle annonce, vous pouvez le faire depuis votre tableau de bord.</p>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Pour toute question, contactez notre équipe de support.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

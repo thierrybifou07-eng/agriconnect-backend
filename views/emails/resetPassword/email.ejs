@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>R&eacute;initialisation du mot de passe</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "R&eacute;initialisation du mot de passe"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <p>Vous avez demand&eacute; la r&eacute;initialisation de votre mot de passe RentHub. Utilisez le code ci-dessous pour d&eacute;finir un nouveau mot de passe :</p>
+
+      <div class="code-block" style="border-color:#fed7aa;">
+        <div class="code" style="color:#ea580c;"><%= resetCode %></div>
+        <div class="label">Code de r&eacute;initialisation</div>
+      </div>
+
+      <div class="info-row" style="background:#fff7ed; color:#9a3412;">
+        Ce code expirera dans <strong><%= countMinutes %> minute(s)</strong>. Ne partagez jamais ce code avec personne.
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Si vous n'avez pas demand&eacute; cette r&eacute;initialisation, veuillez ignorer cet email et v&eacute;rifier la s&eacute;curit&eacute; de votre compte.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

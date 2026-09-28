@@ -1,0 +1,22 @@
+<%- include('../_shared/header', { title: 'Abonnement non validé' }) %>
+<table role="presentation" class="content">
+  <tr>
+    <td>
+      <h1>Abonnement non validé</h1>
+      <p>Bonjour <strong><%= username %></strong>,</p>
+      <p>Votre demande d'abonnement <strong><%= planLabel %></strong> n'a pas pu être validée.</p>
+      <% if (reason) { %>
+      <p>Motif : <%= reason %></p>
+      <% } %>
+      <p>Vous pouvez soumettre une nouvelle demande en fournissant une référence de paiement correcte.</p>
+      <table role="presentation" class="btn-primary">
+        <tr>
+          <td>
+            <a href="<%= appUrl %>/subscriptions">Réessayer</a>
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+<%- include('../_shared/footer') %>

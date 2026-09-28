@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mot de passe mis &agrave; jour</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Mot de passe mis &agrave; jour"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <div style="text-align:center; margin-bottom:20px;">
+        <span class="badge badge-success">R&eacute;ussite &check;</span>
+      </div>
+
+      <h2 style="text-align:center;">Votre mot de passe a &eacute;t&eacute; modifi&eacute;</h2>
+      <p>Bonjour<%= typeof username !== 'undefined' ? ' ' + username : '' %>, votre mot de passe RentHub vient d'&ecirc;tre r&eacute;initialis&eacute; avec succ&egrave;s.</p>
+
+      <div style="background:#fffbeb; border-radius:10px; padding:16px 20px; margin:20px 0; border:1px solid #fde68a;">
+        <p style="margin:0; color:#92400e; font-size:14px;">
+          <strong>Vous n'&ecirc;tes pas &agrave; l'origine de cette action ?</strong><br>
+          Contactez imm&eacute;diatement notre support &agrave; l'adresse <a href="mailto:support@renthub.com">support@renthub.com</a> pour s&eacute;curiser votre compte.
+        </p>
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#64748b; text-align:center;">
+        Vous pouvez d&eacute;sormais vous connecter avec votre nouveau mot de passe.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

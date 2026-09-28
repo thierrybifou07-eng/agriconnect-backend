@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Annonce approuv&eacute;e</title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <% var heading = "Annonce approuv&eacute;e !"; %>
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <div style="text-align:center; margin-bottom:20px;">
+        <span class="badge badge-success">Approuv&eacute;e &check;</span>
+      </div>
+
+      <h2 style="text-align:center;">F&eacute;licitations <%= username %> !</h2>
+      <p>Votre annonce <strong>&laquo;&nbsp;<%= announcementTitle %>&nbsp;&raquo;</strong> a &eacute;t&eacute; v&eacute;rifi&eacute;e et approuv&eacute;e par notre &eacute;quipe. Elle est d&eacute;sormais visible par tous les utilisateurs de RentHub.</p>
+
+      <div style="background:#f0fdf4; border-radius:10px; padding:16px 20px; margin:20px 0;">
+        <p style="margin:0; color:#166534; font-size:14px; text-align:center;">
+          Votre annonce est maintenant en ligne et visible dans les r&eacute;sultats de recherche.
+        </p>
+      </div>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Vous pouvez consulter et g&eacute;rer vos annonces &agrave; tout moment depuis votre tableau de bord.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>
