@@ -23,7 +23,7 @@ datasource db {
 // ---------------------------------------------------------------------------
 
 model Role {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   code      String   @unique // FARMER, BUYER, DRIVER, ADMIN, ROOT
   label     String
   level     Int      @default(10) // hiérarchie : 10 = opérationnel, 50 = admin, 100 = root
@@ -36,7 +36,7 @@ model Role {
 }
 
 model UserStatus {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   code      String   @unique // ACTIVE, SUSPENDED
   label     String
   createdAt DateTime @default(now())
@@ -45,7 +45,7 @@ model UserStatus {
 }
 
 model ListingStatus {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   code      String   @unique // ACTIVE, SOLD, INACTIVE
   label     String
   createdAt DateTime @default(now())
@@ -54,7 +54,7 @@ model ListingStatus {
 }
 
 model ListingCategory {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   code      String   @unique // CEREALES, LEGUMES, FRUITS, ...
   label     String
   isActive  Boolean  @default(true)
@@ -64,7 +64,7 @@ model ListingCategory {
 }
 
 model DeliveryMode {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   code      String   @unique // PICKUP, DELIVERY
   label     String
   createdAt DateTime @default(now())
@@ -73,7 +73,7 @@ model DeliveryMode {
 }
 
 model MediaType {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   code      String   @unique // IMAGE, VIDEO, DOCUMENT
   label     String
   createdAt DateTime @default(now())
@@ -83,11 +83,11 @@ model MediaType {
 }
 
 model MimeType {
-  id          String    @id @default(uuid())
+  id          Int    @id @default(autoincrement())
   code        String    @unique // image/jpeg, image/png, video/mp4, application/pdf...
   extension   String    // .jpg, .png, .mp4, .pdf
   mediaType   MediaType @relation(fields: [mediaTypeId], references: [id])
-  mediaTypeId String
+  mediaTypeId Int
   createdAt   DateTime  @default(now())
 
   media Media[]
@@ -104,15 +104,15 @@ model MimeType {
 // ---------------------------------------------------------------------------
 
 model Media {
-  id             String    @id @default(uuid())
+  id             Int    @id @default(autoincrement())
   ownerUser      User?     @relation(fields: [ownerUserId], references: [id])
-  ownerUserId    String?
+  ownerUserId    Int?
   ownerListing   Listing?  @relation(fields: [ownerListingId], references: [id])
-  ownerListingId String?
+  ownerListingId Int?
   mediaType      MediaType @relation(fields: [mediaTypeId], references: [id])
-  mediaTypeId    String
+  mediaTypeId    Int
   mimeType       MimeType  @relation(fields: [mimeTypeId], references: [id])
-  mimeTypeId     String
+  mimeTypeId     Int
   url            String    @db.VarChar(500)
   fileSize       Int?
   width          Int?
@@ -142,15 +142,16 @@ enum DeliveryStatus {
 }
 
 model User {
-  id           String     @id @default(uuid())
-  fullName     String
+  id           Int     @id @default(autoincrement())
+  firstname     String
+  lastname     String
   phone        String     @unique
-  email        String?    @unique
+  email        String    @unique
   password     String
   role         Role       @relation(fields: [roleId], references: [id])
-  roleId       String
+  roleId       Int
   userStatus   UserStatus @relation(fields: [userStatusId], references: [id])
-  userStatusId String
+  userStatusId Int
   location     String?
   latitude     Float?
   longitude    Float?
@@ -158,6 +159,7 @@ model User {
   vehicleType  String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+  verified     Boolean    @default(false)
 
   listings              Listing[]
   conversationsAsBuyer  Conversation[] @relation("BuyerConversations")
@@ -174,12 +176,12 @@ model User {
 }
 
 model Listing {
-  id          String          @id @default(uuid())
+  id          Int          @id @default(autoincrement())
   farmer      User            @relation(fields: [farmerId], references: [id])
-  farmerId    String
+  farmerId    Int
   title       String
   category    ListingCategory @relation(fields: [categoryId], references: [id])
-  categoryId  String
+  categoryId  Int
   price       Float
   quantity    Float
   unit        String
@@ -188,7 +190,7 @@ model Listing {
   longitude   Float?
   description String?  @db.Text
   status      ListingStatus   @relation(fields: [statusId], references: [id])
-  statusId    String
+  statusId    Int
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -203,13 +205,13 @@ model Listing {
 }
 
 model Conversation {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   listing   Listing  @relation(fields: [listingId], references: [id])
-  listingId String
+  listingId Int
   buyer     User     @relation("BuyerConversations", fields: [buyerId], references: [id])
-  buyerId   String
+  buyerId   Int
   farmer    User     @relation("FarmerConversations", fields: [farmerId], references: [id])
-  farmerId  String
+  farmerId  Int
   createdAt DateTime @default(now())
 
   messages Message[]
@@ -218,11 +220,11 @@ model Conversation {
 }
 
 model Message {
-  id             String       @id @default(uuid())
+  id             Int       @id @default(autoincrement())
   conversation   Conversation @relation(fields: [conversationId], references: [id])
-  conversationId String
+  conversationId Int
   sender         User         @relation(fields: [senderId], references: [id])
-  senderId       String
+  senderId       Int
   content        String       @db.Text
   read           Boolean      @default(false)
   createdAt      DateTime     @default(now())
@@ -231,18 +233,18 @@ model Message {
 }
 
 model Order {
-  id                String       @id @default(uuid())
+  id                Int       @id @default(autoincrement())
   listing           Listing      @relation(fields: [listingId], references: [id])
-  listingId         String
+  listingId         Int
   buyer             User         @relation("BuyerOrders", fields: [buyerId], references: [id])
-  buyerId           String
+  buyerId           Int
   farmer            User         @relation("FarmerOrders", fields: [farmerId], references: [id])
-  farmerId          String
+  farmerId          Int
   quantity          Float
   unitPrice         Float
   totalPrice        Float
   deliveryMode      DeliveryMode @relation(fields: [deliveryModeId], references: [id])
-  deliveryModeId    String
+  deliveryModeId    Int
   deliveryAddress   String?     @db.Text
   deliveryLatitude  Float?
   deliveryLongitude Float?
@@ -259,11 +261,11 @@ model Order {
 }
 
 model Delivery {
-  id               String         @id @default(uuid())
+  id               Int         @id @default(autoincrement())
   order            Order          @relation(fields: [orderId], references: [id])
-  orderId          String         @unique
+  orderId          Int         @unique
   driver           User?          @relation("DriverDeliveries", fields: [driverId], references: [id])
-  driverId         String?
+  driverId         Int?
   status           DeliveryStatus @default(PENDING)
   pickupLatitude   Float?
   pickupLongitude  Float?
@@ -282,10 +284,10 @@ model Delivery {
 }
 
 model RefreshToken {
-  id        String   @id @default(uuid())
+  id        Int   @id @default(autoincrement())
   token     String   @unique
   user      User     @relation(fields: [userId], references: [id])
-  userId    String
+  userId    Int
   expiresAt DateTime
   revoked   Boolean  @default(false)
   createdAt DateTime @default(now())

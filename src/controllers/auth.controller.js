@@ -20,18 +20,37 @@ async function issueRefreshToken(userId) {
   await prisma.refreshToken.create({ data: { token: hashToken(rawToken), userId, expiresAt } });
   return rawToken;
 }
-
+function userFullName(user) {
+  return `${user.firstname} ${user.lastname}`;
+}
+function safeUserToApi(user) {
+  return {
+    id: user.id,
+    firstname: user.firstname,
+    lastname: user.lastname,
+    email: user.email,
+    phone: user.phone,
+    role: user.role.label,
+    userStatus: user.userStatus.label,
+    vehicleType: user.vehicleType,
+    isAvailable: user.isAvailable,
+  };
+}
 // POST /api/auth/register
 export const register = async (req, res) => {
-  const { fullName, phone, email, password, role, location, vehicleType } = req.body;
+  const { firstname, lastname, phone, email, password, role, location, vehicleType } = req.body;
 
   if (!PUBLIC_ROLES.includes(role)) {
     return res.status(400).json({ error: 'role doit être FARMER, BUYER ou DRIVER' });
   }
 
-  const existing = await prisma.user.findUnique({ where: { phone } });
-  if (existing) {
+  const existingPhone = await prisma.user.findUnique({ where: { phone } });
+  if (existingPhone) {
     return res.status(409).json({ error: 'Un compte existe déjà avec ce numéro' });
+  }
+  const existingEmail = await prisma.user.findUnique({ where: { email } });
+  if (existingEmail) {
+    return res.status(409).json({ error: 'Un compte existe déjà avec cet email' });
   }
 
   const [roleId, userStatusId] = await Promise.all([
@@ -43,7 +62,8 @@ export const register = async (req, res) => {
 
   const user = await prisma.user.create({
     data: {
-      fullName,
+      firstname,
+      lastname,
       phone,
       email,
       password: hashedPassword,
@@ -64,20 +84,20 @@ export const register = async (req, res) => {
       to: user.email,
       subject: 'Bienvenue sur AgriConnect',
       template: 'welcome',
-      data: { fullName: user.fullName, roleLabel: user.role.label },
+      data: { fullName: userFullName(user), roleLabel: user.role.label },
     }).catch((err) => console.error('Email de bienvenue non envoyé:', err.message));
   }
 
-  const { password: _pw, ...userSafe } = user;
-  res.status(201).json({ user: userSafe, accessToken, refreshToken });
+  // const { password: _pw, ...userSafe } = user;
+  res.status(201).json({ user: safeUserToApi(user), accessToken, refreshToken });
 };
 
 // POST /api/auth/login
 export const login = async (req, res) => {
-  const { phone, password } = req.body;
+  const { email, password } = req.body;
 
   const user = await prisma.user.findUnique({
-    where: { phone },
+    where: { email },
     include: { role: true, userStatus: true },
   });
   if (!user) {
@@ -97,8 +117,8 @@ export const login = async (req, res) => {
   const accessToken = generateToken({ id: user.id, role: user.role.code });
   const refreshToken = await issueRefreshToken(user.id);
 
-  const { password: _pw, ...userSafe } = user;
-  res.json({ user: userSafe, accessToken, refreshToken });
+  // const { password: _pw, ...userSafe } = user;
+  res.json({ user: safeUserToApi(user), accessToken, refreshToken });
 };
 
 // POST /api/auth/refresh
