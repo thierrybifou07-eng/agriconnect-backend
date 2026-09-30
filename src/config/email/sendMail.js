@@ -22,7 +22,16 @@ async function getHtmlContent(template, props = {}) {
     }
     return htmlContent
 }
+// Neutralisation pour les tests : aucun envoi reel ne doit partir depuis une
+// base de test, et aucune connexion SMTP ne doit etre tentee.
+const isDisabled = () => process.env.SMTP_DISABLED === '1';
+
 export const sendTemplateEmail = async (to, subject, template, props = {}) => {
+    if (isDisabled()) {
+        console.log(`[mail] envoi ignore (SMTP_DISABLED) : "${subject}" a ${to}`);
+        return null;
+    }
+
     const html = await getHtmlContent(template, props)
     const mailOptions = {
         from: process.env.EMAIL_SENDER,
@@ -35,6 +44,11 @@ export const sendTemplateEmail = async (to, subject, template, props = {}) => {
 };
 
 export const sendEmail = async (userEmail, subject, message) => {
+    if (isDisabled()) {
+        console.log(`[mail] envoi ignore (SMTP_DISABLED) : "${subject}" a ${userEmail}`);
+        return null;
+    }
+
     const mailOptions = {
         from: process.env.EMAIL_SENDER,
         to: userEmail,
