@@ -3,6 +3,7 @@ import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
 import { createListing, createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
+import { toNumber } from '../../src/utils/money.js';
 
 // ---------------------------------------------------------------------------
 // Ces tests reproduisent le defaut B2 : order.validator.js exige que listingId
@@ -59,7 +60,10 @@ describe('B2 - POST /api/orders doit accepter un listingId entier', () => {
       .send({ listingId: listing.id, quantity: 30, deliveryMode: 'PICKUP' });
 
     const apres = await prisma.listing.findUnique({ where: { id: listing.id } });
-    expect(apres.quantity).toBe(70);
+    // quantity est une colonne DECIMAL : Prisma renvoie un objet Decimal, que
+    // l'API convertit en nombre au moment de la reponse HTTP. Ici on lit la
+    // base directement, il faut donc convertir explicitement.
+    expect(toNumber(apres.quantity)).toBe(70);
   });
 
   it('calcule le total au prix unitaire de l annonce', async () => {

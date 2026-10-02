@@ -1,5 +1,6 @@
 import prisma from '../config/prisma.js';
 import { haversineDistanceKm, calculateDeliveryFee } from '../utils/distance.js';
+import { asMoney, asQuantity } from '../utils/money.js';
 import { getLookupId } from '../utils/lookupCache.js';
 
 const orderInclude = {
@@ -34,18 +35,24 @@ export const createOrder = async (req, res) => {
     if (listing.farmerId === req.user.id) {
       throw Object.assign(new Error('Vous ne pouvez pas commander votre propre annonce'), { statusCode: 400 });
     }
-    if (quantity > listing.quantity) {
+    // price et quantity sont des Decimal : toute comparaison ou soustraction
+    // faite avec les operateurs JS donnerait NaN. On travaille donc avec les
+    // methodes Decimal, qui sont exactes.
+    const available = listing.quantity;
+    const requested = asQuantity(quantity);
+
+    if (requested.gt(available)) {
       throw Object.assign(
-        new Error(`Quantité demandée (${quantity}) supérieure au stock disponible (${listing.quantity})`),
+        new Error(`Quantité demandée (${requested.toString()}) supérieure au stock disponible (${available.toString()})`),
         { statusCode: 400 }
       );
     }
 
-    const totalPrice = Math.round(listing.price * quantity * 100) / 100;
-    const remaining = listing.quantity - quantity;
+    const totalPrice = asMoney(listing.price.mul(requested));
+    const remaining = asQuantity(available.minus(requested));
 
     const listingUpdateData = { quantity: remaining };
-    if (remaining === 0) {
+    if (remaining.isZero()) {
       listingUpdateData.statusId = await getLookupId('listingStatus', 'SOLD');
     }
 
@@ -56,7 +63,7 @@ export const createOrder = async (req, res) => {
         listingId,
         buyerId: req.user.id,
         farmerId: listing.farmerId,
-        quantity,
+        quantity: requested,
         unitPrice: listing.price,
         totalPrice,
         deliveryModeId,
@@ -140,7 +147,9 @@ export const confirmOrder = async (req, res) => {
           dropoffLatitude: order.deliveryLatitude,
           dropoffLongitude: order.deliveryLongitude,
           distanceKm,
-          deliveryFee: calculateDeliveryFee(distanceKm),
+          // Les frais sont un montant : ils sont arrondis au centime avant
+          // d'atteindre la colonne DECIMAL, comme tous les autres.
+          deliveryFee: asMoney(calculateDeliveryFee(distanceKm)),
         },
       });
     }
@@ -169,7 +178,9 @@ export const cancelOrder = async (req, res) => {
     const listing = await tx.listing.findUnique({ where: { id: order.listingId } });
     if (listing) {
       const soldStatusId = await getLookupId('listingStatus', 'SOLD');
-      const listingUpdateData = { quantity: listing.quantity + order.quantity };
+      // Stock restitue a l'annulation. Les deux quantites sont des Decimal : on
+      //additionne donc avec plus() plutot qu avec l operateur +.
+      const listingUpdateData = { quantity: asQuantity(listing.quantity.plus(order.quantity)) };
       if (listing.statusId === soldStatusId) {
         listingUpdateData.statusId = await getLookupId('listingStatus', 'ACTIVE');
       }

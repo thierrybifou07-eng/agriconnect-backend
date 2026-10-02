@@ -3,6 +3,7 @@ import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
 import { createListing, createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
+import { toNumber } from '../../src/utils/money.js';
 
 // Les regles .external() des validateurs verifient en base qu'une valeur de
 // reference existe (categorie, statut, mode de livraison). Elles etaient
@@ -102,6 +103,8 @@ describe('Valeurs de reference invalides - mise a jour d annonce', () => {
       .send({ price: 999, category: 'ROBOTES' });
 
     const apres = await prisma.listing.findUnique({ where: { id: listing.id } });
-    expect(apres.price).toBe(250);
+    // price est une colonne DECIMAL : cf. le commentaire du meme test dans
+    // regression-order-creation.test.js.
+    expect(toNumber(apres.price)).toBe(250);
   });
 });

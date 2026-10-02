@@ -3,8 +3,12 @@ import cors from 'cors';
 import routes from './routes/index.js';
 import { notFound, errorHandler } from './middlewares/error.middleware.js';
 import { apiLimiter } from './middlewares/rateLimit.middleware.js';
+import { decimalAsNumber } from './middlewares/decimal-json.middleware.js';
 
 const app = express();
+
+// Avant toute route : les montants stockes en Decimal doivent partir en nombres.
+app.use(decimalAsNumber);
 
 app.use(cors());
 app.use(express.json());

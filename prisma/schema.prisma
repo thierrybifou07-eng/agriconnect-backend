@@ -182,8 +182,8 @@ model Listing {
   title       String
   category    ListingCategory @relation(fields: [categoryId], references: [id])
   categoryId  Int
-  price       Float
-  quantity    Float
+  price       Decimal        @db.Decimal(10, 2)
+  quantity    Decimal        @db.Decimal(12, 3)
   unit        String
   location    String
   latitude    Float?
@@ -240,9 +240,9 @@ model Order {
   buyerId           Int
   farmer            User         @relation("FarmerOrders", fields: [farmerId], references: [id])
   farmerId          Int
-  quantity          Float
-  unitPrice         Float
-  totalPrice        Float
+  quantity          Decimal     @db.Decimal(12, 3)
+  unitPrice         Decimal     @db.Decimal(10, 2)
+  totalPrice        Decimal     @db.Decimal(10, 2)
   deliveryMode      DeliveryMode @relation(fields: [deliveryModeId], references: [id])
   deliveryModeId    Int
   deliveryAddress   String?     @db.Text
@@ -272,7 +272,7 @@ model Delivery {
   dropoffLatitude  Float?
   dropoffLongitude Float?
   distanceKm       Float?
-  deliveryFee      Float?
+  deliveryFee      Decimal?     @db.Decimal(10, 2)
   assignedAt       DateTime?
   pickedUpAt       DateTime?
   deliveredAt      DateTime?
