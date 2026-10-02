@@ -126,7 +126,48 @@ describe('B2 - les garde-fous de creation de commande', () => {
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 1, deliveryMode: 'TORTUE' });
 
-    expect(res.status).toBe(400);
+    // Une valeur de reference inconnue est une faute de saisie du client : elle
+    // doit produire un 400 detaille, pas une erreur serveur.
+    expect(res.status, res.text).toBe(400);
+    expect(res.body.error).toBe('Données invalides');
+    expect(res.body.details[0]).toMatchObject({ field: 'deliveryMode' });
+  });
+
+  it('refuse un listingId non numerique', async () => {
+    const { token } = await buyerToken();
+
+    const res = await client
+      .post('/api/orders')
+      .set(authHeader(token))
+      .send({ listingId: 'pas-un-id', quantity: 1, deliveryMode: 'PICKUP' });
+
+    expect(res.status, res.text).toBe(400);
+    expect(res.body.details[0].field).toBe('listingId');
+  });
+
+  it('refuse un listingId negatif ou decimal', async () => {
+    const { token } = await buyerToken();
+
+    for (const listingId of [-1, 0, 2.5]) {
+      const res = await client
+        .post('/api/orders')
+        .set(authHeader(token))
+        .send({ listingId, quantity: 1, deliveryMode: 'PICKUP' });
+
+      expect(res.status, `listingId ${listingId}`).toBe(400);
+    }
+  });
+
+  it('repond 404 si l annonce n existe pas', async () => {
+    const { token } = await buyerToken();
+
+    const res = await client
+      .post('/api/orders')
+      .set(authHeader(token))
+      .send({ listingId: 999999, quantity: 1, deliveryMode: 'PICKUP' });
+
+    // 404 et non 500 : l absence de ressource est une situation normale.
+    expect(res.status, res.text).toBe(404);
   });
 
   it('refuse un acheteur non authentifie', async () => {

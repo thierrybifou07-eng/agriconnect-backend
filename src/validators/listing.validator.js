@@ -1,21 +1,24 @@
 import Joi from 'joi';
 import prisma from '../config/prisma.js';
 
+// Meme correction que dans order.validator.js : helpers.error leve une vraie
+// erreur Joi, donc un 400 detaille, la ou un throw renvoyait un 500. Le message
+// reste celui de Joi, .messages() n'ayant pas d'effet sur une regle .external().
 const categoryRule = Joi.string()
   .trim()
-  .external(async (code) => {
+  .external(async (code, helpers) => {
     if (code === undefined) return code;
     const exists = await prisma.listingCategory.findUnique({ where: { code } });
-    if (!exists) throw new Error('category invalide');
+    if (!exists) return helpers.error('any.invalid');
     return code;
   });
 
 const statusRule = Joi.string()
   .trim()
-  .external(async (code) => {
+  .external(async (code, helpers) => {
     if (code === undefined) return code;
     const exists = await prisma.listingStatus.findUnique({ where: { code } });
-    if (!exists) throw new Error('status invalide');
+    if (!exists) return helpers.error('any.invalid');
     return code;
   });
 
