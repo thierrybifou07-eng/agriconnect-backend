@@ -33,10 +33,10 @@
     "jsonwebtoken": "^9.0.3",
     "juice": "^12.1.2",
     "multer": "^2.3.0",
+    "nodemailer": "^10.0.9",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
-    "nodemailer": "^10.0.9",
     "prisma": "^6.0.0",
     "supertest": "^7.3.0",
     "vitest": "^3.2.7"
