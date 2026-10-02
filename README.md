@@ -2,21 +2,20 @@
 
 API REST + WebSocket pour la marketplace agricole AgriConnect (agriculteurs / acheteurs / livreurs / admin / root).
 
+Ce document ne décrit que ce qui a été vérifié en exécutant le code. Les
+affirmations de la version précédente qui ne tenaient pas à l'exécution ont été
+retirées plutôt que reformulées.
+
 ## Stack
 
-- Node.js (ESM natif, `"type": "module"`) + Express 5
-- MySQL + Prisma 7 (ORM)
+- Node.js (ESM natif, `"type": "module"`) + Express 5.2
+- MySQL + Prisma **6.19.3** (ORM)
 - JWT (access token courte durée + refresh token)
 - Socket.io (messagerie temps réel)
-- Cloudinary (stockage des médias, upload direct via buffer)
+- Cloudinary (stockage des médias, upload via buffer)
 - Joi (validation d'entrée) + express-rate-limit (anti brute-force)
-- bcrypt (natif), ejs + juice (scaffoldés pour de futurs emails transactionnels — non câblés, voir plus bas)
-
-## Corrections apportées à la stack demandée
-
-- **`prisma`/`@prisma/client` réalignés en 7.10.0** : la version fournie mélangeait `prisma@^8.0.0-rc.13` (release candidate, GA prévue octobre 2026) avec `@prisma/client@^5.18.0`. Les deux packages doivent être en version strictement assortie ; Prisma 7 est la version stable recommandée par l'éditeur en attendant la 8 finale.
-- **`bcryptjs` retiré**, doublon de `bcrypt` (gardé, plus rapide, versionné explicitement).
-- **`mysql2` retiré des dépendances directes** : inutile avec le générateur `prisma-client-js` classique (le moteur gère nativement la connexion MySQL). Il reste présent en **dépendance transitive du CLI `prisma`** (devDependency) - voir la section vulnérabilités ci-dessous.
+- bcrypt, ejs + juice + nodemailer (emails transactionnels)
+- Vitest + Supertest (tests, voir « Tests »)
 
 ## Installation
 
@@ -25,69 +24,123 @@ npm install
 cp .env.example .env
 # -> renseigner DATABASE_URL (mysql://...), JWT_SECRET, identifiants Cloudinary
 
-npm run prisma:migrate
-npm run seed          # peuple les tables de référence
-npm run create:root   # crée le compte ROOT en interactif - JAMAIS via l'API
+npm run prisma:generate   # si le client Prisma n'est pas déjà à jour
+npm run prisma:migrate    # applique les migrations
+npm run seed              # peuple les tables de référence
+npm run create:root       # crée le compte ROOT en interactif - JAMAIS via l'API
 npm run dev
 ```
 
-**Validé dans l'environnement de build** : syntaxe ESM de tous les fichiers, câblage routes/controllers, `npm install`, et **chargement réel de l'application** (`import('./src/app.js')`) jusqu'au point où seule la génération du client Prisma (réseau vers `binaries.prisma.sh`, indisponible ici) bloque la suite — à faire chez toi, où l'accès est normal.
+## Tests
 
-**Bug réel trouvé et corrigé en testant l'exécution** (pas juste la syntaxe) : `import { PrismaClient } from '@prisma/client'` échoue en interop CommonJS→ESM selon l'environnement Node. Utilisé à la place :
-```js
-import pkg from '@prisma/client';
-const { PrismaClient } = pkg;
+```bash
+npm test                  # tout
+npm run test:unit         # arithmétique, JWT, refresh tokens (aucune base)
+npm run test:integration  # HTTP sur une base dédiée
 ```
 
-## Vulnérabilités (`npm audit`)
+La suite d'intégration utilise une base **`agriconnect_test`** dont le nom est
+déduit de `DATABASE_URL` dans `.env` : les données de développement ne sont
+jamais tronquées. `globalSetup` crée la base si elle n'existe pas, applique les
+migrations avec `migrate deploy` et joue le seed. Chaque test repart de tables
+métier vides ; les tables de référence sont conservées.
 
-4 failles **haute sévérité** signalées, mais **toutes dans des devDependencies du CLI `prisma`** (`mysql2`, `deepmerge-ts`), jamais dans `@prisma/client` (la librairie qui tourne réellement dans le serveur en production) :
-```
-mysql2@3.15.3 <- prisma@7.10.0 (devDependency) <- jamais utilisé au runtime
-```
-En déploiement avec `npm ci --omit=dev`, ces packages ne sont même pas installés. Un `npm audit fix --force` proposerait de downgrader vers `prisma@6.19.3` : **déconseillé**, ça sacrifie une version stable et récente pour corriger une faille qui n'affecte que l'outil de développement, pas le serveur exposé. À surveiller côté mises à jour Prisma plutôt qu'à corriger dans l'urgence.
+MySQL doit tourner. Les tests n'utilisent aucun SMTP (`SMTP_DISABLED`) et
+l'anti-brute-force est neutralisé, sauf dans `rate-limit.test.js` qui le
+réactive explicitement pour le vérifier.
 
-## Express 5 : simplifications obtenues
+## Points où le comportement peut surprendre
 
-- Les erreurs (sync ou rejets de Promise) dans les controllers remontent **automatiquement** au middleware d'erreur — le wrapper `asyncHandler` utilisé dans les versions précédentes du backend a été **supprimé**, tous les controllers sont maintenant de simples fonctions `async`.
-- Le parseur de query string par défaut change en v5, ce qui **résout** la vulnérabilité `qs` qui affectait Express 4 (notée dans une itération précédente de ce projet).
+- **Les identifiants de route sont des entiers.** Express fournit
+  `req.params` en chaîne ; les routeurs le convertissent via `router.param`.
+  Sans cela, chaque route `/:id` répondait 500.
+- **`price`, `unitPrice`, `totalPrice`, `deliveryFee`, `quantity` sont des
+  `DECIMAL`.** Prisma renvoie un objet `Decimal`, l'arithmétique se fait avec
+  `mul`/`minus`/`plus`, et `decimal-json.middleware.js` convertit en nombre au
+  moment de la réponse JSON pour que le contrat de l'API reste « nombre ».
+  Voir `src/utils/money.js`.
+- **Le nom est en deux colonnes**, `firstname` et `lastname`. Il n'existe pas de
+  colonne `fullName`.
+- **Une annonce qui a des commandes ne peut pas être supprimée** : la route
+  répond 409 et propose la désactivation. Les conversations et les photos de
+  l'annonce partent avec elle ; une photo de profil ne part pas.
+- **Les emails ne font jamais échouer une requête.** L'envoi part en
+  arrière-plan et journalise son échec. `POST /api/auth/register` ne renvoie donc
+  plus de champ `emailSent` : sans attendre l'envoi, il ne pouvait être ni vrai
+  ni faux.
+- **CORS est ouvert si `CORS_IO` est vide.** `cors()` sans option accepte toute
+  origine ; il faut renseigner `CORS_IO` en production.
+
+## Express 5
+
+- Les erreurs (sync ou rejets de Promise) des contrôleurs remontent
+  automatiquement au middleware d'erreur. Aucun wrapper `asyncHandler` n'est
+  nécessaire, et le wrapper mort qui restait (écrit en CommonJS dans un projet
+  ESM, il aurait planté à l'import) a été supprimé.
+- Le parseur de query string par défaut change en v5, ce qui résout la
+  vulnérabilité `qs` qui affectait Express 4.
 
 ## Validation avec Joi
 
-`src/middlewares/validate.middleware.js` expose `validate(schema, property)`, utilisé en middleware de route (`validate(registerSchema)`). Utilise `schema.validateAsync()` pour supporter aussi bien les règles synchrones que les règles `.external()` asynchrones (ex: vérifier qu'une `category` existe bien dans `ListingCategory` avant de créer une annonce).
+`src/middlewares/validate.middleware.js` expose `validate(schema, property)`,
+utilisé en middleware de route. Il s'appuie sur `schema.validateAsync()` pour
+supporter aussi les règles `.external()` asynchrones (vérifier qu'une catégorie
+existe bien avant de créer une annonce).
 
-## MySQL : différences avec PostgreSQL à connaître
+Ces règles signalent leurs échecs avec `helpers.error()` et non `throw` : une
+`Error` ordinaire sort de `validateAsync` sans être une erreur Joi, le
+middleware ne la reconnaît pas et répond 500 au lieu de 400.
 
-- **Pas de `mode: 'insensitive'`** sur les filtres `contains` : ce connecteur Prisma ne le supporte pas. La sensibilité à la casse dépend désormais de la **collation** de la base (`utf8mb4_general_ci`/`utf8mb4_0900_ai_ci` sont insensibles à la casse par défaut - vérifie la collation de tes tables si la recherche te semble trop stricte).
-- **Pas de champs `String[]`** : ce backend n'en avait déjà plus (le système `Media` remplace `photos[]`), donc rien à adapter ici.
-- Champs texte potentiellement longs passés en `@db.Text` explicitement (`Listing.description`, `Message.content`, `Order.deliveryAddress`) pour éviter la troncature à 191 caractères par défaut de Prisma sur MySQL.
+## MySQL : différences avec PostgreSQL
 
-## Emails transactionnels (ejs + juice + nodemailer)
+- **Pas de `mode: 'insensitive'`** sur les filtres `contains`. La sensibilité à la
+  casse dépend de la **collation** de la base.
+- Champs texte longs passés en `@db.Text` explicitement (`Listing.description`,
+  `Message.content`, `Order.deliveryAddress`) pour éviter la troncature à 191
+  caractères.
 
-Infrastructure complète et **testée en exécution réelle** (rendu de template + inlining CSS + envoi confirmés, pas juste vérifiés syntaxiquement) :
+## Emails transactionnels
 
-- `src/config/mailer.js` : transport SMTP générique (compatible Gmail, SendGrid, Mailgun, tout serveur SMTP) via variables d'environnement
-- `src/utils/renderEmail.js` : rend un template EJS (`src/emails/templates/*.ejs`) puis inline le CSS avec `juice` (nécessaire car la plupart des clients email ignorent les balises `<style>`)
-- `src/utils/sendMail.js` : enveloppe l'envoi. **Si `SMTP_HOST` n'est pas renseigné, l'email est simplement journalisé** au lieu d'échouer - pratique en développement local sans configuration SMTP
-- Envoi toujours **non-bloquant** (`.catch()` côté appelant) : un échec d'email ne doit jamais faire échouer une inscription
+- `src/config/email/transport.js` : transport SMTP construit **exclusivement
+  depuis l'environnement**. Sans `SMTP_HOST`, aucun transport n'est créé et
+  l'envoi devient un no-op journalisé.
+- `src/config/email/sendMail.js` : rend un gabarit EJS puis inline le CSS avec
+  `juice` (les clients email ignorent les feuilles de style externes), et envoie.
+  `renderTemplate` est exporté pour pouvoir vérifier le rendu sans SMTP.
+- Gabarits dans `views/emails/<nom>/email.ejs`, parties communes dans
+  `views/emails/_shared/`. Résolus depuis la racine du projet, pas depuis le
+  répertoire courant.
+- `EMAIL_SENDER` doit être une adresse complète (`"AgriConnect <no-reply@…>"`) :
+  la plupart des serveurs SMTP refusent une adresse nue.
 
-**Déclencheurs câblés** :
-- Email de bienvenue à l'inscription (`POST /api/auth/register`), si un email a été renseigné (il est optionnel)
-- Notification à la création d'un compte ADMIN par ROOT (jamais le mot de passe dans l'email)
+**Déclencheurs câblés** : inscription, création d'un compte ADMIN par ROOT.
 
-**Non câblé, à définir ensemble si besoin** : confirmation de commande, réinitialisation de mot de passe (nécessite un flux de token dédié, inexistant actuellement), notification de suspension. La même infrastructure (`sendMail` + un nouveau template `.ejs`) suffit pour les ajouter.
+**Non câblé, à définir si besoin** : confirmation de commande, réinitialisation
+de mot de passe (nécessite un flux de token dédié, inexistant), notification de
+suspension. Un nouveau dossier de gabarit et un appel à `sendTemplateEmail`
+suffisent.
 
 ## Architecture des rôles et tables de référence
 
-`Role` (avec hiérarchie `level` : 10 opérationnel / 50 ADMIN / 100 ROOT), `UserStatus`, `ListingStatus`, `ListingCategory`, `DeliveryMode`, `MediaType`, `MimeType` vivent en **tables**, extensibles sans déploiement. `OrderStatus`/`DeliveryStatus` restent des **enums Postgres... pardon, MySQL** (Prisma supporte les enums natifs sur MySQL) : ce sont des machines à états déjà câblées en code (`VALID_TRANSITIONS`).
+`Role` (hiérarchie `level` : 10 opérationnel / 50 ADMIN / 100 ROOT), `UserStatus`,
+`ListingStatus`, `ListingCategory`, `DeliveryMode`, `MediaType`, `MimeType`
+vivent en **tables**, extensibles sans déploiement. `OrderStatus` et
+`DeliveryStatus` sont des **enums MySQL** : ce sont des machines à états déjà
+câblées en code.
 
-`ROOT` : créé uniquement via `npm run create:root` (jamais via l'API). Seul rôle habilité à créer un `ADMIN` (`POST /api/admin/users`). Un compte suspendu est bloqué à 3 niveaux : `protect`, `login`, `refresh`.
+`ROOT` est créé uniquement via `npm run create:root`, jamais via l'API. Seul rôle
+habilité à créer un `ADMIN` (`POST /api/admin/users`). Un compte suspendu est
+bloqué à 3 niveaux : `protect`, `login`, `refresh`.
 
 ## Système de médias
 
-`Listing.photos`/`User.avatarUrl` sont remplacés par la table **`Media`** (`ownerUserId` ou `ownerListingId` + `mediaType`/`mimeType`). Nouvel endpoint : `POST /api/users/me/avatar`.
+La table **`Media`** (`ownerUserId` **ou** `ownerListingId`, plus `mediaType` et
+`mimeType`) remplace les champs `photos[]` et `avatarUrl`. Points d'entrée :
+`POST /api/users/me/avatar` et `POST /api/listings/:id/photos`.
 
-**Changement d'API côté Flutter** : `listing.category`/`listing.status` sont des objets (`{code, label}`), `listing.photos` devient `listing.media`, `user.avatarUrl` disparaît au profit de `GET /api/users/me` → champ `media`.
+**Côté client Flutter** : `listing.category` et `listing.status` sont des objets
+`{code, label}`, `listing.photos` devient `listing.media`, `user.avatarUrl`
+disparaît au profit du champ `media` de `GET /api/users/me`.
 
 ## Endpoints principaux
 
@@ -97,20 +150,43 @@ Infrastructure complète et **testée en exécution réelle** (rendu de template
 | Users | `GET/PATCH /me`, `POST /me/avatar`, `PATCH /me/availability` |
 | Listings | `GET /`, `GET/PATCH/DELETE /:id`, `POST /`, `POST /:id/photos` |
 | Conversations | `GET/POST /`, `GET/POST /:id/messages` |
-| Orders | `POST /`, `GET /`, `PATCH /:id/{confirm,cancel,complete}` |
+| Orders | `POST /`, `GET /`, `GET /:id`, `PATCH /:id/{confirm,cancel,complete}` |
 | Deliveries (livreur) | `GET /available`, `GET /mine`, `POST /:id/accept`, `PATCH /:id/status` |
 | Admin (niveau ≥ 50) | `GET /users`, `PATCH /users/:id/{suspend,reactivate}`, `POST /users` (ROOT), `GET /orders`, `GET /stats`, `PATCH /listings/:id/deactivate` |
 
 ## Flux commande → livraison
 
 1. Commande créée → stock décrémenté immédiatement (transaction)
-2. Confirmation agriculteur → `READY_FOR_PICKUP` ou `IN_DELIVERY` + création atomique de la `Delivery`
-3. Livreur disponible, sans course active, accepte (premier arrivé, premier servi) → devient indisponible
-4. `ASSIGNED → PICKED_UP → IN_TRANSIT → DELIVERED` → commande `DELIVERED`, livreur redisponible
-5. Annulation : restitution du stock, réactivation de l'annonce si besoin, libération du livreur - tout transactionnel
+2. Confirmation agriculteur → `READY_FOR_PICKUP` ou `IN_DELIVERY` + création
+   atomique de la `Delivery`
+3. Livreur disponible, sans course active, accepte (premier arrivé, premier
+   servi) → devient indisponible
+4. `ASSIGNED → PICKED_UP → IN_TRANSIT → DELIVERED` → commande `DELIVERED`,
+   livreur redisponible
+5. Annulation : restitution du stock, réactivation de l'annonce si besoin,
+   libération du livreur — le tout en transaction
 
-**Toujours volontairement absent** : dispatch automatique par quota (mode pull assumé).
+Ce flux est couvert par `tests/integration/resource-routes.test.js`. Il était
+inatteignable avant correction : la création de commande était rejetée par la
+validation, et toutes les routes paramétrées répondaient 500.
+
+**Volontairement absent** : dispatch automatique par quota (mode pull assumé).
+
+## Vulnérabilités connues (`npm audit`)
+
+6 signalements (3 modérés, 3 hauts) au dernier audit :
+
+- `deepmerge-ts` (haut) et `@vitest/mocker` (modéré) : n'arrivent que par le CLI
+  `prisma` et `vitest`, tous deux en `devDependencies`. Absents d'un déploiement
+  `npm ci --omit=dev`.
+- Les correctifs proposés passent chacun par une version majeure de `vitest` ou
+  de `prisma`. Ils ne sont pas appliqués : le risque porte sur l'outillage, pas
+  sur le serveur exposé.
+
+`multer` a été relevé à `^2.4.0` pour corriger un déni de service (écritures
+orphelines sur upload interrompu) qui le touchait **en production**.
 
 ## Toujours hors MVP
 
-Tests automatisés, notifications push, avis/notation, OTP téléphone, pagination, Swagger/OpenAPI, confirmation de commande par email, réinitialisation de mot de passe.
+Notifications push, avis/notation, réinitialisation de mot de passe, pagination
+des listes, Swagger/OpenAPI, OTP téléphone.
