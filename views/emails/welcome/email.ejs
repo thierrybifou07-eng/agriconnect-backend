@@ -3,31 +3,38 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Bienvenue sur RentHub</title>
+  <title><%= typeof heading !== 'undefined' && heading ? heading : 'Bienvenue sur AgriConnect' %></title>
 </head>
 <body>
   <div class="email-wrapper">
-    <% var heading = "Bienvenue sur RentHub !"; %>
     <%- include('../_shared/header') %>
 
     <div class="email-body">
       <h2>Bonjour <%= username %>,</h2>
-      <p>Merci de vous &ecirc;tre inscrit sur RentHub. Nous sommes ravis de vous accueillir.</p>
-      <p>Pour activer votre compte et commencer &agrave; explorer les annonces, veuillez utiliser le code de v&eacute;rification ci-dessous :</p>
+      <p>
+        Votre compte a bien &eacute;t&eacute; cr&eacute;&eacute; sur AgriConnect,
+        la marketplace qui met en relation les agriculteurs et les acheteurs.
+      </p>
 
-      <div class="code-block">
-        <div class="code"><%= validatedCode %></div>
-        <div class="label">Code de v&eacute;rification</div>
-      </div>
+      <% if (typeof roleLabel !== 'undefined' && roleLabel) { %>
+        <div class="info-row">
+          R&ocirc;le&nbsp;: <strong><%= roleLabel %></strong>
+        </div>
+      <% } %>
 
-      <div class="info-row">
-        Ce code expirera dans <strong><%= countMinutes %> minute(s)</strong>. Pass&eacute; ce d&eacute;lai, vous devrez en g&eacute;n&eacute;rer un nouveau.
-      </div>
+      <p>Vous pouvez d&eacute;sormais vous connecter et commencer &agrave; utiliser la plateforme&nbsp;:</p>
+
+      <ul>
+        <li><strong>Agriculteur</strong>&nbsp;: publier vos annonces et suivre vos ventes.</li>
+        <li><strong>Acheteur</strong>&nbsp;: parcourir le catalogue et commander directement.</li>
+        <li><strong>Livreur</strong>&nbsp;: prendre en charge les livraisons disponibles.</li>
+      </ul>
 
       <div class="divider"></div>
 
       <p style="font-size:14px; color:#94a3b8;">
-        Si vous n'avez pas cr&eacute;&eacute; de compte sur RentHub, ignorez simplement cet email.
+        Si vous n'avez pas cr&eacute;&eacute; de compte sur AgriConnect,
+        ignorez simplement cet email.
       </p>
     </div>
 

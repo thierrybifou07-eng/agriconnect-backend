@@ -1,11 +1,10 @@
 <div class="email-footer">
-  <div class="social">
-    <a href="#">Instagram</a> &middot; <a href="#">Facebook</a> &middot; <a href="#">X (Twitter)</a>
+  <div class="support">
+    <%# Adresse de support : fournie par l appelant, sinon une valeur lisible %>
+    Besoin d'aide&nbsp;? <a href="mailto:<%= typeof supportEmail !== 'undefined' && supportEmail ? supportEmail : 'support@agriconnect.local' %>"><%= typeof supportEmail !== 'undefined' && supportEmail ? supportEmail : 'support@agriconnect.local' %></a>
   </div>
-  <div>RentHub &mdash; Votre plateforme de location de confiance</div>
-  <div><a href="mailto:<%= typeof supportEmail !== 'undefined' ? supportEmail : 'support@renthub.com' %>"><%= typeof supportEmail !== 'undefined' ? supportEmail : 'support@renthub.com' %></a></div>
   <div style="margin-top:10px; font-size:11px; color:#cbd5e1;">
     Si vous n'&ecirc;tes pas &agrave; l'origine de cet email, veuillez l'ignorer.<br>
-    &copy; <%= new Date().getFullYear() %> RentHub. Tous droits r&eacute;serv&eacute;s.
+    &copy; <%= new Date().getFullYear() %> AgriConnect. Tous droits r&eacute;serv&eacute;s.
   </div>
 </div>

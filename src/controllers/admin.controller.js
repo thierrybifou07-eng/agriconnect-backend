@@ -1,7 +1,9 @@
 import bcrypt from 'bcrypt';
 import prisma from '../config/prisma.js';
 import { getLookupId } from '../utils/lookupCache.js';
-import { sendMail } from '../utils/sendMail.js';
+// Meme pile que l inscription (src/config/email) : un seul moteur de rendu,
+// une seule configuration SMTP.
+import { sendTemplateEmail } from '../config/email/sendMail.js';
 
 const userSafeSelect = {
   id: true,
@@ -107,14 +109,15 @@ export const createAdmin = async (req, res) => {
     select: userSafeSelect,
   });
 
-  // Non-bloquant, et sans jamais inclure le mot de passe dans l'email
+  // Non-bloquant : l'email part apres la reponse, et ne peut pas faire echouer
+  // la creation du compte. Aucune donnee sensible n'y figure.
   if (admin.email) {
-    sendMail({
-      to: admin.email,
-      subject: 'Votre compte administrateur AgriConnect',
-      template: 'welcome',
-      data: { fullName: `${admin.firstname} ${admin.lastname}`, roleLabel: 'Administrateur' },
-    }).catch((err) => console.error('Email admin non envoyé:', err.message));
+    sendTemplateEmail(
+      admin.email,
+      'Votre compte administrateur AgriConnect',
+      'welcome',
+      { username: `${admin.firstname} ${admin.lastname}`, roleLabel: 'Administrateur' }
+    );
   }
 
   res.status(201).json(admin);

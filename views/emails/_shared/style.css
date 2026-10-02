@@ -1,4 +1,4 @@
-body {
+﻿body {
   margin: 0;
   padding: 0;
   background-color: #f1f5f9;
@@ -16,7 +16,7 @@ body {
 }
 
 .email-header {
-  background: linear-gradient(135deg, #1a56db, #1e40af);
+  background: linear-gradient(135deg, #2e7d32, #1b5e20);
   padding: 36px 40px 28px;
   text-align: center;
 }
@@ -62,7 +62,7 @@ body {
 }
 
 .email-body a {
-  color: #1a56db;
+  color: #2e7d32;
   text-decoration: underline;
 }
 
@@ -79,7 +79,7 @@ body {
   font-size: 36px;
   font-weight: 800;
   letter-spacing: 10px;
-  color: #1a56db;
+  color: #2e7d32;
   font-family: 'Courier New', 'Fira Code', monospace;
   user-select: all;
 }
@@ -141,7 +141,7 @@ body {
 }
 
 .email-footer a {
-  color: #1a56db;
+  color: #2e7d32;
   text-decoration: none;
 }
 

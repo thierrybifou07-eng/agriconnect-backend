@@ -10,7 +10,17 @@ const app = express();
 // Avant toute route : les montants stockes en Decimal doivent partir en nombres.
 app.use(decimalAsNumber);
 
-app.use(cors());
+// CORS : sans configuration, cors() autorise n'importe quelle origine.
+// CORS_IO (liste d'origines separees par des virgules) permet de restreindre
+// l'API aux clients connus. Absente, on conserve le comportement ouvert afin de
+// ne pas casser un client non configure, mais il faut la renseigner en
+// production : l'API est alors interrogeable depuis n'importe quel site.
+const allowedOrigins = (process.env.CORS_IO || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(cors(allowedOrigins.length > 0 ? { origin: allowedOrigins, credentials: true } : {}));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

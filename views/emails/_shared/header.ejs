@@ -1,4 +1,7 @@
 <div class="email-header">
-  <div class="logo-text">RentHub</div>
-  <h1><%= heading %></h1>
+  <div class="logo-text">AgriConnect</div>
+  <%# heading est facultatif : certains appelants (creation d'un administrateur)
+      n'en fournissent pas. Sans garde-fou, EJS leve sur une variable non
+      definie et l'echec remonte jusqu'a l'appelant. %>
+  <h1><%= typeof heading !== 'undefined' && heading ? heading : 'Bienvenue sur AgriConnect' %></h1>
 </div>

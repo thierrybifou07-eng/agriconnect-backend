@@ -3,7 +3,7 @@ import prisma from '../config/prisma.js';
 import { generateToken } from '../utils/jwt.js';
 import { generateRefreshTokenValue, hashToken } from '../utils/refreshToken.js';
 import { getLookupId } from '../utils/lookupCache.js';
-import { sendMail } from '../utils/sendMail.js';
+import { sendTemplateEmail } from '../config/email/sendMail.js';
 
 const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || '30', 10);
 
@@ -78,17 +78,30 @@ export const register = async (req, res) => {
   const accessToken = generateToken({ id: user.id, role: user.role.code });
   const refreshToken = await issueRefreshToken(user.id);
 
-  // Non-bloquant : un email non envoyé ne doit jamais faire échouer l'inscription
-  if (user.email) {
-    sendMail({
-      to: user.email,
-      subject: 'Bienvenue sur AgriConnect',
-      template: 'welcome',
-      data: { fullName: userFullName(user), roleLabel: user.role.label },
-    }).catch((err) => console.error('Email de bienvenue non envoyé:', err.message));
-  }
+  // Envoi de l'email de bienvenue, en arriere-plan.
+//
+// Le compte est deja cree : l'envoi ne doit pas pouvoir faire echouer
+// l'inscription. On ne l'attend donc pas, et sendTemplateEmail ne leve jamais
+// (il journalise l'echec). Le temps de reponse ne depend ainsi pas du serveur
+// SMTP, qui est precisement la dependance la moins fiable.
+//
+// Le gabarit ne contient aucun code de verification : le projet n'a pas de
+// fonction de verification d'adresse. Le code 00000 envoye precedemment ne
+// correspondait a rien.
+  sendTemplateEmail(
+    user.email,
+    'Bienvenue sur AgriConnect',
+    'welcome',
+    {
+      heading: 'Bienvenue sur AgriConnect',
+      username: userFullName(user),
+      roleLabel: user.role.label,
+    }
+  );
 
-  // const { password: _pw, ...userSafe } = user;
+  // Le champ emailSent a ete retire : sans attendre l'envoi, il ne pouvait
+  // qu'etre soit toujours faux, soit toujours vrai. Les clients ne doivent pas
+  // deduire de la creation d'un compte que son email a bien ete delivre.
   res.status(201).json({ user: safeUserToApi(user), accessToken, refreshToken });
 };
 
