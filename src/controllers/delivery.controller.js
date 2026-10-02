@@ -11,8 +11,8 @@ export const getAvailableDeliveries = async (req, res) => {
       order: {
         include: {
           listing: { select: { id: true, title: true, category: true } },
-          farmer: { select: { id: true, fullName: true, phone: true, location: true } },
-          buyer: { select: { id: true, fullName: true, phone: true } },
+          farmer: { select: { id: true, firstname: true, lastname: true, phone: true, location: true } },
+          buyer: { select: { id: true, firstname: true, lastname: true, phone: true } },
         },
       },
     },
@@ -44,8 +44,8 @@ export const getMyDeliveries = async (req, res) => {
       order: {
         include: {
           listing: { select: { id: true, title: true } },
-          farmer: { select: { id: true, fullName: true, phone: true } },
-          buyer: { select: { id: true, fullName: true, phone: true } },
+          farmer: { select: { id: true, firstname: true, lastname: true, phone: true } },
+          buyer: { select: { id: true, firstname: true, lastname: true, phone: true } },
         },
       },
     },

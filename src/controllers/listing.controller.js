@@ -2,7 +2,7 @@ import prisma from '../config/prisma.js';
 import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
 import { getLookupId } from '../utils/lookupCache.js';
 
-const farmerSelect = { id: true, fullName: true, phone: true, location: true };
+const farmerSelect = { id: true, firstname: true, lastname: true, phone: true, location: true };
 
 const listingInclude = {
   farmer: { select: farmerSelect },

@@ -5,7 +5,8 @@ import { sendMail } from '../utils/sendMail.js';
 
 const userSafeSelect = {
   id: true,
-  fullName: true,
+  firstname: true,
+  lastname: true,
   phone: true,
   email: true,
   role: { select: { code: true, label: true, level: true } },
@@ -26,7 +27,13 @@ export const listUsers = async (req, res) => {
       ...(role && { role: { code: role } }),
       ...(status && { userStatus: { code: status } }),
       ...(search && {
-        OR: [{ fullName: { contains: search } }, { phone: { contains: search } }],
+        // Le nom est stocke en deux colonnes : la recherche doit porter sur les
+        // deux, sinon un administrateur qui cherche "Benali" ne trouve rien.
+        OR: [
+          { firstname: { contains: search } },
+          { lastname: { contains: search } },
+          { phone: { contains: search } },
+        ],
       }),
     },
     select: userSafeSelect,
@@ -81,7 +88,7 @@ export const reactivateUser = async (req, res) => {
 
 // POST /api/admin/users  (ROOT uniquement)
 export const createAdmin = async (req, res) => {
-  const { fullName, phone, email, password } = req.body;
+  const { firstname, lastname, phone, email, password } = req.body;
 
   const existing = await prisma.user.findUnique({ where: { phone } });
   if (existing) {
@@ -96,7 +103,7 @@ export const createAdmin = async (req, res) => {
   const hashedPassword = await bcrypt.hash(password, 10);
 
   const admin = await prisma.user.create({
-    data: { fullName, phone, email, password: hashedPassword, roleId, userStatusId },
+    data: { firstname, lastname, phone, email, password: hashedPassword, roleId, userStatusId },
     select: userSafeSelect,
   });
 
@@ -106,7 +113,7 @@ export const createAdmin = async (req, res) => {
       to: admin.email,
       subject: 'Votre compte administrateur AgriConnect',
       template: 'welcome',
-      data: { fullName: admin.fullName, roleLabel: 'Administrateur' },
+      data: { fullName: `${admin.firstname} ${admin.lastname}`, roleLabel: 'Administrateur' },
     }).catch((err) => console.error('Email admin non envoyé:', err.message));
   }
 
@@ -136,8 +143,8 @@ export const getAllOrders = async (req, res) => {
     where: { ...(status && { status }) },
     include: {
       listing: { select: { id: true, title: true } },
-      buyer: { select: { id: true, fullName: true, phone: true } },
-      farmer: { select: { id: true, fullName: true, phone: true } },
+      buyer: { select: { id: true, firstname: true, lastname: true, phone: true } },
+      farmer: { select: { id: true, firstname: true, lastname: true, phone: true } },
       deliveryMode: true,
       delivery: true,
     },

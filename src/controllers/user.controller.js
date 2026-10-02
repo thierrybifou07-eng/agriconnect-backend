@@ -12,12 +12,15 @@ export const getMe = async (req, res) => {
 
 // PATCH /api/users/me
 export const updateMe = async (req, res) => {
-  const { fullName, email, location } = req.body;
+  const { firstname, lastname, email, location } = req.body;
 
   const updated = await prisma.user.update({
     where: { id: req.user.id },
     data: {
-      ...(fullName && { fullName }),
+      // Les deux moities du nom sont optionnelles et independantes : un client
+      // qui renvoie seulement "lastname" ne doit pas effacer le prenom.
+      ...(firstname !== undefined && { firstname }),
+      ...(lastname !== undefined && { lastname }),
       ...(email !== undefined && { email }),
       ...(location !== undefined && { location }),
     },

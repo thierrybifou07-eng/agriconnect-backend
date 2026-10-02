@@ -32,8 +32,8 @@ export const getMyConversations = async (req, res) => {
     where: { OR: [{ buyerId: req.user.id }, { farmerId: req.user.id }] },
     include: {
       listing: { select: { id: true, title: true, price: true, media: true } },
-      buyer: { select: { id: true, fullName: true } },
-      farmer: { select: { id: true, fullName: true } },
+      buyer: { select: { id: true, firstname: true, lastname: true } },
+      farmer: { select: { id: true, firstname: true, lastname: true } },
       messages: { orderBy: { createdAt: 'desc' }, take: 1 },
     },
     orderBy: { createdAt: 'desc' },

@@ -1,7 +1,10 @@
 import Joi from 'joi';
 
 export const createAdminSchema = Joi.object({
-  fullName: Joi.string().trim().min(2).required(),
+  // Aligne sur le modele User : le nom est stocke en deux colonnes. 'fullName'
+  // n'existe pas en base, l'envoyer crashingait la creation du compte.
+  firstname: Joi.string().trim().min(2).required(),
+  lastname: Joi.string().trim().min(2).required(),
   phone: Joi.string()
     .trim()
     .pattern(/^\+?[0-9]{8,15}$/)

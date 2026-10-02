@@ -4,8 +4,8 @@ import { getLookupId } from '../utils/lookupCache.js';
 
 const orderInclude = {
   listing: { select: { id: true, title: true } },
-  buyer: { select: { id: true, fullName: true, phone: true } },
-  farmer: { select: { id: true, fullName: true, phone: true } },
+  buyer: { select: { id: true, firstname: true, lastname: true, phone: true } },
+  farmer: { select: { id: true, firstname: true, lastname: true, phone: true } },
   deliveryMode: true,
   delivery: true,
 };
