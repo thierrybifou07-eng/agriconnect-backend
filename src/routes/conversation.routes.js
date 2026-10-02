@@ -6,8 +6,12 @@ import {
   sendMessage,
 } from '../controllers/conversation.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
+import { coerceIdParam } from '../middlewares/params.middleware.js';
 
 const router = Router();
+
+// Toutes les cles primaires sont des Int : voir middlewares/params.middleware.js
+router.param('id', coerceIdParam);
 
 router.use(protect);
 

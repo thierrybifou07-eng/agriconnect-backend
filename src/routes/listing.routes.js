@@ -10,9 +10,13 @@ import {
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
+import { coerceIdParam } from '../middlewares/params.middleware.js';
 import { createListingSchema, updateListingSchema } from '../validators/listing.validator.js';
 
 const router = Router();
+
+// Toutes les cles primaires sont des Int : voir middlewares/params.middleware.js
+router.param('id', coerceIdParam);
 
 router.get('/', getListings);
 router.get('/:id', getListingById);
