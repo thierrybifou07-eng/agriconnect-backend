@@ -19,7 +19,9 @@ const resolveLimit = (fallback) => {
   return Number.isInteger(fromEnv) && fromEnv > 0 ? fromEnv : fallback;
 };
 
-// Limite stricte sur les routes d'authentification (protection brute-force)
+// Limite stricte sur les routes d'authentification (protection brute-force).
+// Elle ne couvre que /register et /login : ce sont les seules routes par
+// lesquelles on devine un mot de passe.
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   limit: resolveLimit(10),
@@ -27,6 +29,23 @@ export const authLimiter = rateLimit({
   legacyHeaders: false,
   skip: () => !limiterEnabled(),
   message: { error: 'Trop de tentatives, réessayez dans quelques minutes' },
+});
+
+// Limite distincte pour /refresh. Elle partageait auparavant le meme seau que
+// la connexion : express-rate-limit compte par IP et par instance de middleware,
+// donc deux connexions plus huit rafraîchissements verrouillaient un
+// utilisateur parfaitement legitime pendant quinze minutes.
+//
+// Le risque est faible ici (le jeton fait 64 caracteres aleatoires, il est
+// rotations et un jeton revoque est rejete), mais une limite reste necessaire
+// pour absorber un client en boucle.
+export const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: resolveLimit(60),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => !limiterEnabled(),
+  message: { error: 'Trop de rafraîchissements, réessayez dans quelques minutes' },
 });
 
 // Limite générale sur le reste de l'API

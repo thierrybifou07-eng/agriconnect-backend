@@ -73,6 +73,35 @@ describe('Limite anti-brute-force', () => {
     expect(res.headers['ratelimit-remaining']).toBe('2');
   });
 
+  // /refresh partageait le seau de /login : express-rate-limit compte par IP et
+  // par instance, les deux routes etaient donc comptees ensemble. Deux
+  // connexions puis huit ouvertures d'application suffisaient a bloquer un
+  // utilisateur legitime pendant quinze minutes.
+  it('n applique pas la limite du login au refresh', async () => {
+    process.env.AUTH_RATE_LIMIT_ACTIVE = '1';
+    vi.resetModules();
+
+    const { authLimiter, refreshLimiter } = await import(
+      '../../src/middlewares/rateLimit.middleware.js'
+    );
+
+    const app = express();
+    app.get('/login', authLimiter, (req, res) => res.json({ ok: true }));
+    app.get('/refresh', refreshLimiter, (req, res) => res.json({ ok: true }));
+    const client = request(app);
+
+    // La limite par defaut de production est 10 pour le login, 60 pour le
+    // refresh : dix tentatives de login ne doivent pas epuiser le refresh.
+    for (let i = 0; i < 10; i += 1) {
+      await client.get('/login');
+    }
+    const bloque = await client.get('/login');
+    expect(bloque.status).toBe(429);
+
+    const refresh = await client.get('/refresh');
+    expect(refresh.status, 'le refresh ne doit pas heriter de la limite du login').toBe(200);
+  });
+
   it('reste inactif en test tant qu on ne le demande pas', async () => {
     delete process.env.AUTH_RATE_LIMIT_ACTIVE;
     process.env.AUTH_RATE_LIMIT = '2';

@@ -132,7 +132,36 @@ export const deleteListing = async (req, res) => {
     return res.status(403).json({ error: "Vous n'êtes pas propriétaire de cette annonce" });
   }
 
-  await prisma.listing.delete({ where: { id: req.params.id } });
+  // Une annonce ayant deja ete commandee ne peut pas disparaitre : les
+  // commandes sont de l'historique commercial et l'agriculteur doit pouvoir
+  // les consulter. Supprimer l'annonce en cascade detruirait aussi les
+  // conversations et les photos qui s'y rattachent.
+  //
+  // Auparavant, la suppression partait directement sur delete() et levait une
+  // violation de cle etrangere, donc un 500 : impossible de retirer une
+  // annonce vendue, ce qui est une operation courante.
+  const ordersCount = await prisma.order.count({ where: { listingId: listing.id } });
+  if (ordersCount > 0) {
+    return res.status(409).json({
+      error:
+        'Cette annonce a déjà fait l’objet de commandes et ne peut pas être supprimée. ' +
+        'Désactivez-la pour la retirer du catalogue tout en conservant son historique.',
+      ordersCount,
+    });
+  }
+
+  // Conversations, messages et medias n'ont de valeur que rattaches a
+  // l'annonce : ils partent avec elle, dans une seule transaction pour ne pas
+  // laisser l'annonce a moitie supprimee.
+  await prisma.$transaction(async (tx) => {
+    await tx.message.deleteMany({
+      where: { conversation: { listingId: listing.id } },
+    });
+    await tx.conversation.deleteMany({ where: { listingId: listing.id } });
+    await tx.media.deleteMany({ where: { ownerListingId: listing.id } });
+    await tx.listing.delete({ where: { id: listing.id } });
+  });
+
   res.status(204).send();
 };
 

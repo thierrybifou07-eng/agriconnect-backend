@@ -14,9 +14,27 @@ export const protect = async (req, res, next) => {
     const token = authHeader.split(' ')[1];
     const decoded = verifyToken(token);
 
+    // Selection explicite, sans `password`. Le middleware ne peut pas se fier a
+    // la discrétion de chaque controleur : il suffit qu'un jour quelqu'un
+    // reponde avec req.user pour que le hash parte en clair. On ne charge donc
+    // jamais la colonne.
     const user = await prisma.user.findUnique({
       where: { id: decoded.id },
-      include: { role: true, userStatus: true },
+      select: {
+        id: true,
+        firstname: true,
+        lastname: true,
+        email: true,
+        phone: true,
+        location: true,
+        latitude: true,
+        longitude: true,
+        isAvailable: true,
+        vehicleType: true,
+        verified: true,
+        role: true,
+        userStatus: true,
+      },
     });
 
     if (!user) {
