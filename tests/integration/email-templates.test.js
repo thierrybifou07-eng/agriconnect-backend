@@ -194,6 +194,45 @@ describe('Transport SMTP', () => {
   });
 });
 
+describe('Configuration SMTP declaree', () => {
+  const envExample = readFileSync(path.join(PROJECT_ROOT, '.env.example'), 'utf8');
+
+  // Les exemples commentes comptent : c'est precisement dans ces lignes que
+  // se glisse la confusion qui a bloque l'envoi des emails.
+  const valeurs = (nom) =>
+    envExample
+      .split(/\r?\n/)
+      .filter((l) => new RegExp(`^\\s*#?\\s*${nom}\\s*=`).test(l))
+      .map((l) => l.slice(l.indexOf('=') + 1).trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+
+  // SMTP_HOST est un nom d'hote. Une URL d'interface web y est acceptee sans
+  // erreur par la bibliotheque, qui tente alors de parler SMTP a un serveur
+  // HTTP : l'envoi echoue sans bruit et sans message d'erreur explicite.
+  it('donne un nom d hote pour SMTP_HOST, pas une URL', () => {
+    const coupables = valeurs('SMTP_HOST').filter((v) => v.includes('://'));
+    expect(coupables, 'SMTP_HOST renseigne avec une URL au lieu d un nom d hote').toEqual([]);
+  });
+
+  // Un SMTP refuse une adresse nue ; l'expedition echoue alors sur la plupart
+  // des fournisseurs.
+  it('exige une adresse d expedition complete dans les exemples', () => {
+    for (const valeur of valeurs('EMAIL_SENDER')) {
+      expect(valeur, `EMAIL_SENDER sans forme "Nom <adresse>" : ${valeur}`).toMatch(/<[^>]+@[^>]+>/);
+    }
+  });
+
+  it('documente le port SMTP du piege a mail local', () => {
+    expect(valeurs('SMTP_PORT')).toContain('1025');
+  });
+
+  // Les liens de reinitialisation et de verification sont construits a partir
+  // de cette variable : sans elle, aucun lien ne peut partir.
+  it('documente APP_URL, necessaire aux liens envoyes par email', () => {
+    expect(valeurs('APP_URL').length).toBeGreaterThan(0);
+  });
+});
+
 describe('Une seule pile email', () => {
   it('supprime l ancienne pile', () => {
     const disparus = [
