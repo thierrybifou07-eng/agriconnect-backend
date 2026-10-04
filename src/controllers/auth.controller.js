@@ -2,7 +2,14 @@ import bcrypt from 'bcrypt';
 import prisma from '../config/prisma.js';
 import { generateToken } from '../utils/jwt.js';
 import { hashToken } from '../utils/refreshToken.js';
-import { openSession, issueRefreshToken, closeSession, isRefreshTokenUsable, rotateRefreshToken } from '../utils/session.js';
+import {
+  openSession,
+  issueRefreshToken,
+  closeSession,
+  closeAllSessions,
+  isRefreshTokenUsable,
+  rotateRefreshToken,
+} from '../utils/session.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { sendTemplateEmail } from '../config/email/sendMail.js';
 
@@ -188,6 +195,65 @@ export const refresh = async (req, res) => {
 
   const accessToken = accessTokenFor(user, stored.sessionId);
   res.json({ accessToken, refreshToken: rotation.rawToken });
+};
+
+// GET /api/auth/sessions
+//
+// Sans cette surface, un appareil vole ne peut etre coupe qu'en changeant de
+// mot de passe, ce qui deconnecte partout et ne dit rien a l'utilisateur. Lister
+// ses sessions est la premiere etape pour reconnaitre celle qui ne devrait pas
+// etre la sienne.
+export const listSessions = async (req, res) => {
+  const sessions = await prisma.session.findMany({
+    where: { userId: req.user.id, revokedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { lastActivityAt: 'desc' },
+    select: {
+      id: true,
+      userAgent: true,
+      ip: true,
+      createdAt: true,
+      lastActivityAt: true,
+      expiresAt: true,
+    },
+  });
+
+  res.json({
+    sessions: sessions.map((session) => ({
+      ...session,
+      // Le jeton porte le sessionId de la connexion courante : c'est ce qui
+      // permet au client de se reconnaitre sans deviner.
+      isCurrent: session.id === req.sessionId,
+    })),
+  });
+};
+
+// DELETE /api/auth/sessions/:id
+export const closeSessionById = async (req, res) => {
+  const sessionId = Number(req.params.id);
+
+  // Le filtre porte sur l'utilisateur ET sur l'identifiant. Sans le premier, un
+  // compte pourrait fermer les sessions d'un autre.
+  //
+  // La session est recherchee sans condition sur revokedAt : refermer une
+  // session deja fermee renvoie 204 plutot que 404. Le client peut avoir perdu la
+  // reponse et reessayer, et "cet appareil n'a plus acces" reste vrai au second
+  // essai. Filtrer sur les sessions ouvertes ferait dependre la reponse de
+  // l'etat anterieur, ce qui n'apprend rien de plus a l'appelant.
+  const fermee = await prisma.session.findFirst({ where: { id: sessionId, userId: req.user.id } });
+  if (!fermee) {
+    return res.status(404).json({ error: 'Session introuvable' });
+  }
+
+  await closeSession(fermee.id);
+  res.status(204).send();
+};
+
+// POST /api/auth/logout-all
+export const logoutAll = async (req, res) => {
+  // La session courante est preservee : l'utilisateur demande de couper les
+  // autres appareils, pas de se deconnecter lui-meme en appelant la route.
+  await closeAllSessions(req.user.id, req.sessionId ?? null);
+  res.status(204).send();
 };
 
 // POST /api/auth/logout
