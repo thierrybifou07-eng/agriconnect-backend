@@ -6,3 +6,8 @@ dist/
 coverage/
 *.log
 .idea
+
+# Sondes de diagnostic lancees a la main pendant une session de travail.
+# Elles ecrivent un .log ou un .out a la racine et n'ont rien a faire dans
+# l'historique.
+_probe_*
