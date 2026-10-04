@@ -32,6 +32,11 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = 'test-secret-jwt-ne-pas-utiliser-en-production';
 process.env.JWT_EXPIRES_IN = '1h';
 process.env.REFRESH_TOKEN_TTL_DAYS = '30';
+// Plafond de sessions et fenetre de tolerance sont figes ici : la suite doit
+// pouvoir provoquer uneviction et une reutilisation de jeton sans dépendre du
+// .env du developpeur.
+process.env.SESSION_MAX_PER_USER = '5';
+process.env.REFRESH_REUSE_GRACE_SECONDS = '30';
 
 // Aucun SMTP en test. On ne se contente pas de vider SMTP_HOST : le transport
 // actuel pointe en dur sur 127.0.0.1:1025 et tente donc une connexion a chaque

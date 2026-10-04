@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import prisma from '../../src/config/prisma.js';
 import { api } from '../helpers/app.js';
 import { registerViaApi } from '../helpers/factory.js';
+import { hashToken } from '../../src/utils/refreshToken.js';
 
 const client = api();
 
@@ -266,5 +267,218 @@ describe('Sessions', () => {
 
     const res = await client.post('/api/auth/refresh').send({ refreshToken });
     expect(res.status).toBe(401);
+  });
+});
+
+// La rotation remplace le jeton presents sans ouvrir de nouvelle session : c'est
+// la session qui est l'unite de vie, pas le jeton. Un rafraichissement ne doit
+// donc jamais faire grossir la liste des sessions d'un compte.
+describe('Rotation du jeton dans la session', () => {
+  const rafraichir = (refreshToken) => client.post('/api/auth/refresh').send({ refreshToken });
+
+  it('renvoie un nouveau jeton, different du presente', async () => {
+    const { refreshToken } = await registerViaApi(client);
+
+    const res = await rafraichir(refreshToken);
+
+    expect(res.status).toBe(200);
+    expect(res.body.refreshToken).toBeTruthy();
+    expect(res.body.refreshToken).not.toBe(refreshToken);
+  });
+
+  it('rend le nouveau jeton immediatement utilisable', async () => {
+    const { refreshToken } = await registerViaApi(client);
+
+    const premier = await rafraichir(refreshToken);
+    const second = await rafraichir(premier.body.refreshToken);
+
+    expect(second.status).toBe(200);
+    expect(second.body.accessToken).toBeTruthy();
+  });
+
+  it('marque le jeton remplace comme tel, en distinguant rotation et deconnexion', async () => {
+    const { refreshToken } = await registerViaApi(client);
+    await rafraichir(refreshToken);
+
+    const ancien = await prisma.refreshToken.findFirst({ where: { token: hashToken(refreshToken) } });
+
+    // rotatedAt dit que le jeton a ete remplace, replacedById pointe le
+    // successeur. Sans cette distinction, un client legitime qui rejoue son
+    // ancien jeton serait traite comme un voleur.
+    expect(ancien.revoked).toBe(true);
+    expect(ancien.rotatedAt).not.toBeNull();
+    expect(ancien.replacedById).not.toBeNull();
+  });
+
+  it('conserve la session au lieu d en ouvrir une nouvelle', async () => {
+    const { user, refreshToken } = await registerViaApi(client);
+
+    const res = await rafraichir(refreshToken);
+
+    expect(res.status).toBe(200);
+    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
+  });
+
+  it('met a jour la derniere activite de la session', async () => {
+    const { user, refreshToken } = await registerViaApi(client);
+
+    // lastActivityAt se lit en millisecondes : on recule la valeur pour que la
+    // difference soit observable sans dependre de la vitesse de l'horloge.
+    await prisma.session.updateMany({
+      where: { userId: user.id },
+      data: { lastActivityAt: new Date(Date.now() - 60_000) },
+    });
+    await rafraichir(refreshToken);
+
+    const apres = await prisma.session.findFirst({ where: { userId: user.id } });
+    expect(apres.lastActivityAt.getTime()).toBeGreaterThan(Date.now() - 30_000);
+  });
+
+  // Deux refreshs paralleles d'une app mobile discoverent en meme temps que le
+  // jeton d'acces a expire. Le second presente donc un jeton que le premier vient
+  // de remplacer : le serveur doit le tolérer, pas détruire la session.
+  it('tolere un jeton represente dans la fenetre de tolerance', async () => {
+    const { user, refreshToken } = await registerViaApi(client);
+
+    const premier = await rafraichir(refreshToken);
+    const second = await rafraichir(refreshToken);
+
+    expect(second.status).toBe(200);
+    expect(second.body.refreshToken).toBeTruthy();
+    expect(second.body.refreshToken).not.toBe(premier.body.refreshToken);
+
+    // Et la session doit rester utilisable par le client legitime.
+    const troisieme = await rafraichir(premier.body.refreshToken);
+    expect(troisieme.status).toBe(200);
+    expect((await prisma.session.findFirst({ where: { userId: user.id } })).revokedAt).toBeNull();
+  });
+
+  // Hors tolerance, un jeton remplace ne peut plus appartenir au client : il est
+  // traite comme vole et la session tombe entiere, car elle a pu eter volee avec.
+  it('detecte un jeton rejoue hors tolerance et detruit la session', async () => {
+    const { user, refreshToken } = await registerViaApi(client);
+    await rafraichir(refreshToken);
+
+    // On vieillit la rotation au-dela de la fenetre de 30 s.
+    await prisma.refreshToken.updateMany({
+      data: { rotatedAt: new Date(Date.now() - 31_000) },
+    });
+
+    const res = await rafraichir(refreshToken);
+    expect(res.status).toBe(401);
+
+    const session = await prisma.session.findFirst({ where: { userId: user.id } });
+    expect(session.revokedAt).not.toBeNull();
+    // Tous les jetons de la session tombent, pas seulement le jeton rejoue :
+    // un voleur dispose en general de plusieurs jetons.
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0);
+  });
+
+  it('ne prolonge pas la tolerance au-dela du premier remplacement', async () => {
+    const { refreshToken } = await registerViaApi(client);
+
+    // La fenetre se mesure depuis le PREMIER remplacement. On simule un jeton
+    // d'origine remplace il y a 29 s, represente depuis.
+    const premier = await rafraichir(refreshToken);
+    expect(premier.status).toBe(200);
+
+    await prisma.refreshToken.updateMany({
+      where: { token: hashToken(refreshToken) },
+      data: { rotatedAt: new Date(Date.now() - 29_000) },
+    });
+    const tolere = await rafraichir(refreshToken);
+    expect(tolere.status).toBe(200);
+
+    // Le meme jeton, deux secondes plus tard, a depasse la fenetre d'origine :
+    // il ne doit pas pouvoir repousser l'echeance indefiniment en etant represente
+    // en boucle.
+    await prisma.refreshToken.updateMany({
+      where: { token: hashToken(refreshToken) },
+      data: { rotatedAt: new Date(Date.now() - 31_000) },
+    });
+    const rejete = await rafraichir(refreshToken);
+    expect(rejete.status).toBe(401);
+  });
+});
+
+// Un compte ne doit pas pouvoir accumuler des sessions a l'infini depuis des
+// appareils perdus : au-dela du plafond, la plus ancienne part.
+describe('Plafond de sessions', () => {
+  it('ferme la session la plus ancienne au-dela du plafond', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    for (let i = 0; i < 5; i += 1) {
+      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    }
+
+    // 6 sessions ouvertes au total (inscription + 5 connexions), plafond a 5.
+    const actives = await prisma.session.findMany({ where: { userId: user.id, revokedAt: null } });
+    expect(actives).toHaveLength(5);
+
+    // C'est la plus ancienne qui part, donc celle de l'inscription : on ne coupe
+    // pas un appareil actif pour faire de la place a un nouvel arrivant.
+    const premiere = await prisma.session.findFirst({
+      where: { userId: user.id },
+      orderBy: { id: 'asc' },
+    });
+    expect(premiere.revokedAt).not.toBeNull();
+    expect(actives.map((s) => s.id)).not.toContain(premiere.id);
+  });
+
+  it('revoque aussi les jetons de la session evincee', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    // Le jeton de l'inscription, identifie avant de declencher les connexions.
+    const inscription = await prisma.refreshToken.findFirst({ where: { userId: user.id } });
+    for (let i = 0; i < 5; i += 1) {
+      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    }
+
+    // Sans revocation du jeton, l'appareil evince pourrait encore rafraichir :
+    // c'est donc la session qui ne suffit pas a couper un acces.
+    const apres = await prisma.refreshToken.findUnique({ where: { id: inscription.id } });
+    expect(apres.revoked).toBe(true);
+    expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(5);
+  });
+
+  it('laisse intactes les sessions en dessous du plafond', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    for (let i = 0; i < 4; i += 1) {
+      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    }
+
+    // 5 sessions exactement : personne ne doit etre deconnecte.
+    expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(5);
+  });
+
+  // Le plafond porte sur les sessions ouvertes, pas sur l'historique : un compte
+  // qui s'est deconnecte puis reconnecte dix fois doit pouvoir le refaire.
+  it('compte les sessions ouvertes, pas l historique', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    for (let i = 0; i < 4; i += 1) {
+      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    }
+    // 5 sessions ouvertes. On en ferme 3 pour en laisser 2 : la nouvelle
+    // connexion doit pouvoir passer sans evincer personne.
+    const aFermer = await prisma.session.findMany({
+      where: { userId: user.id, revokedAt: null },
+      orderBy: { id: 'asc' },
+      take: 3,
+    });
+    await prisma.session.updateMany({
+      where: { id: { in: aFermer.map((s) => s.id) } },
+      data: { revokedAt: new Date() },
+    });
+
+    const res = await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    expect(res.status).toBe(200);
+    // 3 sessions ouvertes, aucune eviction de supplement.
+    expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(3);
   });
 });

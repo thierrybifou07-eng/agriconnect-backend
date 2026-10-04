@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import prisma from '../config/prisma.js';
 import { generateToken } from '../utils/jwt.js';
 import { hashToken } from '../utils/refreshToken.js';
-import { openSession, issueRefreshToken, closeSession, isSessionActive } from '../utils/session.js';
+import { openSession, issueRefreshToken, closeSession, isRefreshTokenUsable, rotateRefreshToken } from '../utils/session.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { sendTemplateEmail } from '../config/email/sendMail.js';
 
@@ -142,9 +142,11 @@ export const refresh = async (req, res) => {
     include: { session: true },
   });
 
-  // La session est verifiee avec son jeton : un jeton peut etre valide alors que
-  // la session qui le porte a ete close, et ce serait une deconnexion sans effet.
-  if (!stored || stored.revoked || stored.expiresAt < new Date() || !isSessionActive(stored.session)) {
+  // La session est verifiee avec son jeton : un jeton peut rester valide alors
+  // que la session qui le porte a ete close, et ce serait une deconnexion sans
+  // effet. Un jeton remplace par rotation passe aussi ici : c'est la rotation
+  // qui decide ensuite entre tolerance et fermeture de session.
+  if (!isRefreshTokenUsable(stored)) {
     return res.status(401).json({ error: 'Refresh token invalide ou expiré' });
   }
 
@@ -162,8 +164,18 @@ export const refresh = async (req, res) => {
     return res.status(403).json({ error: 'Ce compte a été suspendu' });
   }
 
+  // Rotation : le jeton presente est remplace dans la meme session. Un jeton
+  // represente hors tolerance est traite comme un vol et detruit la session
+  // entiere, car elle a pu ete volee avec.
+  const rotation = await rotateRefreshToken(stored);
+  if (rotation.outcome === 'stolen') {
+    return res.status(401).json({
+      error: 'Session révoquée. Reconnectez-vous.',
+    });
+  }
+
   const accessToken = generateToken({ id: user.id, role: user.role.code });
-  res.json({ accessToken });
+  res.json({ accessToken, refreshToken: rotation.rawToken });
 };
 
 // POST /api/auth/logout
