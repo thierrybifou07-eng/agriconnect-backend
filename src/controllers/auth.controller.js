@@ -12,6 +12,7 @@ import {
 } from '../utils/session.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { sendTemplateEmail } from '../config/email/sendMail.js';
+import { userToApi } from '../utils/userApi.js';
 
 // Rôles autorisés à l'inscription publique. ADMIN et ROOT ne sont JAMAIS accessibles
 // ici : ROOT se crée uniquement via scripts/create-root.js (CLI serveur), ADMIN
@@ -23,21 +24,6 @@ const PUBLIC_ROLES = ['FARMER', 'BUYER', 'DRIVER'];
 function userFullName(user) {
   return `${user.firstname} ${user.lastname}`;
 }
-function safeUserToApi(user) {
-  return {
-    id: user.id,
-    firstname: user.firstname,
-    lastname: user.lastname,
-    email: user.email,
-    phone: user.phone,
-    role: user.role.label,
-    userStatus: user.userStatus.label,
-    vehicleType: user.vehicleType,
-    isAvailable: user.isAvailable,
-    emailVerified: user.emailVerified,
-  };
-}
-
 // Le jeton porte l'etat du compte pour que le client puisse l'afficher sans
 // redemander, et la session pour qu'il reconnaisse son appareil. Voir jwt.js.
 const accessTokenFor = (user, sessionId) =>
@@ -118,7 +104,7 @@ export const register = async (req, res) => {
   // Le champ emailSent a ete retire : sans attendre l'envoi, il ne pouvait
   // qu'etre soit toujours faux, soit toujours vrai. Les clients ne doivent pas
   // deduire de la creation d'un compte que son email a bien ete delivre.
-  res.status(201).json({ user: safeUserToApi(user), accessToken, refreshToken });
+  res.status(201).json({ user: userToApi(user), accessToken, refreshToken });
 };
 
 // POST /api/auth/login
@@ -148,7 +134,7 @@ export const login = async (req, res) => {
   const refreshToken = await issueRefreshToken(user.id, session.id);
 
   // const { password: _pw, ...userSafe } = user;
-  res.json({ user: safeUserToApi(user), accessToken, refreshToken });
+  res.json({ user: userToApi(user), accessToken, refreshToken });
 };
 
 // POST /api/auth/refresh

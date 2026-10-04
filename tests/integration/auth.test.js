@@ -15,9 +15,16 @@ describe('POST /api/auth/register', () => {
   it('cree un compte et renvoie les jetons', async () => {
     const { user, accessToken, refreshToken } = await registerViaApi(client, { role: 'FARMER' });
 
-    // role est expose sous forme de libelle lisible ("Agriculteur") et non de
-    // code technique : c'est ce que safeUserToApi renvoie aujourd hui.
-    expect(user).toMatchObject({ firstname: 'Amina', lastname: 'Benali', role: 'Agriculteur' });
+    // role et userStatus sont exposes en { code, label } : le libelle pour
+    // l'affichage, le code pour la logique du client. C'est la forme unique,
+    // celle que renvoie aussi GET /api/auth/me — voir utils/userApi.js.
+    expect(user).toMatchObject({
+      firstname: 'Amina',
+      lastname: 'Benali',
+      role: { code: 'FARMER', label: 'Agriculteur' },
+      userStatus: { code: 'ACTIVE', label: 'Actif' },
+      emailVerified: false,
+    });
     expect(accessToken).toBeTruthy();
     expect(refreshToken).toBeTruthy();
   });
@@ -563,7 +570,7 @@ describe('Charge utile du jeton d acces', () => {
 // La base est la reference. Ces tests verrouillent le sens dans lequel l'ecart
 // entre le jeton et la base se resorbe.
 describe('Statut du compte : la base prime sur le jeton', () => {
-  const routeProtegee = (token) => client.get('/api/users/me').set('Authorization', `Bearer ${token}`);
+  const routeProtegee = (token) => client.get('/api/auth/me').set('Authorization', `Bearer ${token}`);
 
   it('refuse un jeton.delivre avant une suspension', async () => {
     const { accessToken, payload } = await registerViaApi(client);

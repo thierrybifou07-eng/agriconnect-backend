@@ -1,16 +1,20 @@
 import prisma from '../config/prisma.js';
 import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
 import { getLookupId } from '../utils/lookupCache.js';
+import { userToApi } from '../utils/userApi.js';
 
-const sanitize = ({ password, ...rest }) => rest;
+// Ces quatre routes vivaient sous /api/users et	y ont ete deplacees : un
+// utilisateur qui gere son propre profil est, du point de vue de l'API, dans le
+// meme registre que celui qui s'authentifie. /api/users reste libre pour les
+// endpoints d'administration.
 
-// GET /api/users/me
+// GET /api/auth/me
 export const getMe = async (req, res) => {
   const media = await prisma.media.findMany({ where: { ownerUserId: req.user.id } });
-  res.json({ ...sanitize(req.user), media });
+  res.json(userToApi(req.user, { media }));
 };
 
-// PATCH /api/users/me
+// PATCH /api/auth/me
 export const updateMe = async (req, res) => {
   const { firstname, lastname, email, location } = req.body;
 
@@ -27,10 +31,10 @@ export const updateMe = async (req, res) => {
     include: { role: true, userStatus: true },
   });
 
-  res.json(sanitize(updated));
+  res.json(userToApi(updated));
 };
 
-// POST /api/users/me/avatar  (remplace l'avatar existant s'il y en avait un)
+// POST /api/auth/me/avatar  (remplace l'avatar existant s'il y en avait un)
 export const uploadAvatar = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Aucune image fournie (champ "avatar")' });
@@ -53,7 +57,7 @@ export const uploadAvatar = async (req, res) => {
   res.status(201).json(media);
 };
 
-// PATCH /api/users/me/availability  (livreur uniquement)
+// PATCH /api/auth/me/availability  (livreur uniquement)
 export const updateAvailability = async (req, res) => {
   const { isAvailable, latitude, longitude } = req.body;
 
@@ -67,5 +71,5 @@ export const updateAvailability = async (req, res) => {
     include: { role: true, userStatus: true },
   });
 
-  res.json(sanitize(updated));
+  res.json(userToApi(updated));
 };

@@ -25,20 +25,20 @@ describe('Le hash de mot de passe ne sort jamais', () => {
   // ne renvoyait aujourd'hui req.user tel quel, mais la protection reposait
   // sur la discipline de chacun : un res.json(req.user) suffisait a faire fuiter
   // le hash. Le middleware ne selectionne plus la colonne.
-  it('GET /api/users/me ne renvoie pas le hash', async () => {
+  it('GET /api/auth/me ne renvoie pas le hash', async () => {
     const { token } = await buyer();
 
-    const res = await client.get('/api/users/me').set(authHeader(token));
+    const res = await client.get('/api/auth/me').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.password).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain('$2b$');
   });
 
-  it('PATCH /api/users/me ne renvoie pas le hash', async () => {
+  it('PATCH /api/auth/me ne renvoie pas le hash', async () => {
     const { token } = await buyer();
 
-    const res = await client.patch('/api/users/me').set(authHeader(token)).send({ location: 'Rabat' });
+    const res = await client.patch('/api/auth/me').set(authHeader(token)).send({ location: 'Rabat' });
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.password).toBeUndefined();
