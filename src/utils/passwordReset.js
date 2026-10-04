@@ -17,6 +17,34 @@ function expiresAt() {
 }
 
 /**
+ * Alerte envoyee apres un changement de mot de passe.
+ *
+ * Incontournable : une reinitialisation sans notification laisse la victime sans
+ * moyen d'apprendre qu'elle a ete contrainte d'en changer un. C'est le scenario
+ * d'usage abusif le plus courant, et ce message est ce qui permet d'agir — sur
+ * ce compte et sur les autres qui partagent le mot de passe.
+ *
+ * Non attendue, comme tous les envois : elle ne doit jamais retarder la reponse
+ * ni la faire echouer.
+ */
+export function sendSecurityAlertEmail(user) {
+  return sendTemplateEmail(
+    user.email,
+    'Votre mot de passe AgriConnect a été modifié',
+    'password-changed',
+    {
+      heading: 'Mot de passe modifié',
+      username: `${user.firstname} ${user.lastname}`,
+      // Date en francais, lisible par la personne qui recoit l'alerte.
+      changedAt: new Date().toLocaleString('fr-FR', {
+        dateStyle: 'long',
+        timeStyle: 'short',
+      }),
+    }
+  );
+}
+
+/**
  * Emet un jeton de reinitialisation et renvoie sa valeur claire.
  *
  * Un seul jeton valide a la fois : les anterieurs sont marques utilises plutot

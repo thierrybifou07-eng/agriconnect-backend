@@ -11,6 +11,8 @@ import {
   verifyEmail,
   resendVerification,
   forgotPassword,
+  resetPasswordPage,
+  resetPassword,
 } from '../controllers/auth.controller.js';
 import {
   getMe,
@@ -33,6 +35,7 @@ import {
   refreshSchema,
   oneTimeTokenSchema,
   forgotPasswordSchema,
+  resetPasswordSchema,
 } from '../validators/auth.validator.js';
 
 const router = Router();
@@ -60,6 +63,8 @@ router.post('/logout', logout);
 // jeton au premier clic, les clients de messagerie et les antivirus prechargent
 // les liens.
 router.post('/forgot-password', forgotPasswordLimiter, validate(forgotPasswordSchema), forgotPassword);
+router.get('/reset-password', resetPasswordPage);
+router.post('/reset-password', validate(resetPasswordSchema), resetPassword);
 
 // Verification d'adresse email.
 //

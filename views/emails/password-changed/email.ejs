@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof heading !== 'undefined' && heading ? heading : 'Mot de passe modifié' %></title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <h2>Bonjour <%= username %>,</h2>
+      <p>
+        Le mot de passe de votre compte AgriConnect vient d'&eacute;tre
+        modifi&eacute;.
+      </p>
+
+      <div class="info-row">
+        Date&nbsp;: <strong><%= changedAt %></strong>
+      </div>
+
+      <div class="divider"></div>
+
+      <p>
+        <strong>Si vous n'&eacute;tiez pas vous&nbsp;:</strong> quelqu'un a eu
+        acc&egrave;s &agrave; votre compte. Vous pouvez sur-le-champ
+        r&eacute;initialiser votre mot de passe et fermer toutes les sessions
+        depuis l'application.
+      </p>
+      <p style="font-size:14px; color:#94a3b8;">
+        Pour votre s&eacute;curit&eacute;, changez aussi vos mots de passe sur
+        vos autres comptes si vous les partagez avec celui-ci.
+      </p>
+      <p style="font-size:14px; color:#94a3b8;">
+        Ce message est envoy&eacute; syst&eacute;matiquement d&egrave;s que le
+        mot de passe change&nbsp;: il est envoy&eacute; dans tous les cas, m&ecirc;me si c'est
+        vous qui l'avez fait.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

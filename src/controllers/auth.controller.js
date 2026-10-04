@@ -23,6 +23,9 @@ import {
 import {
   issuePasswordResetToken,
   dispatchPasswordResetEmail,
+  consumePasswordResetToken,
+  checkPasswordResetToken,
+  sendSecurityAlertEmail,
 } from '../utils/passwordReset.js';
 
 // Rôles autorisés à l'inscription publique. ADMIN et ROOT ne sont JAMAIS accessibles
@@ -230,6 +233,100 @@ export const forgotPassword = async (req, res) => {
   dispatchPasswordResetEmail(user, jeton);
 
   res.status(200).json({ message });
+};
+
+// GET /api/auth/reset-password?token=...
+//
+// Affiche le formulaire, sans consommer le jeton.
+//
+// separation volontaire : plusieurs clients de messagerie et la plupart des
+// antivirus prechargent les liens. Un GET qui consomme le jeton pourrait changer un
+// mot de passe avant que son proprietaire n'ait vu la page — et laisserait
+// l'utilisateur devant un formulaire qui ne fonctionne plus. C'est le meme
+// raisonnement que pour la verification d'adresse.
+export const resetPasswordPage = async (req, res) => {
+  const brut = req.query.token ?? '';
+  const verdict = brut ? await checkPasswordResetToken(brut) : { ok: false, reason: 'inconnu' };
+
+  const messages = {
+    inconnu: 'Ce lien est invalide. Demandez-en un nouveau.',
+    expire: 'Ce lien a expire. Demandez-en un nouveau.',
+    deja_utilise: 'Ce lien a deja servi.',
+  };
+
+  const html = await renderPage('formulaire', {
+    title: 'Nouveau mot de passe',
+    // L'erreur est dite avant le formulaire : mieux vaut que l'utilisateur
+    // sache qu'il doit repartir d'une demande plutot qu'il tape un mot de passe
+    // qui serait refuse apres coup.
+    erreur: verdict.ok ? null : messages[verdict.reason],
+    description: 'Choisissez un nouveau mot de passe pour votre compte AgriConnect.',
+    action: '/api/auth/reset-password',
+    token: brut,
+    champMotDePasse: verdict.ok,
+    libelle: 'Enregistrer',
+  });
+
+  if (html === null) return res.status(500).send('Page indisponible');
+  res.type('html').send(html);
+};
+
+// POST /api/auth/reset-password
+export const resetPassword = async (req, res) => {
+  const { token, password } = req.body;
+
+  const reinitialisation = await prisma.$transaction(async (tx) => {
+    const verdict = await consumePasswordResetToken(token);
+    if (!verdict.ok) return { ok: false, reason: verdict.reason };
+
+    // Le mot de passe et la consommation du jeton dans la meme transaction : si
+    // l'echec du hachage laissait le jeton consomme, l'utilisateur devrait
+    // redemander un lien pour une raison qui n'a rien a voir avec lui.
+    await tx.user.update({
+      where: { id: verdict.userId },
+      data: { password: await bcrypt.hash(password, 10) },
+    });
+
+    return { ok: true, userId: verdict.userId };
+  });
+
+  const messages = {
+    inconnu: 'Ce lien est invalide ou a expire.',
+    expire: 'Ce lien est invalide ou a expire.',
+    deja_utilise: 'Ce lien a deja servi.',
+  };
+
+  if (!reinitialisation.ok) {
+    return res.status(400).json({ error: messages[reinitialisation.reason] });
+  }
+
+  const user = await prisma.user.findUnique({
+    where: { id: reinitialisation.userId },
+    include: { role: true, userStatus: true },
+  });
+
+  // Toutes les sessions tombent, session courante comprise. Changer de mot de
+  // passe sans couper les acces laisses un voleur tranquillement connecte avec
+  // l'ancien mot de passe ; c'est le scenario d'abus le plus courant. La
+  // session qui portrait le lien est elle-meme close : elle porte l'ancien mot
+  // passe et ne peut plus rien garantir.
+  await closeAllSessions(user.id);
+
+  // Alerte de securite : une reinitialisation sans notification laisse la
+  // victime sans moyen de savoir qu'elle a ete contrainte de changer. C'est ce
+  // message qui lui permet d'agir sur ses autres comptes.
+  sendSecurityAlertEmail(user);
+
+  const html = await renderPage('formulaire', {
+    title: 'Mot de passe modifie',
+    description: '',
+    action: '',
+    token: '',
+    libelle: '',
+    succes: 'Votre mot de passe a ete modifie. Reconnectez-vous sur vos appareils.',
+  });
+  if (html === null) return res.status(200).json({ message: 'Mot de passe modifie' });
+  res.type('html').send(html);
 };
 
 // GET /api/auth/verify-email?token=...
