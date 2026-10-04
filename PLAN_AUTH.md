@@ -430,3 +430,53 @@ code qui l'utilise, la forme utilisateur avant les endpoints qui la renvoient.
 Refonte du flow register/login (contrat figé, à adapter), réinitialisation par
 SMS/OTP, révoquer une session depuis l'interface d'administration, pagination,
 notifications temps réel de la vérification d'email.
+
+---
+
+## Etat d'execution
+
+Toutes les phases sont livrees, chacune dans son commit. 314 tests verts
+(``npm test``), sur 23 fichiers.
+
+| # | Phase | Commit |
+|---|---|---|
+| doc | Plan | ``17a4c78`` |
+| 0 | Socle config (CORS, SMTP) | ``1c957dd`` |
+| 1 | Modele ``Session`` | ``0cc4bf0`` |
+| 2 | Rotation, plafond, reutilisation | ``b47f23d`` |
+| 4 | Claims du jeton | ``839a620`` |
+| 3 | Gestion des sessions | ``9daf775`` |
+| 5 | Deplacement du profil | ``a7cdaad`` |
+| 6 | Verification d'email | ``fe9aeb9`` |
+| 7 | forgot-password | ``31ca126`` |
+| 8 | reset-password | ``0f08e8e`` |
+| 9 | Suspension et websockets | ``de26ece`` |
+
+Les phases 3 et 4 ont ete echangees : la gestion des sessions doit savoir
+quelle session est « la mienne », ce qui suppose le ``sessionId`` dans le jeton.
+
+### Corrections imposees en cours de route
+
+- **Le port SMTP est 1025, pas 1080.** 1080 est l'interface web du piege a mail.
+  Configurer 1080 aurait fait echouer chaque envoi sans message.
+- **La troncature des tests etait fragile par construction.** MySQL refuse
+  ``TRUNCATE`` sur une table referencee par une cle etrangere, et
+  ``FOREIGN_KEY_CHECKS=0`` ne leve pas ce refus. Le nettoyage est passe a
+  ``DELETE``, donc l'ordre de la liste n'a plus d'importance.
+- **La reponse d'un changement d'email etait perimee** : le drapeau etait
+  reinitialise apres le calcul de la reponse, si bien que l'API annoncait encore
+  « verifie » juste apres avoir deverifie.
+- **Un ``socket.on`` cote serveur** n'ecoute que ce qu'envoie le client : il ne
+  peut donc jamais repondre a une emission du serveur. La fermeture passe par
+  ``disconnectSockets`` sur la room.
+- **L'attente sur ``io.on('listening')``** ne se resout pas ; c'est
+  ``io.httpServer`` qui emet l'evenement.
+- **Un gabarit EJS compile avec ``with``** : une propriete omise par l'appelant
+  leve une ``ReferenceError`` au lieu d'etre rendue.
+
+### Non couvert, comme annonce
+
+Refonte du flow register/login (enveloppe figee, forme ``role`` / ``userStatus``
+changee en ``{code, label}``), reinitialisation par SMS/OTP, interface
+d'administration sous ``/api/users``, pagination, notifications temps reel de la
+verification d'email.

@@ -110,15 +110,101 @@ middleware ne la reconnaît pas et répond 500 au lieu de 400.
 - Gabarits dans `views/emails/<nom>/email.ejs`, parties communes dans
   `views/emails/_shared/`. Résolus depuis la racine du projet, pas depuis le
   répertoire courant.
+- Pages HTML servies par l'API (formulaires derrière les liens d'email) :
+  `views/pages/formulaire.ejs` + `page.css`, rendues par `utils/renderPage.js`.
+  Volontairement distinctes de la pile email : un email est rendu par le client
+  de messagerie, une page par un navigateur.
 - `EMAIL_SENDER` doit être une adresse complète (`"AgriConnect <no-reply@…>"`) :
   la plupart des serveurs SMTP refusent une adresse nue.
+- `SMTP_HOST` est un **nom d'hôte**, jamais l'URL d'une interface web. Avec le
+  piège à mail local (MailDev), le SMTP écoute sur **1025** et l'interface web
+  sur **1080** : confondre les deux fait échouer chaque envoi sans message.
 
-**Déclencheurs câblés** : inscription, création d'un compte ADMIN par ROOT.
+**Déclencheurs câblés** : inscription (bienvenue **et** vérification d'adresse),
+création d'un compte ADMIN par ROOT, demande de réinitialisation, confirmation
+de changement de mot de passe, renvoi de la vérification.
 
-**Non câblé, à définir si besoin** : confirmation de commande, réinitialisation
-de mot de passe (nécessite un flux de token dédié, inexistant), notification de
+**Non câblé, à définir si besoin** : confirmation de commande, notification de
 suspension. Un nouveau dossier de gabarit et un appel à `sendTemplateEmail`
 suffisent.
+
+## Authentification : sessions, statuts et récupération de compte
+
+Voir `PLAN_AUTH.md` pour les décisions et leur justification. Ce qui compte en
+pratique :
+
+**Une session est un appareil connecté.** `Session` porte l'agent, l'IP, la
+dernière activité et sa date de fermeture ; `RefreshToken` est son enfant. Une
+connexion ouvre une session, plafonnée à **5 par compte** (`SESSION_MAX_PER_USER`),
+la plus ancienne étant fermée au-delà. Sans ce modèle, « déconnecte cet
+appareil » n'était pas exprimable et le logout ne révocait qu'un jeton parmi
+ceux du compte.
+
+**Le refresh token tourne, et sa réutilisation détruit la session.** Chaque
+`POST /api/auth/refresh` remplace le jeton qu'il reçoit. Présenter un jeton déjà
+remplacé est traité comme un vol et ferme toute la session — avec
+`REFRESH_REUSE_GRACE_SECONDS` (30 s) de tolérance, car deux refreshs parallèles
+d'une même application mobile sont ordinaires et seraient sinon pris pour une
+attaque. La fenêtre se mesure depuis le **premier** remplacement : un rejeu en
+boucle ne peut pas la repousser indéfiniment.
+
+**La base fait foi, le jeton informe.** `protect` recharge l'utilisateur en base
+à chaque requête. Les claims `userStatus`, `emailVerified` et `sessionId`
+servent au client, jamais à autoriser : un jeton émis avant une suspension est
+refusé, un jeton émis avant une vérification reste utilisable.
+
+**La vérification d'adresse ne bloque rien.** `emailVerified` sert à
+l'affichage. Changer d'adresse la remet à zéro et invalide le jeton en cours,
+sinon on hériterait d'un `true` sur une adresse tierce.
+
+**Récupération de compte.** `POST /api/auth/forgot-password` répond **de la même
+façon** que l'adresse existe ou non : distinguer les deux permettrait d'énumérer les
+comptes. Les jetons sont hachés, à usage unique, valables 15 minutes, et un
+seul est actif par compte. `POST /api/auth/reset-password` **détruit toutes les
+sessions** du compte et envoie une alerte de sécurité. Les liens ouvrent une page
+de formulaire par `GET`, et seul le `POST` applique : les clients de messagerie
+et les antivirus préchargent les liens, et un `GET` qui consomme le jeton
+modifierait un mot de passe avant que son propriétaire ne l'ait vu.
+
+**Suspension.** Suspendre un compte ferme ses sessions **et** déconnecte ses
+websockets (`session_revoked`). Le contrôle se faisait en 3 points sur 4 avant :
+le socket ne consultait pas le statut.
+
+### Routes d'authentification
+
+| Route | Effet |
+|---|---|
+| `POST /api/auth/register` | Inscription, ouvre une session |
+| `POST /api/auth/login` | Connexion, ouvre une session (plafond 5) |
+| `POST /api/auth/refresh` | Tourne le jeton dans la session |
+| `POST /api/auth/logout` | Ferme la session de l'appareil |
+| `GET /api/auth/sessions` | Sessions ouvertes, avec `isCurrent` |
+| `DELETE /api/auth/sessions/:id` | Ferme une session |
+| `POST /api/auth/logout-all` | Ferme toutes les sessions sauf la courante |
+| `POST /api/auth/forgot-password` | Lien de réinitialisation (réponse identique) |
+| `GET`/`POST /api/auth/reset-password` | Formulaire / application du nouveau mot de passe |
+| `GET`/`POST /api/auth/verify-email` | Formulaire / application de la vérification |
+| `POST /api/auth/resend-verification` | Renvoi du lien (cooldown 5 min) |
+| `GET`/`PATCH /api/auth/me` | Profil |
+| `POST /api/auth/me/avatar` | Avatar |
+| `PATCH /api/auth/me/availability` | Disponibilité (DRIVER) |
+
+`/api/users` a été **libéré** : il n'accueille plus que l'administration, à venir.
+
+### Ce que le client Flutter doit savoir
+
+- `role` et `userStatus` sont des **`{ code, label }`** partout, y compris sur
+  l'inscription et la connexion. Auparavant `GET /api/users/me` renvoyait des
+  lignes de base entières : deux formes pour un même champ.
+- `POST /api/auth/refresh` renvoie **`accessToken` et `refreshToken`** : le second
+  est nouveau à chaque appel, l'ancien étant révoqué. Un client qui réutilise le
+  sien se fera refuser après 30 s.
+- Les quatre routes profil ont changé de préfixe (`/api/users/me*` →
+  `/api/auth/me*`). Aucun client n'existait, donc aucune compatibilité n'est
+  fournie : les anciennes chemins répondent 404.
+- L'email de vérification et le formulaire de réinitialisation sont servis par
+  l'API. Une fois `APP_URL` renseignée pour l'application, les redirections
+  post-action s'y font sans autre changement.
 
 ## Architecture des rôles et tables de référence
 
@@ -130,24 +216,25 @@ câblées en code.
 
 `ROOT` est créé uniquement via `npm run create:root`, jamais via l'API. Seul rôle
 habilité à créer un `ADMIN` (`POST /api/admin/users`). Un compte suspendu est
-bloqué à 3 niveaux : `protect`, `login`, `refresh`.
+bloqué à 4 niveaux : `protect`, `login`, `refresh` et la connexion Socket.io ;
+la suspension ferme en outre ses sessions et déconnecte ses websockets.
 
 ## Système de médias
 
 La table **`Media`** (`ownerUserId` **ou** `ownerListingId`, plus `mediaType` et
 `mimeType`) remplace les champs `photos[]` et `avatarUrl`. Points d'entrée :
-`POST /api/users/me/avatar` et `POST /api/listings/:id/photos`.
+`POST /api/auth/me/avatar` et `POST /api/listings/:id/photos`.
 
 **Côté client Flutter** : `listing.category` et `listing.status` sont des objets
 `{code, label}`, `listing.photos` devient `listing.media`, `user.avatarUrl`
-disparaît au profit du champ `media` de `GET /api/users/me`.
+disparaît au profit du champ `media` de `GET /api/auth/me`.
 
 ## Endpoints principaux
 
 | Ressource | Routes clés |
 |---|---|
-| Auth | `POST /register`, `/login`, `/refresh`, `/logout` |
-| Users | `GET/PATCH /me`, `POST /me/avatar`, `PATCH /me/availability` |
+| Auth | inscription, connexion, sessions, récupération de compte — voir la table ci-dessus |
+| Users | *aucune route* : préfixe libéré pour l'administration à venir |
 | Listings | `GET /`, `GET/PATCH/DELETE /:id`, `POST /`, `POST /:id/photos` |
 | Conversations | `GET/POST /`, `GET/POST /:id/messages` |
 | Orders | `POST /`, `GET /`, `GET /:id`, `PATCH /:id/{confirm,cancel,complete}` |
