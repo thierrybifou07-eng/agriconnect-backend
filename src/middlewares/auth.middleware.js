@@ -4,6 +4,12 @@ import prisma from '../config/prisma.js';
 // Vérifie le token JWT, charge l'utilisateur avec son rôle et son statut,
 // et bloque l'accès si le compte est suspendu (1er des 3 points de blocage,
 // avec login et refresh - voir auth.controller.js).
+//
+// La base est la reference, jamais le jeton. Le jeton porte bien le statut et la
+// verification d'adresse, mais uniquement pour que le client n'ait pas a les
+// redemander. Aucune autorisation n'est delivree sur la foi de ces claims : un
+// jeton anterieur a une suspension est donc refuse, et un jeton anterieur a une
+// verification reste utilisable parce que la base, elle, a rattrape.
 export const protect = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
@@ -45,6 +51,11 @@ export const protect = async (req, res, next) => {
     }
 
     req.user = user;
+    // La session est conservee telle qu'elle est dans le jeton, sans
+    // relecture : elle sert au client a reconnaitre son appareil, pas a
+    // autoriser quoi que ce soit. Une session fermee est traitee par les routes
+    // qui controlent un acces prolonge (refresh, liste des sessions).
+    req.sessionId = decoded.sessionId ?? null;
     next();
   } catch (err) {
     return res.status(401).json({ error: 'Token invalide ou expiré' });

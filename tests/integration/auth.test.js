@@ -3,8 +3,13 @@ import prisma from '../../src/config/prisma.js';
 import { api } from '../helpers/app.js';
 import { registerViaApi } from '../helpers/factory.js';
 import { hashToken } from '../../src/utils/refreshToken.js';
+import { generateToken, verifyToken } from '../../src/utils/jwt.js';
 
 const client = api();
+
+// Contenu verifiable du jeton sans passer par la reponse.
+const claims = (token) => verifyToken(token);
+const utilisateur = (email) => prisma.user.findUnique({ where: { email } });
 
 describe('POST /api/auth/register', () => {
   it('cree un compte et renvoie les jetons', async () => {
@@ -480,5 +485,149 @@ describe('Plafond de sessions', () => {
     expect(res.status).toBe(200);
     // 3 sessions ouvertes, aucune eviction de supplement.
     expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(3);
+  });
+});
+
+// Le client a besoin du statut du compte pour l'afficher sans refaire un appel, et
+// du sessionId pour reconnaitre son appareil parmi les sessions qu'il liste.
+describe('Charge utile du jeton d acces', () => {
+  it('porte le statut, la verification et la session', async () => {
+    const { accessToken } = await registerViaApi(client);
+
+    const decoded = claims(accessToken);
+    expect(Object.keys(decoded).sort()).toEqual(
+      ['emailVerified', 'exp', 'iat', 'id', 'role', 'sessionId', 'userStatus'].sort()
+    );
+    expect(decoded.role).toBe('BUYER');
+    expect(decoded.userStatus).toBe('ACTIVE');
+    expect(decoded.emailVerified).toBe(false);
+    expect(typeof decoded.sessionId).toBe('number');
+  });
+
+  it('rattache le sessionId a la session ouverte par cette connexion', async () => {
+    const { accessToken, payload } = await registerViaApi(client);
+    const user = await utilisateur(payload.email);
+
+    const session = await prisma.session.findFirst({ where: { id: claims(accessToken).sessionId } });
+    expect(session.userId).toBe(user.id);
+  });
+
+  it('remplace le sessionId a chaque connexion, sans le reutiliser', async () => {
+    const { payload } = await registerViaApi(client);
+
+    const premier = await client
+      .post('/api/auth/login')
+      .send({ email: payload.email, password: payload.password });
+    const second = await client
+      .post('/api/auth/login')
+      .send({ email: payload.email, password: payload.password });
+
+    // Deux appareils : le jeton de chacun designe sa propre session, sinon le
+    // client ne pourrait pas se reconnaitre dans la liste.
+    expect(claims(premier.body.accessToken).sessionId).not.toBe(claims(second.body.accessToken).sessionId);
+  });
+
+  it('conserve le sessionId apres un refresh', async () => {
+    const { accessToken, refreshToken } = await registerViaApi(client);
+
+    const res = await client.post('/api/auth/refresh').send({ refreshToken });
+
+    // La session ne change pas au refresh : seul le jeton qui la porte est
+    // remplace, sinon le client perdrait la sienne a chaque renouvellement.
+    expect(claims(res.body.accessToken).sessionId).toBe(claims(accessToken).sessionId);
+  });
+
+  it('expose aussi la verification dans la reponse de l inscription', async () => {
+    const { user } = await registerViaApi(client);
+    expect(user.emailVerified).toBe(false);
+  });
+
+  it('porte ACTIVE, et non le libelle, comme valeur de statut', async () => {
+    const { payload } = await registerViaApi(client);
+    await prisma.user.update({
+      where: { email: payload.email },
+      data: { emailVerified: true },
+    });
+
+    const res = await client
+      .post('/api/auth/login')
+      .send({ email: payload.email, password: payload.password });
+
+    // Les claims sont techniques : un client compare a "SUSPENDED", pas a
+    // "Ce compte a été suspendu".
+    expect(claims(res.body.accessToken).userStatus).toBe('ACTIVE');
+    expect(claims(res.body.accessToken).emailVerified).toBe(true);
+  });
+});
+
+// La base est la reference. Ces tests verrouillent le sens dans lequel l'ecart
+// entre le jeton et la base se resorbe.
+describe('Statut du compte : la base prime sur le jeton', () => {
+  const routeProtegee = (token) => client.get('/api/users/me').set('Authorization', `Bearer ${token}`);
+
+  it('refuse un jeton.delivre avant une suspension', async () => {
+    const { accessToken, payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: 'SUSPENDED' } });
+    await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
+
+    // Le jeton porte encore userStatus ACTIVE, il expire dans une heure. Sans
+    // relecture en base, l'utilisateur suspendu disposerait d'une heure de plus.
+    const res = await routeProtegee(accessToken);
+    expect(res.status).toBe(403);
+  });
+
+  it('n accorde rien a un jeton qui se declare plus permissif que la base', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: 'SUSPENDED' } });
+    await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
+
+    // Un jeton signe avec le vrai secret, mais portant un statut falsifie. Il est
+    // valide au sens cryptographique : seule la relecture en base peut dire non.
+    const falsifie = generateToken({
+      id: user.id,
+      role: user.role?.code ?? 'BUYER',
+      userStatus: 'ACTIVE',
+      emailVerified: false,
+      sessionId: 1,
+    });
+
+    expect((await routeProtegee(falsifie)).status).toBe(403);
+  });
+
+  // Sens inverse : le jeton est perime, la base a rattrape. Refuser ici
+  // deconnecterait un utilisateur qui vient de verifier son adresse.
+  it('laisse passer un jeton anterieur a une verification d adresse', async () => {
+    const { accessToken, payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+    await prisma.user.update({ where: { id: user.id }, data: { emailVerified: true } });
+
+    const res = await routeProtegee(accessToken);
+    expect(res.status).toBe(200);
+    // Le jeton dit encore false : c'est normal, il a jusqu'a une heure de validite,
+    // et le client rafraichira. L'API, elle, est la source de verite.
+    expect(claims(accessToken).emailVerified).toBe(false);
+  });
+
+  it('laisse passer un jeton anterieur a une levee de suspension', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: 'SUSPENDED' } });
+    await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
+
+    const refuse = await client
+      .post('/api/auth/login')
+      .send({ email: payload.email, password: payload.password });
+    expect(refuse.status).toBe(403);
+
+    const actif = await prisma.userStatus.findUnique({ where: { code: 'ACTIVE' } });
+    await prisma.user.update({ where: { id: user.id }, data: { userStatusId: actif.id } });
+
+    const res = await client
+      .post('/api/auth/login')
+      .send({ email: payload.email, password: payload.password });
+    expect(res.status).toBe(200);
+    expect(claims(res.body.accessToken).userStatus).toBe('ACTIVE');
   });
 });

@@ -27,8 +27,20 @@ function safeUserToApi(user) {
     userStatus: user.userStatus.label,
     vehicleType: user.vehicleType,
     isAvailable: user.isAvailable,
+    emailVerified: user.emailVerified,
   };
 }
+
+// Le jeton porte l'etat du compte pour que le client puisse l'afficher sans
+// redemander, et la session pour qu'il reconnaisse son appareil. Voir jwt.js.
+const accessTokenFor = (user, sessionId) =>
+  generateToken({
+    id: user.id,
+    role: user.role.code,
+    userStatus: user.userStatus.code,
+    emailVerified: user.emailVerified,
+    sessionId,
+  });
 // POST /api/auth/register
 export const register = async (req, res) => {
   const { firstname, lastname, phone, email, password, role, location, vehicleType } = req.body;
@@ -72,7 +84,7 @@ export const register = async (req, res) => {
   // appareil connecte, et c'est elle qui portera les jetons de rafraichissement
   // de cet appareil.
   const session = await openSession(user.id, req);
-  const accessToken = generateToken({ id: user.id, role: user.role.code });
+  const accessToken = accessTokenFor(user, session.id);
   const refreshToken = await issueRefreshToken(user.id, session.id);
 
   // Envoi de l'email de bienvenue, en arriere-plan.
@@ -125,7 +137,7 @@ export const login = async (req, res) => {
   }
 
   const session = await openSession(user.id, req);
-  const accessToken = generateToken({ id: user.id, role: user.role.code });
+  const accessToken = accessTokenFor(user, session.id);
   const refreshToken = await issueRefreshToken(user.id, session.id);
 
   // const { password: _pw, ...userSafe } = user;
@@ -174,7 +186,7 @@ export const refresh = async (req, res) => {
     });
   }
 
-  const accessToken = generateToken({ id: user.id, role: user.role.code });
+  const accessToken = accessTokenFor(user, stored.sessionId);
   res.json({ accessToken, refreshToken: rotation.rawToken });
 };
 

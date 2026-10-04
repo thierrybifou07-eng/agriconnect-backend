@@ -198,45 +198,70 @@ which is common when several requests discover an expired token at once.
 
 ---
 
+## Phase 4 — Statut dans le jeton d'accès
+
+**Contenu** : les claims deviennent `{id, role, userStatus, emailVerified,
+sessionId}`. La base reste la référence : `protect` recharge l'utilisateur en base
+à chaque requête et n'accorde jamais une permission sur la foi du jeton. Les
+claims informent le client, rien de plus.
+
+L'écart entre le jeton et la base se résorbe toujours dans le même sens, et c'est
+ce qui mérite d'être testé :
+
+- un jeton antérieur à une **suspension** est refusé, même s'il porte encore
+  `userStatus: ACTIVE` — sinon un compte suspendu disposerait d'une heure de plus ;
+- un jeton antérieur à une **vérification** d'adresse ou à une levée de
+  suspension reste utilisable, parce que la base a rattrapé. Le refuser
+  déconnecterait un utilisateur qui vient de vérifier son adresse.
+
+`sessionId` est ce qui permet au client de reconnaître son appareil parmi les
+sessions qu'il liste, et de fermer les autres sans se fermer lui-même. Il est
+stable d'un refresh à l'autre : la session ne change pas au rafraîchissement,
+seul le jeton qui la porte est remplacé.
+
+**Tests** : forme exacte des claims ; `sessionId` rattaché à la bonne session,
+distinct d'une autre connexion et stable après refresh ; jeton antérieur à une
+suspension refusé ; jeton portant un statut falsifié refusé **même s'il est signé
+avec le vrai secret** ; jeton antérieur à une vérification accepté.
+
+```
+feat(auth): carry user status, email verification and session in the access token
+
+The client needs to render a suspended or unverified account without a second
+round trip, so the state travels in the token. It stays informative: protect
+already reloads the user on every request and no permission is ever granted from
+a claim, so the database remains the authority and the token is a cache of it.
+
+The tests pin down the direction in which a discrepancy resolves, because both
+halves are load-bearing. A token minted before a suspension is refused, even
+though it still claims ACTIVE, otherwise a suspended account keeps an hour of
+access. A token minted before a verification, or before a suspension is lifted,
+still works — rejecting it would log out someone who has just verified their
+address. A correctly signed token with falsified claims is refused too, which is
+the case only the reload can catch.
+
+sessionId is the device identity: each login gets a new one, and a refresh keeps
+it, so the client can find itself in its own session list and close the others
+without closing itself.
+```
+
+---
+
 ## Phase 3 — Gestion des sessions par le client
 
 **Contenu** : `GET /api/auth/sessions` (avec un indicateur « est-ce la mienne »),
 `DELETE /api/auth/sessions/:id`, `POST /api/auth/logout-all`. Les routes `:id`
 réutilisent le `router.param('id', ...)` déjà en place.
 
+Cette phase dépend de la phase 4 (claims), et a donc été exécutée après : savoir
+quelle session est « la mienne » suppose que le jeton porte son `sessionId`.
+L'identifier autrement, en exigeant le refresh token dans le corps de la requête,
+aurait été une mécanique jetable dont la phase 4 aurait ensuite remplacé l'usage.
+L'ordre a été inversé, pas le contenu.
+
 **Tests** : liste avec le marqueur de session courante ; fermeture ciblée refusée
 si elle appartient à autrui ; `logout-all` préserve la session courante ;
 une session fermée ne refresh plus.
-
-```
-feat(auth): let users list and close their own sessions
-
-Without this, a lost device can only be cut by changing the password. Listing
-marks which session is the caller's own, and closing one revokes just that
-device, which logout-all then extends to every other session.
-```
-
----
-
-## Phase 4 — Statut dans le jeton d'accès
-
-**Contenu** : les claims deviennent `{id, role, userStatus, emailVerified,
-sessionId}`. `protect` recharge déjà l'utilisateur en base à chaque requête : il
-compare avec les claims et refuse en cas d'écart. La base reste la référence, le
-jeton informe le client.
-
-**Tests** : forme exacte des claims ; refus sur statut divergent ; un jeton
-délivré avant une suspension est refusé ; un jeton antérieur à une vérification
-reste utilisable (la base having caught up).
-
-```
-feat(auth): carry user status and email verification in the access token
-
-The client needs the status to render without a second round trip, so it is
-carried in the token. The database stays authoritative: protect already loads
-the user on every request, and now rejects a request whose claims contradict it,
-rather than trusting a token that was minted up to an hour ago.
-```
 
 ---
 
