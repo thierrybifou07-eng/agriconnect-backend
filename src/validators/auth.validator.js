@@ -69,3 +69,14 @@ export const resetPasswordSchema = oneTimeTokenSchema.keys({
     'string.pattern.base': passwordPatternMessage,
   }),
 });
+
+// forgot-password : seule l'adresse est demandee, et elle doit ressembler a une
+// adresse. Un format invalide est rejete ici plutot que d'atteindre la base ;
+// le message reste par ailleurs identique a celui d'un compte inconnu.
+export const forgotPasswordSchema = Joi.object({
+  email: Joi.string().trim().email().required().messages({
+    'string.email': 'Email must be a valid email address',
+    'string.empty': 'Email is required',
+    'any.required': 'Email is required',
+  }),
+});

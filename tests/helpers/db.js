@@ -7,6 +7,7 @@ const BUSINESS_TABLES = [
   'RefreshToken',
   'Session',
   'EmailVerificationToken',
+  'PasswordResetToken',
   'Message',
   'Conversation',
   'Delivery',

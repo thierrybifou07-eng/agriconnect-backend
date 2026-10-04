@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof heading !== 'undefined' && heading ? heading : 'Réinitialisation du mot de passe' %></title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <h2>Bonjour <%= username %>,</h2>
+      <p>
+        Une r&eacute;initialisation de mot de passe a &eacute;t&eacute; demand&eacute;e
+        pour votre compte AgriConnect.
+      </p>
+
+      <p style="text-align:center; margin:28px 0;">
+        <a href="<%= resetUrl %>"
+           style="background:#2e7d32;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:6px;display:inline-block;font-weight:bold;">
+          Choisir un nouveau mot de passe
+        </a>
+      </p>
+
+      <% if (typeof ttlMinutes !== 'undefined' && ttlMinutes) { %>
+        <div class="info-row">
+          Ce lien est valable <strong><%= ttlMinutes %> minutes</strong>.
+        </div>
+      <% } %>
+
+      <p style="font-size:13px; color:#64748b;">
+        Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur&nbsp;:
+      </p>
+      <p style="font-size:12px; color:#94a3b8; word-break:break-all;">
+        <%= resetUrl %>
+      </p>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        <strong>Si vous n'&eacute;tiez pas vous&nbsp;:</strong> ignorez ce message.
+        Votre mot de passe n'a pas chang&eacute; et aucune session n'a
+        &eacute;t&eacute; ferm&eacute;e. Si cette demande n'est pas de vous,
+        laissez cette page tranquille : rien n'a change.
+      </p>
+      <p style="font-size:14px; color:#94a3b8;">
+        Changer de mot de passe ferme toutes les sessions ouvertes sur tous vos
+        appareils&nbsp;: vous devrez vous reconnecter.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

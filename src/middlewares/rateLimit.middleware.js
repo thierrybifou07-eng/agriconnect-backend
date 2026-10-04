@@ -48,6 +48,26 @@ export const refreshLimiter = rateLimit({
   message: { error: 'Trop de rafraîchissements, réessayez dans quelques minutes' },
 });
 
+// Limite propre à /forgot-password.
+//
+// Elle n'a rien à voir avec la protection anti-brute-force : ce n'est pas un
+// essai de mot de passe mais une demande d'email. Le risque est l'inondation
+// d'une boîte et l'énumération des comptes existants — cette dernière est déjà
+// neutralisée par une réponse identique, mais la première reste réelle.
+//
+// Le seau est distinct de celui du login pour une raison pratique : sans cela,
+// quelques demandes de réinitialisation verrouilleraient un utilisateur
+// légitime pendant quinze minutes. Partagée, elle punirait l'utilisateur d'un
+// problème qu'il n'a pas créé.
+export const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: resolveLimit(5),
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => !limiterEnabled(),
+  message: { error: 'Trop de demandes de réinitialisation, réessayez dans quelques minutes' },
+});
+
 // Limite générale sur le reste de l'API
 export const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

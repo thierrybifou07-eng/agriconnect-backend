@@ -10,6 +10,7 @@ import {
   verifyEmailPage,
   verifyEmail,
   resendVerification,
+  forgotPassword,
 } from '../controllers/auth.controller.js';
 import {
   getMe,
@@ -17,12 +18,22 @@ import {
   uploadAvatar,
   updateAvailability,
 } from '../controllers/user.controller.js';
-import { authLimiter, refreshLimiter } from '../middlewares/rateLimit.middleware.js';
+import {
+  authLimiter,
+  refreshLimiter,
+  forgotPasswordLimiter,
+} from '../middlewares/rateLimit.middleware.js';
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { registerSchema, loginSchema, refreshSchema, oneTimeTokenSchema } from '../validators/auth.validator.js';
+import {
+  registerSchema,
+  loginSchema,
+  refreshSchema,
+  oneTimeTokenSchema,
+  forgotPasswordSchema,
+} from '../validators/auth.validator.js';
 
 const router = Router();
 
@@ -38,6 +49,17 @@ router.post('/login', authLimiter, validate(loginSchema), login);
 // verrouillait un utilisateur legitime qui ouvrait simplement son application.
 router.post('/refresh', refreshLimiter, validate(refreshSchema), refresh);
 router.post('/logout', logout);
+
+// Mot de passe oublie.
+//
+// Route publique, et c'est necessaire : elle est appelee precisement quand
+// l'utilisateur ne peut plus s'authentifier. Sa limite de debit est propre, voir
+// forgotPasswordLimiter dans rateLimit.middleware.js.
+// Le GET qui affiche le formulaire et le POST qui applique le changement sont
+// volontairement distincts : le lien recu par email ne doit pas consommer le
+// jeton au premier clic, les clients de messagerie et les antivirus prechargent
+// les liens.
+router.post('/forgot-password', forgotPasswordLimiter, validate(forgotPasswordSchema), forgotPassword);
 
 // Verification d'adresse email.
 //

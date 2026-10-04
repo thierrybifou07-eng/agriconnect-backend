@@ -20,6 +20,10 @@ import {
   consumeVerificationToken,
   resetVerificationForNewEmail,
 } from '../utils/emailVerification.js';
+import {
+  issuePasswordResetToken,
+  dispatchPasswordResetEmail,
+} from '../utils/passwordReset.js';
 
 // Rôles autorisés à l'inscription publique. ADMIN et ROOT ne sont JAMAIS accessibles
 // ici : ROOT se crée uniquement via scripts/create-root.js (CLI serveur), ADMIN
@@ -200,6 +204,32 @@ export const refresh = async (req, res) => {
 
   const accessToken = accessTokenFor(user, stored.sessionId);
   res.json({ accessToken, refreshToken: rotation.rawToken });
+};
+
+// POST /api/auth/forgot-password
+//
+// La reponse ne doit rien dire sur l'existence du compte. Deux raisons, une
+// seule regle : distinguer les cas permettrait d'enumerer les adresses enregistrees,
+// et repondre "compte inconnu" invite l'utilisateur a essayer une autre adresse
+// sur une liste. Le message dit ce qui est vrai dans les deux cas — nous acceptons
+// la demande — et laisse le silence faire le reste.
+export const forgotPassword = async (req, res) => {
+  const { email } = req.body;
+  const message = 'Si un compte est enregistre avec cette adresse, un email vient de lui etre envoye.';
+
+  const user = await prisma.user.findUnique({ where: { email } });
+
+  // Un jeton n'est emis que pour un compte existant, mais la reponse est la meme.
+  if (!user) {
+    return res.status(200).json({ message });
+  }
+
+  const jeton = await issuePasswordResetToken(user);
+  // L'envoi n'est pas attendu : la reponse ne doit pas dependre du serveur de
+  // messagerie, ni pour son contenu ni pour son delai.
+  dispatchPasswordResetEmail(user, jeton);
+
+  res.status(200).json({ message });
 };
 
 // GET /api/auth/verify-email?token=...

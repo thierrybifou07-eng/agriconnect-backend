@@ -175,6 +175,7 @@ model User {
   sessions              Session[]
   media                 Media[]
   emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens      PasswordResetToken[]
 
   @@index([roleId])
   @@index([userStatusId])
@@ -199,6 +200,28 @@ model EmailVerificationToken {
   expiresAt DateTime
   // Rempli au premier usage. Le jeton n'est jamais supprime : une verification
   // doit pouvoir dire " deja verifie, il y a trois jours" plutot que " inconnu".
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// Reinitialisation de mot de passe.
+//
+// Table distincte de EmailVerificationToken, pour les memes raisons : usages
+// differents, durees de vie differentes (15 minutes contre 24 heures), purge
+// independante. Un "type" unique sur une table commune ferait qu'une simple
+// erreur de filtre enverrait un lien de verification a la place du lien de
+// reinitialisation, ou l'inverse.
+
+model PasswordResetToken {
+  id    Int    @id @default(autoincrement())
+  token String @unique
+  user  User   @relation(fields: [userId], references: [id])
+  userId Int
+  // 15 minutes. Un mot de passe se reinitialise sous le coup de la contrainte ;
+  // un lien qui traine des semaines dans une boite n'a plus lieu d'etre utile.
+  expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime @default(now())
 
