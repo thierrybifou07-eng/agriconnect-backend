@@ -48,6 +48,33 @@ export async function createUser({ role = 'BUYER', status = 'ACTIVE', ...overrid
   });
 }
 
+// Une session represente un appareil connecte. Elle expire par defaut dans 30
+// jours, comme le jeton de rafraichissement qu'elle porte.
+export async function createSession(user, overrides = {}) {
+  const proprietaire = user || (await createUser());
+  return prisma.session.create({
+    data: {
+      userId: proprietaire.id,
+      expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+      ...overrides,
+    },
+  });
+}
+
+export async function createRefreshToken(user, session, overrides = {}) {
+  const proprietaire = user || (await createUser());
+  const seance = session || (await createSession(proprietaire));
+  return prisma.refreshToken.create({
+    data: {
+      token: `jeton-${nextId()}`,
+      userId: proprietaire.id,
+      sessionId: seance.id,
+      expiresAt: new Date(Date.now() + 30 * 24 * 3600 * 1000),
+      ...overrides,
+    },
+  });
+}
+
 export async function createListing({ farmer, ...overrides } = {}) {
   const owner = farmer || (await createUser({ role: 'FARMER' }));
   const [categoryId, statusId] = await Promise.all([

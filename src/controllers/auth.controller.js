@@ -1,11 +1,10 @@
 import bcrypt from 'bcrypt';
 import prisma from '../config/prisma.js';
 import { generateToken } from '../utils/jwt.js';
-import { generateRefreshTokenValue, hashToken } from '../utils/refreshToken.js';
+import { hashToken } from '../utils/refreshToken.js';
+import { openSession, issueRefreshToken, closeSession, isSessionActive } from '../utils/session.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { sendTemplateEmail } from '../config/email/sendMail.js';
-
-const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || '30', 10);
 
 // Rôles autorisés à l'inscription publique. ADMIN et ROOT ne sont JAMAIS accessibles
 // ici : ROOT se crée uniquement via scripts/create-root.js (CLI serveur), ADMIN
@@ -14,12 +13,6 @@ const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || '3
 // une décision de sécurité d'une donnée modifiable.
 const PUBLIC_ROLES = ['FARMER', 'BUYER', 'DRIVER'];
 
-async function issueRefreshToken(userId) {
-  const rawToken = generateRefreshTokenValue();
-  const expiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000);
-  await prisma.refreshToken.create({ data: { token: hashToken(rawToken), userId, expiresAt } });
-  return rawToken;
-}
 function userFullName(user) {
   return `${user.firstname} ${user.lastname}`;
 }
@@ -75,8 +68,12 @@ export const register = async (req, res) => {
     include: { role: true, userStatus: true },
   });
 
+  // Inscription et connexion ouvrent chacune une session : une session est un
+  // appareil connecte, et c'est elle qui portera les jetons de rafraichissement
+  // de cet appareil.
+  const session = await openSession(user.id, req);
   const accessToken = generateToken({ id: user.id, role: user.role.code });
-  const refreshToken = await issueRefreshToken(user.id);
+  const refreshToken = await issueRefreshToken(user.id, session.id);
 
   // Envoi de l'email de bienvenue, en arriere-plan.
 //
@@ -127,8 +124,9 @@ export const login = async (req, res) => {
     return res.status(403).json({ error: 'Ce compte a été suspendu' });
   }
 
+  const session = await openSession(user.id, req);
   const accessToken = generateToken({ id: user.id, role: user.role.code });
-  const refreshToken = await issueRefreshToken(user.id);
+  const refreshToken = await issueRefreshToken(user.id, session.id);
 
   // const { password: _pw, ...userSafe } = user;
   res.json({ user: safeUserToApi(user), accessToken, refreshToken });
@@ -139,9 +137,14 @@ export const refresh = async (req, res) => {
   const { refreshToken } = req.body;
 
   const tokenHash = hashToken(refreshToken);
-  const stored = await prisma.refreshToken.findUnique({ where: { token: tokenHash } });
+  const stored = await prisma.refreshToken.findUnique({
+    where: { token: tokenHash },
+    include: { session: true },
+  });
 
-  if (!stored || stored.revoked || stored.expiresAt < new Date()) {
+  // La session est verifiee avec son jeton : un jeton peut etre valide alors que
+  // la session qui le porte a ete close, et ce serait une deconnexion sans effet.
+  if (!stored || stored.revoked || stored.expiresAt < new Date() || !isSessionActive(stored.session)) {
     return res.status(401).json({ error: 'Refresh token invalide ou expiré' });
   }
 
@@ -169,7 +172,17 @@ export const logout = async (req, res) => {
   if (!refreshToken) {
     return res.status(400).json({ error: 'refreshToken est requis' });
   }
-  const tokenHash = hashToken(refreshToken);
-  await prisma.refreshToken.updateMany({ where: { token: tokenHash }, data: { revoked: true } });
+
+  // On ferme la session plutot que le seul jeton. Le logout doit couper cet
+  // appareil la, ou le client pourrait continuer a rafraichir avec le meme jeton
+  // jusqu'a son expiration.
+  //
+  // Fermer une session deja fermee est sans effet, ce qui rend la deconnexion
+  // idempotente : un second appel, ou un jeton inconnu, ne renvoie pas d'erreur.
+  const stored = await prisma.refreshToken.findUnique({ where: { token: hashToken(refreshToken) } });
+  if (stored) {
+    await closeSession(stored.sessionId);
+  }
+
   res.status(204).send();
 };

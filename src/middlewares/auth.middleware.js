@@ -31,7 +31,7 @@ export const protect = async (req, res, next) => {
         longitude: true,
         isAvailable: true,
         vehicleType: true,
-        verified: true,
+        emailVerified: true,
         role: true,
         userStatus: true,
       },

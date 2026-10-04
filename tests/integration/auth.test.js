@@ -139,3 +139,132 @@ describe('Rotation du refresh token', () => {
     expect(res.status).toBe(401);
   });
 });
+
+// Avant cette phase, une deconnexion ne revocait que l'un des jetons du compte :
+// les connexions concurrentes restaient valides, et rien ne pouvait dire de quel
+// appareil venait une connexion. Une session est ce qui rend la deconnexion
+// ciblee exprimable.
+describe('Sessions', () => {
+  const sessionsDe = (userId) => prisma.session.findMany({ where: { userId } });
+
+  it('ouvre une session a l inscription', async () => {
+    const { user } = await registerViaApi(client);
+
+    const sessions = await sessionsDe(user.id);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].revokedAt).toBeNull();
+    expect(sessions[0].expiresAt.getTime()).toBeGreaterThan(Date.now());
+  });
+
+  it('ouvre une session a chaque connexion, sans reutiliser la precedente', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    const apresInscription = (await sessionsDe(user.id)).length;
+
+    await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+
+    // L'inscription ouvre deja une session ; deux connexions de plus en ouvrent
+    // deux autres. Deux appareils, deux sessions : c'est tout l'objet du modele,
+    // puisqu'avant une reconnexion ne pouvait que se superposer a la precedente.
+    const sessions = await sessionsDe(user.id);
+    expect(apresInscription).toBe(1);
+    expect(sessions).toHaveLength(3);
+    expect(sessions.every((s) => s.revokedAt === null)).toBe(true);
+  });
+
+  it('rattache le jeton de rafraichissement a sa session', async () => {
+    const { user, refreshToken } = await registerViaApi(client);
+
+    const jeton = await prisma.refreshToken.findFirst({ where: { userId: user.id } });
+    const session = await prisma.session.findFirst({ where: { id: jeton.sessionId } });
+
+    expect(session.userId).toBe(user.id);
+    expect(jeton.token).not.toBe(refreshToken);
+  });
+
+  it('enregistre l appareil quand la requete le renseigne', async () => {
+    const { payload } = await registerViaApi(client, { email: 'appareil@example.com' });
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    await client
+      .post('/api/auth/login')
+      .set('User-Agent', 'AgriConnect-Jest/1.0')
+      .send({ email: payload.email, password: payload.password });
+
+    // Agent et IP sont facultatifs, mais quand la requete les porte ils doivent
+    // etre conserves : sans eux, "deconnecte cet appareil" n'a aucun sens.
+    const derniere = (await sessionsDe(user.id)).sort((a, b) => b.id - a.id)[0];
+    expect(derniere.userAgent).toBe('AgriConnect-Jest/1.0');
+    expect(derniere.ip).toBeTruthy();
+  });
+
+  // Supertest n'envoie pas de User-Agent : la session doit quand meme etre creee,
+  // faute de quoi un client qui masque son agent ne pourrait plus se connecter.
+  it('ouvre une session meme sans agent ni IP', async () => {
+    const { user } = await registerViaApi(client, { email: 'sans-agent@example.com' });
+
+    const sessions = await sessionsDe(user.id);
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].userAgent).toBeNull();
+  });
+
+  it('ferme la session au logout, pas seulement le jeton', async () => {
+    const { user, refreshToken } = await registerViaApi(client);
+
+    const res = await client.post('/api/auth/logout').send({ refreshToken });
+    expect(res.status).toBe(204);
+
+    const sessions = await sessionsDe(user.id);
+    expect(sessions[0].revokedAt).not.toBeNull();
+    expect(await prisma.refreshToken.count({ where: { revoked: false } })).toBe(0);
+  });
+
+  // Fermer une session deja fermee doit rester sans effet : un client qui
+  // rejoue sa deconnexion, ou qui n'a pas recu la reponse, ne doit pas obtenir
+  // une erreur.
+  it('rend le logout idempotent', async () => {
+    const { refreshToken } = await registerViaApi(client);
+
+    expect((await client.post('/api/auth/logout').send({ refreshToken })).status).toBe(204);
+    expect((await client.post('/api/auth/logout').send({ refreshToken })).status).toBe(204);
+  });
+
+  it('ne coupe que la session de l appareil qui se deconnecte', async () => {
+    const { payload } = await registerViaApi(client);
+    const user = await prisma.user.findUnique({ where: { email: payload.email } });
+
+    const telephone = await client
+      .post('/api/auth/login')
+      .send({ email: payload.email, password: payload.password });
+    const ordinateur = await client
+      .post('/api/auth/login')
+      .send({ email: payload.email, password: payload.password });
+
+    await client.post('/api/auth/logout').send({ refreshToken: telephone.body.refreshToken });
+
+    // L'appareil qui s'est deconnecte ne peut plus rafraichir ; l'autre si.
+    const coupe = await client.post('/api/auth/refresh').send({ refreshToken: telephone.body.refreshToken });
+    const intact = await client.post('/api/auth/refresh').send({ refreshToken: ordinateur.body.refreshToken });
+
+    expect(coupe.status).toBe(401);
+    expect(intact.status).toBe(200);
+
+    const actives = (await sessionsDe(user.id)).filter((s) => s.revokedAt === null);
+    // Trois sessions au total : inscription, telephone, ordinateur. Une seule
+    // est fermee, celle de l'appareil qui s'est deconnecte.
+    expect(actives).toHaveLength(2);
+  });
+
+  // Un jeton peut rester valide alors que sa session a ete close : c'est
+  // exactement le cas que la verification de session doit attraper.
+  it('refuse le refresh quand la session a ete close', async () => {
+    const { user, refreshToken } = await registerViaApi(client);
+
+    await prisma.session.updateMany({ where: { userId: user.id }, data: { revokedAt: new Date() } });
+
+    const res = await client.post('/api/auth/refresh').send({ refreshToken });
+    expect(res.status).toBe(401);
+  });
+});

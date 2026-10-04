@@ -159,7 +159,10 @@ model User {
   vehicleType  String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
-  verified     Boolean    @default(false)
+  // Renomme depuis "verified" : le nom seul ne disait pas ce qui etait verifie,
+  // et l'indicateur est desormais expose dans le jeton d'acces. La colonne
+  // existait depuis la premiere migration sans jamais etre ecrite ni lue.
+  emailVerified Boolean   @default(false)
 
   listings              Listing[]
   conversationsAsBuyer  Conversation[] @relation("BuyerConversations")
@@ -169,6 +172,7 @@ model User {
   ordersAsFarmer        Order[]        @relation("FarmerOrders")
   deliveriesAsDriver    Delivery[]     @relation("DriverDeliveries")
   refreshTokens         RefreshToken[]
+  sessions              Session[]
   media                 Media[]
 
   @@index([roleId])
@@ -283,14 +287,53 @@ model Delivery {
   @@index([status])
 }
 
+// Une session est un appareil connecte. Elle est ce qui rend exprimable un
+// "deconnecte moi de cet appareil", ce qu'un sac plat de jetons ne permet pas :
+// avant, une deconnexion ne revocait que l'un des jetons du compte, et les
+// connexions concurrentes restaient valides.
+model Session {
+  id             Int       @id @default(autoincrement())
+  user           User      @relation(fields: [userId], references: [id])
+  userId         Int
+  // Nullable : un agent ou une adresse IP sont absents plus souvent qu'ils ne
+  // sont presents, et leur absence ne doit pas empecher de creer la session.
+  userAgent      String?
+  ip             String?
+  lastActivityAt DateTime  @default(now())
+  expiresAt      DateTime
+  // Remplit quand la session est close. Une date plutot qu'un booleen : on peut
+  // ainsi distinguer "deconnecte" de "expire", et purger par anticipation.
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model RefreshToken {
   id        Int   @id @default(autoincrement())
   token     String   @unique
   user      User     @relation(fields: [userId], references: [id])
   userId    Int
+  session   Session  @relation(fields: [sessionId], references: [id])
+  sessionId Int
   expiresAt DateTime
   revoked   Boolean  @default(false)
-  createdAt DateTime @default(now())
+  // Rempli quand ce jeton a ete remplace par un autre, au sein de la meme
+  // session. C'est ce qui distingue une rotation d'une revocation, et permet de
+  // distinguer une reconnexion legitime d'une reutilisation d'un jeton vole.
+  rotatedAt     DateTime?
+  // Le jeton qui a succede a celui-ci. Referencer le successeur permet de
+  // repondre au client qui presente un jeton recentement tourne : sans cela la
+  // fenetre de tolerance ne pourrait que le refuser, alors que son appel est
+  // parfaitement legitime.
+  replacedBy     RefreshToken?  @relation("TokenRotation", fields: [replacedById], references: [id])
+  replacedById   Int?
+  replaces       RefreshToken[] @relation("TokenRotation")
+  createdAt      DateTime       @default(now())
 
   @@index([userId])
+  @@index([sessionId])
 }

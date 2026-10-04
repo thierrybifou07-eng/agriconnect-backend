@@ -5,6 +5,7 @@ import prisma from '../../src/config/prisma.js';
 // remplit et chaque test en a besoin.
 const BUSINESS_TABLES = [
   'RefreshToken',
+  'Session',
   'Message',
   'Conversation',
   'Delivery',

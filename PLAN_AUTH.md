@@ -115,44 +115,69 @@ A regression test rejects a URL in SMTP_HOST so it cannot come back.
 **Schéma**
 
 - `Session { id, userId, userAgent?, ip?, createdAt, lastActivityAt, expiresAt, revokedAt? }`
-- `RefreshToken` gagne `sessionId` et `rotatedAt` (nécessaire à la fenêtre de 30 s)
+- `RefreshToken` gagne `sessionId`, `rotatedAt` et `replacedById`
 - `User.verified` → `User.emailVerified`
 
-**Migration** : crée `Session`, crée une session par utilisateur possédant des
-tokens actifs, **révoque** tous les RefreshToken existants (un jeton sans
-antériorité de session ne peut pas être rattaché honnêtement), pose `sessionId`
-et le renommage de colonne.
+**Migration** : crée `Session`, crée une session de transition par utilisateur
+possédant des tokens, y rattache les tokens existants, **révoque** tous les
+RefreshToken (un jeton sans antériorité de session ne peut pas être rattaché
+honnêtement), pose `sessionId` en `NOT NULL` et renomme la colonne.
 
-**Tests** : migration appliquée sur une base peuplée ; tables créées, tokens
-révoqués, index présents ; le test statique `prisma-fields.test.js` valide
-automatiquement les `select` des contrôleurs contre le schéma.
+**Écart au découpage initial, et pourquoi.** Le plan prévoyait une phase 1
+purement schéma et une phase 2 pour le contrôleur. C'est impossible :
+`sessionId` étant `NOT NULL`, le contrôleur doit créer une session dans la même
+commit, sinon dix tests d'authentification tombent et la branche n'est plus
+verte. La phase 1 absorbe donc le minimum de câblage — inscription et
+connexion ouvrent une session, le jeton y est rattaché, le logout ferme la
+session, le refresh vérifie qu'elle est toujours active. La phase 2 ajoute ce
+qui relève du choix de sécurité : plafond, rotation, fenêtre de tolérance,
+détection de réutilisation.
+
+**Tests** : forme du modèle via le DMMF ; `sessionId` refusé par la base ;
+suppression d'une session portant des jetons refusée ; migrations SQL
+rejouables (`prisma migrate dev` regénérerait un simple `ADD COLUMN` et
+perdrait le traitement des données) ; cycle de session complet via l'API —
+ouverture à l'inscription et à chaque connexion, agent et IP conservés,
+fermeture au logout, idempotence, coupure d'un seul appareil, refresh refusé
+quand la session est close.
 
 ```
-feat(db): add the Session model and attach RefreshToken to a session
+feat(db): make Session a first-class model and attach refresh tokens to it
 
-A session is what makes "log out on this device only" expressible, and what
-lets a reset-password cut every access at once. RefreshToken becomes a child of
-Session rather than a flat bag of tokens per user.
+A session is what makes "log out on this device only" expressible. Before this,
+RefreshToken was a flat bag per user: logout revoked one token, so concurrent
+connections of the same account stayed valid and nothing recorded which device a
+connection came from.
 
-Existing refresh tokens are revoked rather than migrated: they carry no session
-ancestry, and this database only holds experimental data. The verified column is
-renamed to emailVerified, because "verified" alone does not say what is being
-verified and the flag is about to be exposed in the access token.
+The 13 existing tokens are attached to one closed transition session per user and
+then revoked — they carry no real session ancestry, and this database only holds
+experimental data. sessionId is NOT NULL so a token cannot exist without a
+session even when written outside the ORM, and revokedAt is a date rather than a
+boolean so a deliberate logout stays distinguishable from an expiry.
+
+The controller had to move in the same commit: with sessionId mandatory, an
+unchanged issueRefreshToken fails validation and register and login return 500.
+Registration and login now open a session, logout closes it instead of revoking
+a single token, and refresh checks the session is still active — a token can
+outlive the session that carries it, which would make logout reversible.
+
+rotatedAt and replacedById are added now although nothing reads them yet: they
+belong to the rotation described in phase 2, and splitting the model from its
+migration would mean a second migration for two nullable columns.
 ```
 
 ---
 
-## Phase 2 — Login, refresh, logout sur sessions
+## Phase 2 — Rotation, plafond de sessions, détection de réutilisation
 
 **Contenu**
 
-- `POST /api/auth/login` : crée une session et un refresh token ; plafond de 5,
-  la plus ancienne est révoquée au-delà
+- `POST /api/auth/login` : plafond de 5 sessions, la plus ancienne est révoquée
+  au-delà
 - `POST /api/auth/refresh` : rotation **dans la même session**, met à jour
   `lastActivityAt` ; le token précédent reste accepté **30 s** après sa rotation
   (sinon deux refreshs parallèles d'une app mobile détruisent la session) ; au-delà,
-  un jeton déjà révoqué présenté est traité comme un vol et détruit toute la session
-- `POST /api/auth/logout` : révoque la session et ses tokens
+  un jeton déjà tourné présenté est traité comme un vol et détruit toute la session
 
 **Tests** : création de session ; rotation conservant la session ; tolérance
 30 s ; réutilisation détectée et session détruite ; plafond et éviction ;
