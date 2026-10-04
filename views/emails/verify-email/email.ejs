@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof heading !== 'undefined' && heading ? heading : 'Confirmez votre adresse' %></title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <h2>Bonjour <%= username %>,</h2>
+      <p>
+        Confirmez votre adresse email pour que votre compte AgriConnect soit
+        consider&eacute; comme v&eacute;rifi&eacute;.
+      </p>
+
+      <p style="text-align:center; margin:28px 0;">
+        <a href="<%= verificationUrl %>"
+           style="background:#2e7d32;color:#ffffff;text-decoration:none;padding:14px 28px;border-radius:6px;display:inline-block;font-weight:bold;">
+          Confirmer mon adresse
+        </a>
+      </p>
+
+      <p style="font-size:13px; color:#64748b;">
+        Si le bouton ne fonctionne pas, copiez ce lien dans votre navigateur&nbsp;:
+      </p>
+      <p style="font-size:12px; color:#94a3b8; word-break:break-all;">
+        <%= verificationUrl %>
+      </p>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Ce lien est valable 24&nbsp;heures et ne fonctionne qu'une fois.
+      </p>
+      <p style="font-size:14px; color:#94a3b8;">
+        Vous pouvez continuer a utiliser AgriConnect sans le confirmer&nbsp;: la
+        v&eacute;rification sert &agrave; fiabiliser votre adresse, elle ne vous bloque pas.
+      </p>
+      <% if (typeof ignoreHint !== 'undefined' && ignoreHint) { %>
+        <p style="font-size:14px; color:#94a3b8;">
+          Si vous n'avez pas cr&eacute;&eacute; de compte sur AgriConnect,
+          ignorez simplement cet email.
+        </p>
+      <% } %>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

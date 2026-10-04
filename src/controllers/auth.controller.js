@@ -13,6 +13,13 @@ import {
 import { getLookupId } from '../utils/lookupCache.js';
 import { sendTemplateEmail } from '../config/email/sendMail.js';
 import { userToApi } from '../utils/userApi.js';
+import { renderPage } from '../utils/renderPage.js';
+import {
+  issueVerificationToken,
+  dispatchVerificationEmail,
+  consumeVerificationToken,
+  resetVerificationForNewEmail,
+} from '../utils/emailVerification.js';
 
 // Rôles autorisés à l'inscription publique. ADMIN et ROOT ne sont JAMAIS accessibles
 // ici : ROOT se crée uniquement via scripts/create-root.js (CLI serveur), ADMIN
@@ -101,6 +108,18 @@ export const register = async (req, res) => {
     }
   );
 
+  // Verification d'adresse, envoyee a part et non dans le message de bienvenue :
+  // ce sont deux evenements distincts, avec des liens distincts et des durees de
+  // vie distinctes.
+  //
+  // Le jeton est attendu — son existence en base est un fait dont la reponse a
+  // besoin — mais l'envoi ne l'est pas : bloquer l'inscription sur la
+  // joignabilite d'un serveur de messagerie serait le pire des deux mondes.
+  const jetonVerification = await issueVerificationToken(user, { force: true });
+  if (jetonVerification) {
+    dispatchVerificationEmail(user, jetonVerification, { username: userFullName(user) });
+  }
+
   // Le champ emailSent a ete retire : sans attendre l'envoi, il ne pouvait
   // qu'etre soit toujours faux, soit toujours vrai. Les clients ne doivent pas
   // deduire de la creation d'un compte que son email a bien ete delivre.
@@ -181,6 +200,83 @@ export const refresh = async (req, res) => {
 
   const accessToken = accessTokenFor(user, stored.sessionId);
   res.json({ accessToken, refreshToken: rotation.rawToken });
+};
+
+// GET /api/auth/verify-email?token=...
+//
+// Affiche une page de confirmation, sans consommer le jeton.
+//
+// Cette separation n'est pas un detail : beaucoup de clients de messagerie et
+// d'antivirus prechargent les liens pour detecter les menaces. Un GET qui
+// consomme le jeton pourrait donc verifier une adresse sans que son proprietaire
+// l'ait jamais vue. Le meme principe governera la reinitialisation de mot de
+// passe, ou l'enjeu est plus grave encore.
+export const verifyEmailPage = async (req, res) => {
+  const html = await renderPage('formulaire', {
+    title: 'Confirmer votre adresse',
+    description:
+      'Confirmez que cette adresse email est bien la votre. Vous pourrez continuer a utiliser AgriConnect dans tous les cas.',
+    action: '/api/auth/verify-email',
+    token: req.query.token ?? '',
+    libelle: 'Confirmer mon adresse',
+    succes: null,
+    erreur: null,
+  });
+
+  if (html === null) return res.status(500).send('Page indisponible');
+  res.type('html').send(html);
+};
+
+// POST /api/auth/verify-email
+export const verifyEmail = async (req, res) => {
+  const resultat = await consumeVerificationToken(req.body.token);
+
+  if (!resultat.ok) {
+    const messages = {
+      inconnu: 'Ce lien est invalide.',
+      expire: 'Ce lien a expire. Demandez-en un nouveau.',
+      deja_utilise: 'Ce lien a deja servi.',
+    };
+    const html = await renderPage('formulaire', {
+      title: 'Confirmation impossible',
+      description: '',
+      action: '/api/auth/verify-email',
+      token: '',
+      libelle: 'Confirmer mon adresse',
+      succes: null,
+      erreur: messages[resultat.reason],
+    });
+    if (html === null) return res.status(500).send('Page indisponible');
+    // 400 et non 404 : le lien existe, il n'est simplement plus valable.
+    return res.status(400).type('html').send(html);
+  }
+
+  const html = await renderPage('formulaire', {
+    title: 'Adresse confirmee',
+    description: '',
+    action: '',
+    token: '',
+    libelle: '',
+    succes: 'Votre adresse email est verifiee.',
+    erreur: null,
+  });
+  if (html === null) return res.status(500).send('Page indisponible');
+  res.type('html').send(html);
+};
+
+// POST /api/auth/resend-verification
+export const resendVerification = async (req, res) => {
+  // force : l'utilisateur vient d'appeler explicitement, le cooldown protege la
+  // boite mais ne doit pas transformer un renvoi manuel en echec.
+  const jeton = await issueVerificationToken(req.user, { force: true });
+  if (jeton) dispatchVerificationEmail(req.user, jeton);
+
+  // 202 et rien de plus. Rapporter si l'email est parti transformerait la reponse
+  // en sonde de l'etat du SMTP, et le client n'a rien a y faire : sa seule
+  // question est "mon adresse sera verifiee", a laquelle la reponse repond deja.
+  res.status(202).json({
+    message: 'Si cette adresse est valide, un email vient de lui etre envoye.',
+  });
 };
 
 // GET /api/auth/sessions

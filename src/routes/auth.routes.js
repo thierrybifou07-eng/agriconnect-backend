@@ -7,6 +7,9 @@ import {
   listSessions,
   closeSessionById,
   logoutAll,
+  verifyEmailPage,
+  verifyEmail,
+  resendVerification,
 } from '../controllers/auth.controller.js';
 import {
   getMe,
@@ -19,7 +22,7 @@ import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
-import { registerSchema, loginSchema, refreshSchema } from '../validators/auth.validator.js';
+import { registerSchema, loginSchema, refreshSchema, oneTimeTokenSchema } from '../validators/auth.validator.js';
 
 const router = Router();
 
@@ -35,6 +38,18 @@ router.post('/login', authLimiter, validate(loginSchema), login);
 // verrouillait un utilisateur legitime qui ouvrait simplement son application.
 router.post('/refresh', refreshLimiter, validate(refreshSchema), refresh);
 router.post('/logout', logout);
+
+// Verification d'adresse email.
+//
+// Le GET affiche une page et ne consomme rien ; le POST applique. Ce couple de
+// routes est celui que recoit le lien de l'email, et il est separe pour que le
+// client de messagerie qui precharge le lien ne verifie pas l'adresse a la place
+// du proprietaire. Voir verifyEmailPage.
+router.get('/verify-email', verifyEmailPage);
+router.post('/verify-email', validate(oneTimeTokenSchema), verifyEmail);
+// Renvoi : authentifie, puisque l'on agit sur le compte connecte et non sur une
+// adresse fournie dans le corps.
+router.post('/resend-verification', protect, resendVerification);
 
 // Gestion des sessions : routes authentifiees. Elles agissent sur les sessions du
 // compte connecte, identifie par le jeton d'acces — et non par le refresh token,

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= title %></title>
+</head>
+<body>
+  <main class="carte">
+    <p class="logo">AgriConnect</p>
+    <h1><%= title %></h1>
+
+    <% if (typeof erreur !== 'undefined' && erreur) { %>
+      <div class="alerte erreur"><%= erreur %></div>
+    <% } %>
+
+    <% if (typeof succes !== 'undefined' && succes) { %>
+      <div class="alerte succes"><%= succes %></div>
+      <p class="discret">Vous pouvez fermer cette page et continuer dans l'application.</p>
+    <% } else { %>
+      <p><%= typeof description !== 'undefined' && description ? description : '' %></p>
+
+      <form method="post" action="<%= typeof action !== 'undefined' && action ? action : '' %>">
+        <input type="hidden" name="token" value="<%= typeof token !== 'undefined' && token ? token : '' %>">
+
+        <% if (typeof champMotDePasse !== 'undefined' && champMotDePasse) { %>
+          <label for="password">Nouveau mot de passe</label>
+          <input
+            type="password"
+            id="password"
+            name="password"
+            autocomplete="new-password"
+            required
+            minlength="8">
+          <div class="regles">
+            Au moins 8 caracteres, avec une minuscule, une majuscule, un chiffre
+            et un caractere special.
+          </div>
+        <% } %>
+
+        <button type="submit"><%= typeof libelle !== 'undefined' && libelle ? libelle : '' %></button>
+      </form>
+    <% } %>
+
+    <p class="pied">AgriConnect</p>
+  </main>
+</body>
+</html>

@@ -1,11 +1,9 @@
-import crypto from 'crypto';
+// Primitives communes aux jetons a usage unique : voir oneTimeToken.js.
+// Ces alias sont conserves parce que le refresh token a une histoire propre —
+// sa rotation, sa fenetre de tolerance, sa detection de reutilisation — et que
+// le nommer "refreshToken" dit mieux que "oneTimeToken" lequel des trois il est.
 
-// Génère la valeur brute du refresh token (envoyée une seule fois au client, jamais stockée telle quelle)
-export function generateRefreshTokenValue() {
-  return crypto.randomBytes(40).toString('hex');
-}
-
-// On stocke uniquement le hash en base, comme pour un mot de passe.
-export function hashToken(token) {
-  return crypto.createHash('sha256').update(token).digest('hex');
-}
+export {
+  generateOneTimeToken as generateRefreshTokenValue,
+  hashOneTimeToken as hashToken,
+} from './oneTimeToken.js';

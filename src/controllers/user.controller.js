@@ -2,6 +2,7 @@ import prisma from '../config/prisma.js';
 import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { userToApi } from '../utils/userApi.js';
+import { resetVerificationForNewEmail } from '../utils/emailVerification.js';
 
 // Ces quatre routes vivaient sous /api/users et	y ont ete deplacees : un
 // utilisateur qui gere son propre profil est, du point de vue de l'API, dans le
@@ -18,6 +19,12 @@ export const getMe = async (req, res) => {
 export const updateMe = async (req, res) => {
   const { firstname, lastname, email, location } = req.body;
 
+  // Changer d'adresse est un changement d'identite, pas une mise a jour de
+  // profil : la verification repart de zero. Sans cela, il suffirait de changer
+  // d'adresse pour hériter du verified=true de la précédente — sur une adresse
+  // que l'on ne contrôle pas.
+  const changementEmail = email !== undefined && email !== req.user.email;
+
   const updated = await prisma.user.update({
     where: { id: req.user.id },
     data: {
@@ -31,7 +38,13 @@ export const updateMe = async (req, res) => {
     include: { role: true, userStatus: true },
   });
 
-  res.json(userToApi(updated));
+  // Attendu : la reponse doit refleter la remise a zero, et non l'etat d'avant
+  // le changement d'adresse. L'envoi, lui, ne bloque pas.
+  const aRenvoyer = changementEmail
+    ? await resetVerificationForNewEmail(updated)
+    : updated;
+
+  res.json(userToApi(aRenvoyer));
 };
 
 // POST /api/auth/me/avatar  (remplace l'avatar existant s'il y en avait un)

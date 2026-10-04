@@ -45,3 +45,27 @@ export const loginSchema = Joi.object({
 export const refreshSchema = Joi.object({
   refreshToken: Joi.string().required(),
 });
+
+// Les jetons a usage unique sont des hex de 80 caracteres produits par
+// crypto.randomBytes(40). La longueur est donc une constante du systeme, pas un
+// format que l'on invente ici : un jeton d'une autre longueur ne peut venir que
+// d'ailleurs, et le refuser tot evite une interrogation de base inutile.
+//
+// Le meme schema sert au GET (parametre de requete) et au POST (champ de
+// formulaire) : les deux transportent exactement la meme valeur.
+export const oneTimeTokenSchema = Joi.object({
+  token: Joi.string()
+    .pattern(/^[a-f0-9]{80}$/)
+    .required()
+    .messages({
+      'string.pattern.base': 'Lien invalide',
+      'any.required': 'Lien invalide',
+    }),
+});
+
+export const resetPasswordSchema = oneTimeTokenSchema.keys({
+  password: Joi.string().regex(passwordRegex).required().messages({
+    'string.empty': 'Mot de passe requis',
+    'string.pattern.base': passwordPatternMessage,
+  }),
+});

@@ -174,9 +174,35 @@ model User {
   refreshTokens         RefreshToken[]
   sessions              Session[]
   media                 Media[]
+  emailVerificationTokens EmailVerificationToken[]
 
   @@index([roleId])
   @@index([userStatusId])
+}
+
+// Verification de l'adresse email.
+//
+// Table separee du jeton de reinitialisation de mot de passe, volontairement :
+// deux usages, deux durees de vie, deux facons de purger. Les regrouper sous une
+// colonne "type" ferait qu'une erreur de filtre envoie un lien au mauvais effet.
+//
+// La verification n'est pas bloquante : elle renseigne le client et le
+// scoring, elle n'interdit rien. Un compte non verifie utilise l'API
+// normalement, donc une adresse perdue ne verrouille personne hors du MVP.
+model EmailVerificationToken {
+  id    Int    @id @default(autoincrement())
+  token String @unique
+  user  User   @relation(fields: [userId], references: [id])
+  userId Int
+  // 24 h : assez pour que le mail arrive et qu'on le lise, pas assez pour qu'un
+  // lien depose dans une boite reste utile indefiniment.
+  expiresAt DateTime
+  // Rempli au premier usage. Le jeton n'est jamais supprime : une verification
+  // doit pouvoir dire " deja verifie, il y a trois jours" plutot que " inconnu".
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Listing {

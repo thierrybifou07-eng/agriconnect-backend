@@ -6,6 +6,7 @@ import prisma from '../../src/config/prisma.js';
 const BUSINESS_TABLES = [
   'RefreshToken',
   'Session',
+  'EmailVerificationToken',
   'Message',
   'Conversation',
   'Delivery',
@@ -15,16 +16,24 @@ const BUSINESS_TABLES = [
   'User',
 ];
 
-// TRUNCATE est plus rapide que DELETE mais refuse de vérifier les clés
-// étrangères, d'où la désactivation autour de l'opération. L'ordre n'importe
-// donc pas.
+// DELETE, et non TRUNCATE.
+//
+// TRUNCATE est plus rapide, mais MySQL le refuse sur une table référencée par
+// une clé étrangère — et ce refus ne cède pas à FOREIGN_KEY_CHECKS=0, contrairement
+// à ce que la désactivation autour de l'opération laisse croire. Il ne passe que
+// si la table référente a été vidée juste avant, ce qui rend le nettoyage
+// dépendant de l'ordre de cette liste : ajouter une table sans la placer au bon
+// endroit fait échouer la suite entière.
+//
+// DELETE respecte réellement FOREIGN_KEY_CHECKS=0, donc l'ordre n'a plus d'importance
+// et la liste n'a plus à être maintenue. Le surcoût est négligeable à cette échelle.
 export async function resetDatabase() {
   // SET et SET SESSION sont deux commandes distinctes : PRISMA n'accepte pas
   // de plusieurs instructions dans un seul $executeRawUnsafe.
   await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
   try {
     for (const table of BUSINESS_TABLES) {
-      await prisma.$executeRawUnsafe(`TRUNCATE TABLE \`${table}\``);
+      await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\``);
     }
   } finally {
     await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
