@@ -2,6 +2,10 @@
 
 Branche dédiée : `refactor/schema-v2-consignation`
 
+## Progression
+
+- **Phase 0 — terminée** : schéma v2 adapté à MySQL, migration initiale `20261006000000_init_v2`, seed v2, script `create:root` v2. Base de travail utilisée : `agriconnect_v2`. Tests unitaires existants verts ; tests d'intégration v1 à remplacer à partir de la Phase 1.
+
 ## 0. Décision retenue
 
 **MySQL est conservé.** Le `schema.prisma` v2 fourni doit donc être adapté avant migration : `provider = "mysql"`, validation des types JSON/UUID/enums/index selon les contraintes MySQL, et conservation des mêmes modèles et règles métier.

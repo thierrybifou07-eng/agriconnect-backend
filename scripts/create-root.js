@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import readline from 'readline';
 import bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
 import pkg from '@prisma/client';
 const { PrismaClient } = pkg;
 
@@ -19,35 +20,39 @@ function ask(question) {
 // Script à exécuter manuellement sur le serveur, JAMAIS via l'API : npm run create:root
 async function main() {
   console.log("=== Création d'un compte ROOT (accès total, à usage exceptionnel) ===");
-  const lastname = await ask('Nom : ');
-  const firstname = await ask('Prénom : ');
+  const fullName = await ask('Nom complet : ');
   const phone = await ask('Téléphone : ');
   const email = await ask('E-mail : ');
   const password = await ask('Mot de passe (8 caractères min.) : ');
 
-  if (!firstname || !lastname || !email || !phone || password.length < 8) {
-    console.error('Nom, prénom, téléphone, email et mot de passe (8 caractères min.) sont requis.');
+  if (!fullName || !phone || !email || password.length < 8) {
+    console.error('Nom complet, téléphone, email et mot de passe (8 caractères min.) sont requis.');
     process.exit(1);
   }
 
-  const existing = await prisma.user.findUnique({ where: { email } });
+  const existing = await prisma.user.findFirst({
+    where: { OR: [{ phone }, { email }] },
+  });
+
   if (existing) {
-    console.error('Un compte existe déjà avec cet email.');
-    process.exit(1);
-  }
-
-  const rootRole = await prisma.role.findUnique({ where: { code: 'ROOT' } });
-  const activeStatus = await prisma.userStatus.findUnique({ where: { code: 'ACTIVE' } });
-
-  if (!rootRole || !activeStatus) {
-    console.error('Tables de référence manquantes - exécute "npm run seed" avant ce script.');
+    console.error('Un compte existe déjà avec ce téléphone ou cet email.');
     process.exit(1);
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
   const user = await prisma.user.create({
-    data: { firstname, lastname, email, phone, password: hashedPassword, roleId: rootRole.id, userStatusId: activeStatus.id },
+    data: {
+      fullName,
+      phone,
+      email,
+      passwordHash: hashedPassword,
+      role: 'ROOT',
+      status: 'ACTIVE',
+      verificationStatus: 'VERIFIED',
+      verifiedAt: new Date(),
+      referralCode: randomUUID(),
+    },
   });
 
   console.log(`Compte ROOT créé avec succès (id: ${user.id}).`);
