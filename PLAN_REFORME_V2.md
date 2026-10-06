@@ -2,16 +2,11 @@
 
 Branche dédiée : `refactor/schema-v2-consignation`
 
-## 0. Décision bloquante
+## 0. Décision retenue
 
-Le cahier des charges v2 dit « MySQL », mais le `schema.prisma` v2 fourni déclare `provider = "postgresql"`.
+**MySQL est conservé.** Le `schema.prisma` v2 fourni doit donc être adapté avant migration : `provider = "mysql"`, validation des types JSON/UUID/enums/index selon les contraintes MySQL, et conservation des mêmes modèles et règles métier.
 
-Choix demandé avant Phase 0 :
-
-- **A — PostgreSQL** : aligner l'infrastructure sur `schema.prisma` v2 (recommandé si le schéma v2 est la source de vérité).
-- **B — MySQL conservé** : garder MySQL et adapter `schema.prisma` v2 (`provider`, types `Decimal`, `Json`, UUID string, enums) au plus près du schéma v2.
-
-Tant que ce choix n'est pas figé, ne pas exécuter de migration destructive.
+Ne pas exécuter de migration destructive avant sauvegarde et validation sur base de travail.
 
 ## 1. Objectif
 
@@ -75,8 +70,8 @@ Par défaut : **nouvelle base v2 ou migration encadrée avec sauvegarde et valid
 
 Ordre recommandé :
 
-1. Décider du moteur DB (PostgreSQL/MySQL).
-2. Poser `schema.prisma` v2 en dev.
+1. Conserver MySQL et adapter `schema.prisma` v2 en conséquence.
+2. Poser `schema.prisma` v2 adapté en dev.
 3. Créer une migration initiale v2 dans une base de travail.
 4. Générer un script de seed v2 : ROOT CLI, `PlatformSetting` id=1, une zone, une agence, un hub, catégories, produits.
 5. Écrire un script de migration v1→v2 seulement si des données réelles existent ; sinon repartir proprement.
@@ -99,8 +94,8 @@ Mapping minimal si reprise v1 nécessaire :
 
 ### Phase 0 — Socle schéma et base
 
-- Figer le moteur DB.
-- Instancier `schema.prisma` v2.
+- Conserver MySQL et adapter `schema.prisma` v2 (`provider = "mysql"`, types/index compatibles).
+- Instancier `schema.prisma` v2 adapté.
 - Migration initiale.
 - Seed v2.
 - Adapter config Prisma, `.env.example`, tests d'intégration.
@@ -182,7 +177,7 @@ Critères de sortie : tâches idempotentes, audit obligatoire, indemnisation app
 
 ## 8. Variables d'environnement à revoir
 
-- `DATABASE_URL` selon moteur choisi.
+- `DATABASE_URL` MySQL.
 - `JWT_SECRET`, `JWT_EXPIRES_IN`, `REFRESH_TOKEN_TTL_DAYS`.
 - `CORS_IO`, `APP_URL`, `PORT`.
 - `CLOUDINARY_*`.
@@ -210,7 +205,7 @@ Critères de sortie : tâches idempotentes, audit obligatoire, indemnisation app
 
 | Risque | Mitigation |
 | --- | --- |
-| Conflit MySQL/PostgreSQL | décision phase 0, pas de migration avant |
+| Schéma v2 initialement PostgreSQL | adaptation MySQL validée avant migration |
 | Données v1 incompatibles | migration v1→v2 explicite ou reprise propre |
 | Fuite confidentialité | DTOs par rôle + tests de non-régression |
 | Survente/stock incohérent | transaction + update conditionnelle + mouvements |
