@@ -13,3 +13,28 @@ export const createAdminSchema = Joi.object({
   email: Joi.string().trim().email().optional().allow(null, ''),
   password: Joi.string().min(6).required(),
 });
+
+// POST /api/v2/admin/legal/:code/versions — création d'une version brouillon.
+// 'fr' est obligatoire ( langue de repli ), 'en' est facultatif.
+export const createLegalVersionSchema = Joi.object({
+  version: Joi.string().trim().min(1).max(20).required(),
+  translations: Joi.array()
+    .items(
+      Joi.object({
+        locale: Joi.string().valid('fr', 'en').required(),
+        title: Joi.string().trim().min(1).max(200).required(),
+        content: Joi.string().trim().min(1).required(),
+      })
+    )
+    .min(1)
+    .required()
+    .custom((value, helpers) => {
+      if (!value.some((t) => t.locale === 'fr')) {
+        return helpers.error('translations.frRequired');
+      }
+      return value;
+    })
+    .messages({
+      translations_frRequired: 'La traduction fr est obligatoire',
+    }),
+});

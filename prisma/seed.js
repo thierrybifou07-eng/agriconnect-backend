@@ -102,12 +102,9 @@ async function main() {
     },
   });
 
-  // CGU : les versions (PUBLISHED, traductions FR/EN) arrivent en P1.1.
-  await upsertByCode('legalDocument', [
-    { code: 'CGU', label: "Conditions générales d'utilisation" },
-    { code: 'BUYER_TERMS', label: 'Conditions acheteurs' },
-    { code: 'SUPPLIER_CONSIGNMENT_TERMS', label: 'Conditions de consignation fournisseurs' },
-  ]);
+  // CGU versionnées FR/EN (P1.1) : voir prisma/seed-data/legal.js
+  const { seedLegalDocuments } = await import('./seed-data/legal.js');
+  await seedLegalDocuments();
 
   console.log('Seed terminé : rôles, statuts, catégories, unités, capacités, modes de livraison, réglages et CGU créés.');
 }
