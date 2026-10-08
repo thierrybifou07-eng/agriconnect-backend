@@ -15,7 +15,7 @@ describe('Sante du service', () => {
   });
 
   it('exige une authentification sur une route protegee', async () => {
-    const res = await api().get('/api/v2/orders');
+    const res = await api().get('/api/v2/auth/me');
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('Authentification requise');
   });

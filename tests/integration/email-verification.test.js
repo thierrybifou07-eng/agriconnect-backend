@@ -243,8 +243,6 @@ describe('La verification ne bloque rien', () => {
     const me = await client.get('/api/v2/auth/me').set(authHeader(accessToken));
     expect(me.status, me.text).toBe(200);
     expect(me.body.emailVerified).toBe(false);
-
-    expect((await client.get('/api/v2/listings')).status).toBe(200);
   });
 
   it('ne rend pas le compte verifie bloquant non plus', async () => {

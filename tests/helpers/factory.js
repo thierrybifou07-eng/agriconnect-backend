@@ -75,30 +75,6 @@ export async function createRefreshToken(user, session, overrides = {}) {
   });
 }
 
-export async function createListing({ farmer, ...overrides } = {}) {
-  const owner = farmer || (await createUser({ role: 'FARMER' }));
-  const [categoryId, statusId] = await Promise.all([
-    lookupId('listingCategory', 'CEREALES'),
-    lookupId('listingStatus', 'ACTIVE'),
-  ]);
-
-  return prisma.listing.create({
-    data: {
-      title: 'Blé tendre',
-      price: 250,
-      quantity: 100,
-      unit: 'kg',
-      location: 'Rabat',
-      latitude: 34.02,
-      longitude: -6.84,
-      farmerId: owner.id,
-      categoryId,
-      statusId,
-      ...overrides,
-    },
-  });
-}
-
 // Enregistre l'utilisateur via l'API et renvoie son jeton : à utiliser quand le
 // test porte justement sur la route d'inscription.
 export async function registerViaApi(client, overrides = {}) {
