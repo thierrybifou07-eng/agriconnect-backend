@@ -29,12 +29,11 @@ export const registerSchema = Joi.object({
     "string.base": "Password must be a string",
     "string.pattern.base": passwordPatternMessage,
   }),
-  // ADMIN/ROOT jamais acceptés ici, même si envoyés : voir PUBLIC_ROLES dans auth.controller.js
-  role: Joi.string().valid('FARMER', 'BUYER', 'DRIVER').required().messages({
-    'any.only': 'role doit être FARMER, BUYER ou DRIVER',
+  // ADMIN/AGENT/ROOT/DRIVER jamais acceptés ici, même si envoyés : voir PUBLIC_ROLES dans auth.controller.js
+  role: Joi.string().valid('SUPPLIER', 'BUYER').required().messages({
+    'any.only': 'role doit être SUPPLIER ou BUYER',
   }),
   location: Joi.string().optional().allow(null, ''),
-  vehicleType: Joi.string().optional().allow(null, ''),
 });
 
 export const loginSchema = Joi.object({

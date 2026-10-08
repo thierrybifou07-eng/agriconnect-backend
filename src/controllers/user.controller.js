@@ -69,20 +69,3 @@ export const uploadAvatar = async (req, res) => {
 
   res.status(201).json(media);
 };
-
-// PATCH /api/auth/me/availability  (livreur uniquement)
-export const updateAvailability = async (req, res) => {
-  const { isAvailable, latitude, longitude } = req.body;
-
-  const updated = await prisma.user.update({
-    where: { id: req.user.id },
-    data: {
-      ...(isAvailable !== undefined && { isAvailable }),
-      ...(latitude !== undefined && { latitude }),
-      ...(longitude !== undefined && { longitude }),
-    },
-    include: { role: true, userStatus: true },
-  });
-
-  res.json(userToApi(updated));
-};

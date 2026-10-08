@@ -10,11 +10,12 @@ async function upsertByCode(model, rows) {
 
 async function main() {
   await upsertByCode('role', [
-    { code: 'FARMER', label: 'Agriculteur', level: 10 },
+    { code: 'ROOT', label: 'Super-administrateur', level: 100 },
+    { code: 'ADMIN', label: 'Administrateur', level: 50 },
+    { code: 'AGENT', label: 'Agent AgriConnect', level: 30 },
+    { code: 'SUPPLIER', label: 'Fournisseur', level: 10 },
     { code: 'BUYER', label: 'Acheteur', level: 10 },
     { code: 'DRIVER', label: 'Livreur', level: 10 },
-    { code: 'ADMIN', label: 'Administrateur', level: 50 },
-    { code: 'ROOT', label: 'Super-administrateur', level: 100 },
   ]);
 
   await upsertByCode('userStatus', [

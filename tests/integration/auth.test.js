@@ -13,7 +13,7 @@ const utilisateur = (email) => prisma.user.findUnique({ where: { email } });
 
 describe('POST /api/v2/auth/register', () => {
   it('cree un compte et renvoie les jetons', async () => {
-    const { user, accessToken, refreshToken } = await registerViaApi(client, { role: 'FARMER' });
+    const { user, accessToken, refreshToken } = await registerViaApi(client, { role: 'SUPPLIER' });
 
     // role et userStatus sont exposes en { code, label } : le libelle pour
     // l'affichage, le code pour la logique du client. C'est la forme unique,
@@ -21,7 +21,7 @@ describe('POST /api/v2/auth/register', () => {
     expect(user).toMatchObject({
       firstname: 'Amina',
       lastname: 'Benali',
-      role: { code: 'FARMER', label: 'Agriculteur' },
+      role: { code: 'SUPPLIER', label: 'Fournisseur' },
       userStatus: { code: 'ACTIVE', label: 'Actif' },
       emailVerified: false,
     });
@@ -42,6 +42,24 @@ describe('POST /api/v2/auth/register', () => {
         lastname: 'Intention',
         phone: '+33611110000',
         email: `${role.toLowerCase()}@example.com`,
+        password: 'MotDePasse1!',
+        role,
+      });
+      expect(res.status, `role ${role} doit etre refuse`).toBe(400);
+    }
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  // DRIVER n'est plus un role public (compte d'équipe, cree par un
+  // administrateur) et FARMER n'existe plus (renomme SUPPLIER) : les deux
+  // doivent etre refuses a l'inscription, comme ADMIN et ROOT.
+  it('refuse les roles DRIVER et FARMER', async () => {
+    for (const role of ['DRIVER', 'FARMER']) {
+      const res = await client.post('/api/v2/auth/register').send({
+        firstname: 'Malin',
+        lastname: 'Intention',
+        phone: '+33644440000',
+        email: `${role.toLowerCase()}-refuse@example.com`,
         password: 'MotDePasse1!',
         role,
       });

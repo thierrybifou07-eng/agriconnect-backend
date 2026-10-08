@@ -35,9 +35,9 @@ export const protect = async (req, res, next) => {
         location: true,
         latitude: true,
         longitude: true,
-        isAvailable: true,
-        vehicleType: true,
         emailVerified: true,
+        profileVerificationStatus: true,
+        referralCode: true,
         // Chargé pour que la forme de "qui suis-je" soit exactement celle de
         // register et login (voir utils/userApi.js) : absent du select, le
         // serializer le rencontre undefined et GET /me n'expose pas createdAt.

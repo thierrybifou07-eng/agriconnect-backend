@@ -31,12 +31,13 @@ export function userToApi(user, extra = {}) {
     location: user.location ?? null,
     role: reference(user.role),
     userStatus: reference(user.userStatus),
-    vehicleType: user.vehicleType ?? null,
-    isAvailable: user.isAvailable,
     emailVerified: user.emailVerified ?? false,
+    // Verification du profil par l'équipe, distincte de emailVerified : un compte
+    // peut avoir une adresse confirmee et un profil jamais examine, ou l'inverse.
+    profileVerificationStatus: user.profileVerificationStatus ?? 'UNVERIFIED',
+    referralCode: user.referralCode ?? null,
     // Les coordonnees ne font pas partie de "qui suis-je" : le client connait sa
     // propre position, et la renvoyer ajoute une donnee sensible sans usage.
-    // Elles restent ecrites par PATCH /me/availability.
     createdAt: user.createdAt,
     ...extra,
   };

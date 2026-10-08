@@ -14,18 +14,13 @@ import {
   resetPasswordPage,
   resetPassword,
 } from '../controllers/auth.controller.js';
-import {
-  getMe,
-  updateMe,
-  uploadAvatar,
-  updateAvailability,
-} from '../controllers/user.controller.js';
+import { getMe, updateMe, uploadAvatar } from '../controllers/user.controller.js';
 import {
   authLimiter,
   refreshLimiter,
   forgotPasswordLimiter,
 } from '../middlewares/rateLimit.middleware.js';
-import { protect, requireRole } from '../middlewares/auth.middleware.js';
+import { protect } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
@@ -85,7 +80,7 @@ router.get('/sessions', protect, listSessions);
 router.delete('/sessions/:id', protect, closeSessionById);
 router.post('/logout-all', protect, logoutAll);
 
-// Profil de l'utilisateur connecte. Ces quatre routes etaient sous /api/users :
+// Profil de l'utilisateur connecte. Ces trois routes etaient sous /api/users :
 // elles y ont ete deplacees pour que tout ce que fait un utilisateur sur son
 // propre compte soit dans le meme registre que son authentification. /api/users
 // reste libre pour les endpoints d'administration.
@@ -93,6 +88,5 @@ router.post('/logout-all', protect, logoutAll);
 router.get('/me', protect, getMe);
 router.patch('/me', protect, updateMe);
 router.post('/me/avatar', protect, upload.single('avatar'), uploadAvatar);
-router.patch('/me/availability', protect, requireRole('DRIVER'), updateAvailability);
 
 export default router;

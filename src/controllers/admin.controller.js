@@ -16,8 +16,7 @@ const userSafeSelect = {
   role: { select: { code: true, label: true, level: true } },
   userStatus: { select: { code: true, label: true } },
   location: true,
-  isAvailable: true,
-  vehicleType: true,
+  profileVerificationStatus: true,
   createdAt: true,
 };
 

@@ -28,12 +28,13 @@ import {
   sendSecurityAlertEmail,
 } from '../utils/passwordReset.js';
 
-// Rôles autorisés à l'inscription publique. ADMIN et ROOT ne sont JAMAIS accessibles
-// ici : ROOT se crée uniquement via scripts/create-root.js (CLI serveur), ADMIN
-// uniquement via POST /api/admin/users (réservé à ROOT). Liste blanche volontairement
-// statique dans le code, pas pilotée par la table Role, pour ne jamais faire dépendre
-// une décision de sécurité d'une donnée modifiable.
-const PUBLIC_ROLES = ['FARMER', 'BUYER', 'DRIVER'];
+// Rôles autorisés à l'inscription publique. ADMIN, AGENT, ROOT et DRIVER ne sont
+// JAMAIS accessibles ici : ROOT se crée uniquement via scripts/create-root.js
+// (CLI serveur), les comptes d'équipe (ADMIN, AGENT, DRIVER) par l'équipe elle-même
+// via les routes d'administration. Liste blanche volontairement statique dans le
+// code, pas pilotée par la table Role, pour ne jamais faire dépendre une décision
+// de sécurité d'une donnée modifiable.
+const PUBLIC_ROLES = ['SUPPLIER', 'BUYER'];
 
 function userFullName(user) {
   return `${user.firstname} ${user.lastname}`;
@@ -50,10 +51,10 @@ const accessTokenFor = (user, sessionId) =>
   });
 // POST /api/auth/register
 export const register = async (req, res) => {
-  const { firstname, lastname, phone, email, password, role, location, vehicleType } = req.body;
+  const { firstname, lastname, phone, email, password, role, location } = req.body;
 
   if (!PUBLIC_ROLES.includes(role)) {
-    return res.status(400).json({ error: 'role doit être FARMER, BUYER ou DRIVER' });
+    return res.status(400).json({ error: 'role doit être SUPPLIER ou BUYER' });
   }
 
   const existingPhone = await prisma.user.findUnique({ where: { phone } });
@@ -82,7 +83,6 @@ export const register = async (req, res) => {
       roleId,
       userStatusId,
       location,
-      ...(role === 'DRIVER' && vehicleType && { vehicleType }),
     },
     include: { role: true, userStatus: true },
   });

@@ -104,8 +104,7 @@ describe('Forme unique de la reponse utilisateur', () => {
   });
 
   // "Qui suis-je" n'a pas besoin de coordonnees : le client connait sa propre
-  // position, et les renvoyer ajoute une donnee sensible sans usage. Elles
-  // restent ecrites par la route availability.
+  // position, et les renvoyer ajoute une donnee sensible sans usage.
   it('ne renvoie pas les coordonnees', async () => {
     const { buyer, token } = await buyerToken();
     await prisma.user.update({
@@ -128,10 +127,34 @@ describe('Forme unique de la reponse utilisateur', () => {
     expect(res.body.emailVerified).toBe(true);
   });
 
+  // La verification du PROFIL (examen des documents par l'équipe) est distincte
+  // de celle de l'ADRESSE : l'une peut changer sans l'autre, et un compte frais
+  // n'a ni l'une ni l'autre.
+  it('expose la verification du profil, independante de l adresse', async () => {
+    const { buyer, token } = await buyerToken();
+
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
+
+    expect(res.body.profileVerificationStatus).toBe('UNVERIFIED');
+    expect(res.body.emailVerified).toBe(false);
+
+    // Verifier l'adresse ne valide pas le profil.
+    await prisma.user.update({ where: { id: buyer.id }, data: { emailVerified: true } });
+    const adresseVerifiee = await client.get('/api/v2/auth/me').set(authHeader(token));
+    expect(adresseVerifiee.body.emailVerified).toBe(true);
+    expect(adresseVerifiee.body.profileVerificationStatus).toBe('UNVERIFIED');
+
+    // Valider le profil ne dit rien sur l'adresse.
+    await prisma.user.update({ where: { id: buyer.id }, data: { profileVerificationStatus: 'VERIFIED' } });
+    const profilVerifie = await client.get('/api/v2/auth/me').set(authHeader(token));
+    expect(profilVerifie.body.profileVerificationStatus).toBe('VERIFIED');
+    expect(profilVerifie.body.emailVerified).toBe(true);
+  });
+
   // La forme doit etre la meme partout : c'est register et login qui
   // s'alignent sur /me qui change, pas l'inverse.
   it('est la meme forme sur register, login et me', async () => {
-    const { accessToken, user: inscrit, payload } = await registerViaApi(client, { role: 'DRIVER' });
+    const { accessToken, user: inscrit, payload } = await registerViaApi(client, { role: 'SUPPLIER' });
     const me = await client.get('/api/v2/auth/me').set(authHeader(accessToken));
     const login = await client
       .post('/api/v2/auth/login')
@@ -143,7 +166,7 @@ describe('Forme unique de la reponse utilisateur', () => {
     // /me porte en plus "media", qui n'a pas sa place dans une inscription.
     expect(cles(me.body).replace(',media', '')).toBe(cles(inscrit));
     expect(cles(login.body.user)).toBe(cles(inscrit));
-    expect(inscrit.role).toEqual({ code: 'DRIVER', label: 'Livreur' });
+    expect(inscrit.role).toEqual({ code: 'SUPPLIER', label: 'Fournisseur' });
   });
 
   it('conserve la liste des medias sur me', async () => {
@@ -190,6 +213,16 @@ describe('Deplacement des routes profil hors de /api/v2/users', () => {
   it('repond 404 sans jeton, et non 401', async () => {
     const res = await client.get('/api/v2/users/me');
     expect(res.status).toBe(404);
+  });
+
+  // La route de disponibilité du livreur a ete supprimee : la disponibilité se
+  // déduit du statut du compte et des livraisons en cours, elle ne s'écrit plus.
+  it('PATCH /api/v2/auth/me/availability ne repond plus', async () => {
+    const { token } = await buyerToken();
+
+    const res = await client.patch('/api/v2/auth/me/availability').set(authHeader(token)).send({});
+
+    expect(res.status, 'PATCH /api/v2/auth/me/availability devrait etre gone').toBe(404);
   });
 });
 

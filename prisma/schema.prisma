@@ -141,6 +141,16 @@ enum DeliveryStatus {
   CANCELLED
 }
 
+// Verification du PROFIL par l'équipe (documents d'identite examines). Distincte
+// de emailVerified, qui porte sur l'adresse : un compte peut avoir une adresse
+// confirmee et un profil jamais examine, ou l'inverse.
+enum ProfileVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 model User {
   id           Int     @id @default(autoincrement())
   firstname     String
@@ -155,14 +165,21 @@ model User {
   location     String?
   latitude     Float?
   longitude    Float?
-  isAvailable  Boolean    @default(true)
-  vehicleType  String?
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   // Renomme depuis "verified" : le nom seul ne disait pas ce qui etait verifie,
   // et l'indicateur est desormais expose dans le jeton d'acces. La colonne
   // existait depuis la premiere migration sans jamais etre ecrite ni lue.
   emailVerified Boolean   @default(false)
+  // Verification du profil par l'équipe : qui a valide, et quand. Les trois
+  // champs restent nuls tant qu'aucun membre de l'équipe n'a statué.
+  profileVerificationStatus ProfileVerificationStatus @default(UNVERIFIED)
+  profileVerifiedAt         DateTime?
+  profileVerifiedBy         User?  @relation("ProfileVerifiedBy", fields: [profileVerifiedById], references: [id])
+  profileVerifiedById       Int?
+  profileVerifiedUsers      User[] @relation("ProfileVerifiedBy")
+  // Code de parrainage unique : un parrain identifie son filleul par ce code.
+  referralCode String? @unique
 
   listings              Listing[]
   conversationsAsBuyer  Conversation[] @relation("BuyerConversations")
