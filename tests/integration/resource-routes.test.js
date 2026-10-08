@@ -44,7 +44,7 @@ async function createPickupOrder(farmer) {
   const token = generateToken({ id: buyer.id, role: 'BUYER' });
 
   const res = await client
-    .post('/api/orders')
+    .post('/api/v2/orders')
     .set(authHeader(token))
     .send({ listingId: listing.id, quantity: 5, deliveryMode: 'PICKUP' });
 
@@ -52,12 +52,12 @@ async function createPickupOrder(farmer) {
   return { order: res.body, listing, buyer, buyerToken: token };
 }
 
-describe('GET /api/listings/:id', () => {
+describe('GET /api/v2/listings/:id', () => {
   it('renvoie l annonce', async () => {
     await createListing({ title: 'Orge fourragère' });
 
     const listing = await prisma.listing.findFirst();
-    const res = await client.get(`/api/listings/${listing.id}`);
+    const res = await client.get(`/api/v2/listings/${listing.id}`);
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.id).toBe(listing.id);
@@ -65,18 +65,18 @@ describe('GET /api/listings/:id', () => {
   });
 
   it('repond 404 sur un identifiant inexistant', async () => {
-    const res = await client.get('/api/listings/999999');
+    const res = await client.get('/api/v2/listings/999999');
     expect(res.status, res.text).toBe(404);
   });
 });
 
-describe('PATCH et DELETE /api/listings/:id', () => {
+describe('PATCH et DELETE /api/v2/listings/:id', () => {
   it('met a jour une annonce', async () => {
     const { farmer, farmerToken } = await tokens();
     const listing = await createListing({ farmer, price: 100 });
 
     const res = await client
-      .patch(`/api/listings/${listing.id}`)
+      .patch(`/api/v2/listings/${listing.id}`)
       .set(authHeader(farmerToken))
       .send({ price: 175, description: 'Nouvelle description' });
 
@@ -92,7 +92,7 @@ describe('PATCH et DELETE /api/listings/:id', () => {
     const listing = await createListing({ farmer });
 
     const res = await client
-      .patch(`/api/listings/${listing.id}`)
+      .patch(`/api/v2/listings/${listing.id}`)
       .set(authHeader(generateToken({ id: autre.id, role: 'FARMER' })))
       .send({ price: 1 });
 
@@ -103,7 +103,7 @@ describe('PATCH et DELETE /api/listings/:id', () => {
     const { farmer, farmerToken } = await tokens();
     const listing = await createListing({ farmer });
 
-    const res = await client.delete(`/api/listings/${listing.id}`).set(authHeader(farmerToken));
+    const res = await client.delete(`/api/v2/listings/${listing.id}`).set(authHeader(farmerToken));
 
     // 204 No Content : la suppression n'a rien a renvoyer.
     expect(res.status, res.text).toBe(204);
@@ -111,14 +111,14 @@ describe('PATCH et DELETE /api/listings/:id', () => {
   });
 });
 
-describe('Routes /api/orders/:id', () => {
+describe('Routes /api/v2/orders/:id', () => {
   it('GET renvoie la commande', async () => {
     const { farmer } = await tokens();
     // Le jeton doit etre celui de l acheteur de la commande : les controleurs
     // verifient que l appelant est bien l acheteur ou le vendeur.
     const { order, buyerToken } = await createPickupOrder(farmer);
 
-    const res = await client.get(`/api/orders/${order.id}`).set(authHeader(buyerToken));
+    const res = await client.get(`/api/v2/orders/${order.id}`).set(authHeader(buyerToken));
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.id).toBe(order.id);
@@ -128,7 +128,7 @@ describe('Routes /api/orders/:id', () => {
     const { farmer, farmerToken } = await tokens();
     const { order } = await createPickupOrder(farmer);
 
-    const res = await client.patch(`/api/orders/${order.id}/confirm`).set(authHeader(farmerToken));
+    const res = await client.patch(`/api/v2/orders/${order.id}/confirm`).set(authHeader(farmerToken));
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.status).toBe('READY_FOR_PICKUP');
@@ -139,7 +139,7 @@ describe('Routes /api/orders/:id', () => {
     const { order, listing, buyerToken } = await createPickupOrder(farmer);
 
     const res = await client
-      .patch(`/api/orders/${order.id}/cancel`)
+      .patch(`/api/v2/orders/${order.id}/cancel`)
       .set(authHeader(buyerToken));
 
     expect(res.status, res.text).toBe(200);
@@ -154,9 +154,9 @@ describe('Routes /api/orders/:id', () => {
     const { farmer, farmerToken } = await tokens();
     const { order, buyerToken } = await createPickupOrder(farmer);
 
-    await client.patch(`/api/orders/${order.id}/confirm`).set(authHeader(farmerToken));
+    await client.patch(`/api/v2/orders/${order.id}/confirm`).set(authHeader(farmerToken));
 
-    const res = await client.patch(`/api/orders/${order.id}/complete`).set(authHeader(buyerToken));
+    const res = await client.patch(`/api/v2/orders/${order.id}/complete`).set(authHeader(buyerToken));
 
     expect(res.status, res.text).toBe(200);
     // Une commande en retrait cloturee passe a DELIVERED, pas COMPLETED : les
@@ -172,7 +172,7 @@ describe('Routes /api/orders/:id', () => {
     const { order, buyerToken } = await createPickupOrder(farmer);
 
     const res = await client
-      .patch(`/api/orders/${order.id}/complete`)
+      .patch(`/api/v2/orders/${order.id}/complete`)
       .set(authHeader(buyerToken));
 
     expect(res.status, res.text).toBe(400);
@@ -182,19 +182,19 @@ describe('Routes /api/orders/:id', () => {
     const { farmer } = await tokens();
     const { order, buyerToken } = await createPickupOrder(farmer);
 
-    const res = await client.patch(`/api/orders/${order.id}/confirm`).set(authHeader(buyerToken));
+    const res = await client.patch(`/api/v2/orders/${order.id}/confirm`).set(authHeader(buyerToken));
 
     expect(res.status).toBe(403);
   });
 });
 
-describe('Routes /api/conversations/:id/messages', () => {
+describe('Routes /api/v2/conversations/:id/messages', () => {
   it('liste et ajoute des messages', async () => {
     const { farmer, buyer, buyerToken } = await tokens();
     const listing = await createListing({ farmer });
 
     const conversation = await client
-      .post('/api/conversations')
+      .post('/api/v2/conversations')
       .set(authHeader(buyerToken))
       .send({ listingId: listing.id });
 
@@ -202,32 +202,32 @@ describe('Routes /api/conversations/:id/messages', () => {
     const id = conversation.body.id;
 
     const ajout = await client
-      .post(`/api/conversations/${id}/messages`)
+      .post(`/api/v2/conversations/${id}/messages`)
       .set(authHeader(buyerToken))
       .send({ content: 'Bonjour, la commande est-elle toujours disponible ?' });
 
     expect(ajout.status, ajout.text).toBe(201);
 
-    const liste = await client.get(`/api/conversations/${id}/messages`).set(authHeader(buyerToken));
+    const liste = await client.get(`/api/v2/conversations/${id}/messages`).set(authHeader(buyerToken));
     expect(liste.status, liste.text).toBe(200);
     expect(liste.body.length).toBeGreaterThan(0);
 
     // Un tiers qui n'est ni acheteur ni vendeur ne voit rien.
     const intrus = await createUser({ role: 'BUYER' });
     const refuse = await client
-      .get(`/api/conversations/${id}/messages`)
+      .get(`/api/v2/conversations/${id}/messages`)
       .set(authHeader(generateToken({ id: intrus.id, role: 'BUYER' })));
     expect(refuse.status).toBe(403);
     expect(buyer.id).not.toBe(farmer.id);
   });
 });
 
-describe('Routes /api/deliveries/:id', () => {
+describe('Routes /api/v2/deliveries/:id', () => {
   async function createDelivery() {
     const { farmer, buyerToken, farmerToken, driver, driverToken } = await tokens();
     const listing = await createListing({ farmer, price: 100, quantity: 50 });
     const commande = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(buyerToken))
       .send({
         listingId: listing.id,
@@ -238,7 +238,7 @@ describe('Routes /api/deliveries/:id', () => {
       });
     expect(commande.status, commande.text).toBe(201);
 
-    await client.patch(`/api/orders/${commande.body.id}/confirm`).set(authHeader(farmerToken));
+    await client.patch(`/api/v2/orders/${commande.body.id}/confirm`).set(authHeader(farmerToken));
 
     const delivery = await prisma.delivery.findUnique({ where: { orderId: commande.body.id } });
     expect(delivery).toBeTruthy();
@@ -248,7 +248,7 @@ describe('Routes /api/deliveries/:id', () => {
   it('POST /:id/accept attribue la livraison au livreur', async () => {
     const { delivery, driver, driverToken } = await createDelivery();
 
-    const res = await client.post(`/api/deliveries/${delivery.id}/accept`).set(authHeader(driverToken));
+    const res = await client.post(`/api/v2/deliveries/${delivery.id}/accept`).set(authHeader(driverToken));
 
     expect(res.status, res.text).toBe(200);
 
@@ -259,10 +259,10 @@ describe('Routes /api/deliveries/:id', () => {
 
   it('PATCH /:id/status fait avancer la livraison', async () => {
     const { delivery, driverToken } = await createDelivery();
-    await client.post(`/api/deliveries/${delivery.id}/accept`).set(authHeader(driverToken));
+    await client.post(`/api/v2/deliveries/${delivery.id}/accept`).set(authHeader(driverToken));
 
     const res = await client
-      .patch(`/api/deliveries/${delivery.id}/status`)
+      .patch(`/api/v2/deliveries/${delivery.id}/status`)
       .set(authHeader(driverToken))
       .send({ status: 'PICKED_UP' });
 
@@ -273,13 +273,13 @@ describe('Routes /api/deliveries/:id', () => {
   });
 });
 
-describe('Routes /api/admin/*/:id', () => {
+describe('Routes /api/v2/admin/*/:id', () => {
   it('PATCH /users/:id/suspend suspend un compte', async () => {
     const { adminToken } = await tokens();
     const cible = await createUser({ role: 'BUYER' });
 
     const res = await client
-      .patch(`/api/admin/users/${cible.id}/suspend`)
+      .patch(`/api/v2/admin/users/${cible.id}/suspend`)
       .set(authHeader(adminToken));
 
     expect(res.status, res.text).toBe(200);
@@ -298,7 +298,7 @@ describe('Routes /api/admin/*/:id', () => {
     await prisma.user.update({ where: { id: cible.id }, data: { userStatusId: suspendu } });
 
     const res = await client
-      .patch(`/api/admin/users/${cible.id}/reactivate`)
+      .patch(`/api/v2/admin/users/${cible.id}/reactivate`)
       .set(authHeader(adminToken));
 
     expect(res.status, res.text).toBe(200);
@@ -316,7 +316,7 @@ describe('Routes /api/admin/*/:id', () => {
     const listing = await createListing({ farmer });
 
     const res = await client
-      .patch(`/api/admin/listings/${listing.id}/deactivate`)
+      .patch(`/api/v2/admin/listings/${listing.id}/deactivate`)
       .set(authHeader(adminToken));
 
     expect(res.status, res.text).toBe(200);
@@ -340,12 +340,12 @@ describe('Identifiants mal formes', () => {
     const { buyerToken, driverToken } = await tokens();
 
     const cas = [
-      { methode: 'get', chemin: '/api/listings/abc', token: null },
-      { methode: 'get', chemin: '/api/orders/abc', token: buyerToken },
-      { methode: 'get', chemin: '/api/conversations/abc/messages', token: buyerToken },
+      { methode: 'get', chemin: '/api/v2/listings/abc', token: null },
+      { methode: 'get', chemin: '/api/v2/orders/abc', token: buyerToken },
+      { methode: 'get', chemin: '/api/v2/conversations/abc/messages', token: buyerToken },
       // Route PATCH : un GET ne matche pas et reviendrait 404, ce qui ne
       // testerait pas du tout la conversion.
-      { methode: 'patch', chemin: '/api/deliveries/abc/status', token: driverToken },
+      { methode: 'patch', chemin: '/api/v2/deliveries/abc/status', token: driverToken },
     ];
 
     for (const { methode, chemin, token } of cas) {
@@ -359,14 +359,14 @@ describe('Identifiants mal formes', () => {
   });
 
   it('repond 400 sur un identifiant negatif', async () => {
-    const res = await client.get('/api/listings/-1');
+    const res = await client.get('/api/v2/listings/-1');
     expect(res.status).toBe(400);
   });
 
   // Un identifiant valide mais inexistant doit rester un 404 : la conversion
   // ne doit pas confondre "mal forme" et "absent".
   it('distingue identifiant mal forme et identifiant absent', async () => {
-    const res = await client.get('/api/listings/999999');
+    const res = await client.get('/api/v2/listings/999999');
     expect(res.status).toBe(404);
     expect(res.body.error).not.toBe('Identifiant invalide');
   });

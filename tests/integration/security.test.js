@@ -25,20 +25,20 @@ describe('Le hash de mot de passe ne sort jamais', () => {
   // ne renvoyait aujourd'hui req.user tel quel, mais la protection reposait
   // sur la discipline de chacun : un res.json(req.user) suffisait a faire fuiter
   // le hash. Le middleware ne selectionne plus la colonne.
-  it('GET /api/auth/me ne renvoie pas le hash', async () => {
+  it('GET /api/v2/auth/me ne renvoie pas le hash', async () => {
     const { token } = await buyer();
 
-    const res = await client.get('/api/auth/me').set(authHeader(token));
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.password).toBeUndefined();
     expect(JSON.stringify(res.body)).not.toContain('$2b$');
   });
 
-  it('PATCH /api/auth/me ne renvoie pas le hash', async () => {
+  it('PATCH /api/v2/auth/me ne renvoie pas le hash', async () => {
     const { token } = await buyer();
 
-    const res = await client.patch('/api/auth/me').set(authHeader(token)).send({ location: 'Rabat' });
+    const res = await client.patch('/api/v2/auth/me').set(authHeader(token)).send({ location: 'Rabat' });
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.password).toBeUndefined();
@@ -72,7 +72,7 @@ describe('Suppression d une annonce', () => {
     const { user: proprietaire, token } = await farmer();
     const listing = await createListing({ farmer: proprietaire });
 
-    const res = await client.delete(`/api/listings/${listing.id}`).set(authHeader(token));
+    const res = await client.delete(`/api/v2/listings/${listing.id}`).set(authHeader(token));
 
     expect(res.status, res.text).toBe(204);
     expect(await prisma.listing.findUnique({ where: { id: listing.id } })).toBeNull();
@@ -86,13 +86,13 @@ describe('Suppression d une annonce', () => {
     const listing = await createListing({ farmer: proprietaire, quantity: 50 });
 
     const commande = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(acheteur))
       .send({ listingId: listing.id, quantity: 2, deliveryMode: 'PICKUP' });
 
     expect(commande.status, commande.text).toBe(201);
 
-    const res = await client.delete(`/api/listings/${listing.id}`).set(authHeader(token));
+    const res = await client.delete(`/api/v2/listings/${listing.id}`).set(authHeader(token));
 
     // 409 Conflict : la demande est valide mais incompatible avec l etat
     // actuel. Un 500 dirait au client que le serveur est casse.
@@ -110,7 +110,7 @@ describe('Suppression d une annonce', () => {
     const { token: acheteur } = await buyer();
     const listing = await createListing({ farmer: proprietaire });
 
-    await client.post('/api/conversations').set(authHeader(acheteur)).send({ listingId: listing.id });
+    await client.post('/api/v2/conversations').set(authHeader(acheteur)).send({ listingId: listing.id });
     await prisma.media.create({
       data: {
         url: 'https://exemple.test/photo.jpg',
@@ -120,7 +120,7 @@ describe('Suppression d une annonce', () => {
       },
     });
 
-    const res = await client.delete(`/api/listings/${listing.id}`).set(authHeader(token));
+    const res = await client.delete(`/api/v2/listings/${listing.id}`).set(authHeader(token));
 
     expect(res.status, res.text).toBe(204);
     expect(await prisma.conversation.count({ where: { listingId: listing.id } })).toBe(0);
@@ -144,7 +144,7 @@ describe('Suppression d une annonce', () => {
       },
     });
 
-    await client.delete(`/api/listings/${listing.id}`).set(authHeader(token));
+    await client.delete(`/api/v2/listings/${listing.id}`).set(authHeader(token));
 
     expect(await prisma.media.count({ where: { ownerUserId: autre.id } })).toBe(1);
   });
@@ -154,7 +154,7 @@ describe('Suppression d une annonce', () => {
     const { token: intrus } = await farmer();
     const listing = await createListing({ farmer: proprietaire });
 
-    const res = await client.delete(`/api/listings/${listing.id}`).set(authHeader(intrus));
+    const res = await client.delete(`/api/v2/listings/${listing.id}`).set(authHeader(intrus));
 
     expect(res.status).toBe(403);
     expect(await prisma.listing.findUnique({ where: { id: listing.id } })).toBeTruthy();

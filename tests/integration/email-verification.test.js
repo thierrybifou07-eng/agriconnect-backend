@@ -60,7 +60,7 @@ const jetonEnvoye = () => {
   return new URL(envoi.props.verificationUrl).searchParams.get('token');
 };
 
-const verifier = (token) => client.post('/api/auth/verify-email').send({ token });
+const verifier = (token) => client.post('/api/v2/auth/verify-email').send({ token });
 
 /** Inscription puis relecture : l'inscription emet un jeton de verification. */
 async function inscrit() {
@@ -203,7 +203,7 @@ describe('Le GET affiche et ne consomme pas', () => {
     const { user } = await inscrit();
     const jeton = jetonEnvoye();
 
-    const page = await client.get(`/api/auth/verify-email?token=${jeton}`);
+    const page = await client.get(`/api/v2/auth/verify-email?token=${jeton}`);
     expect(page.status).toBe(200);
 
     const res = await verifier(jeton);
@@ -215,7 +215,7 @@ describe('Le GET affiche et ne consomme pas', () => {
     const { user } = await inscrit();
     const jeton = jetonEnvoye();
 
-    const res = await client.get(`/api/auth/verify-email?token=${jeton}`);
+    const res = await client.get(`/api/v2/auth/verify-email?token=${jeton}`);
 
     expect(res.type).toContain('text/html');
     expect(res.text).toContain('Confirmer mon adresse');
@@ -225,7 +225,7 @@ describe('Le GET affiche et ne consomme pas', () => {
   });
 
   it('affiche une page lisible quand le lien ne vaut plus rien', async () => {
-    const res = await client.get('/api/auth/verify-email?token=pas-un-jeton');
+    const res = await client.get('/api/v2/auth/verify-email?token=pas-un-jeton');
 
     // La page s'affiche malgre tout : un lien casse doit expliquer pourquoi, pas
     // renvoyer du JSON a un navigateur.
@@ -240,18 +240,18 @@ describe('La verification ne bloque rien', () => {
     const { user, accessToken } = await inscrit();
     expect(user.emailVerified).toBe(false);
 
-    const me = await client.get('/api/auth/me').set(authHeader(accessToken));
+    const me = await client.get('/api/v2/auth/me').set(authHeader(accessToken));
     expect(me.status, me.text).toBe(200);
     expect(me.body.emailVerified).toBe(false);
 
-    expect((await client.get('/api/listings')).status).toBe(200);
+    expect((await client.get('/api/v2/listings')).status).toBe(200);
   });
 
   it('ne rend pas le compte verifie bloquant non plus', async () => {
     const { user, accessToken } = await inscrit();
     await verifier(jetonEnvoye());
 
-    const me = await client.get('/api/auth/me').set(authHeader(accessToken));
+    const me = await client.get('/api/v2/auth/me').set(authHeader(accessToken));
     expect(me.status).toBe(200);
   });
 });
@@ -264,7 +264,7 @@ describe('Changement d adresse', () => {
     expect((await prisma.user.findUnique({ where: { id: user.id } })).emailVerified).toBe(true);
 
     const res = await client
-      .patch('/api/auth/me')
+      .patch('/api/v2/auth/me')
       .set(authHeader(accessToken))
       .send({ email: 'nouvelle@example.com' });
 
@@ -282,7 +282,7 @@ describe('Changement d adresse', () => {
     await verifier(jetonEnvoye());
 
     await client
-      .patch('/api/auth/me')
+      .patch('/api/v2/auth/me')
       .set(authHeader(accessToken))
       .send({ email: 'adresse-tierce@example.com' });
 
@@ -295,7 +295,7 @@ describe('Changement d adresse', () => {
     const { user, accessToken } = await inscrit();
 
     await client
-      .patch('/api/auth/me')
+      .patch('/api/v2/auth/me')
       .set(authHeader(accessToken))
       .send({ email: 'nouvelle@example.com' });
 
@@ -310,7 +310,7 @@ describe('Changement d adresse', () => {
     const { user, accessToken } = await inscrit();
     await verifier(jetonEnvoye());
 
-    const res = await client.patch('/api/auth/me').set(authHeader(accessToken)).send({ lastname: 'Benali' });
+    const res = await client.patch('/api/v2/auth/me').set(authHeader(accessToken)).send({ lastname: 'Benali' });
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.emailVerified).toBe(true);
@@ -323,7 +323,7 @@ describe('Changement d adresse', () => {
     await verifier(jetonEnvoye());
 
     const res = await client
-      .patch('/api/auth/me')
+      .patch('/api/v2/auth/me')
       .set(authHeader(accessToken))
       .send({ email: payload.email });
 
@@ -333,13 +333,13 @@ describe('Changement d adresse', () => {
 
 describe('Renvoi du lien', () => {
   it('exige une authentification', async () => {
-    expect((await client.post('/api/auth/resend-verification')).status).toBe(401);
+    expect((await client.post('/api/v2/auth/resend-verification')).status).toBe(401);
   });
 
   it('repond 202 sans rien reveler sur l etat du SMTP', async () => {
     const { accessToken } = await inscrit();
 
-    const res = await client.post('/api/auth/resend-verification').set(authHeader(accessToken));
+    const res = await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
 
     // Un 202 sans detail : rapporter si le mail est parti transformerait la
     // reponse en sonde de l'etat du serveur de messagerie.
@@ -353,7 +353,7 @@ describe('Renvoi du lien', () => {
     const { user, accessToken } = await inscrit();
     const premierId = (await jetonValide(user.id)).id;
 
-    await client.post('/api/auth/resend-verification').set(authHeader(accessToken));
+    await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
 
     const restants = await jetonsDe(user.id);
     expect(restants.find((j) => j.id === premierId).usedAt).not.toBeNull();
@@ -365,7 +365,7 @@ describe('Renvoi du lien', () => {
     const { user, accessToken } = await inscrit();
     await verifier(jetonEnvoye());
 
-    await client.post('/api/auth/resend-verification').set(authHeader(accessToken));
+    await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
 
     expect((await prisma.user.findUnique({ where: { id: user.id } })).emailVerified).toBe(true);
   });
@@ -418,9 +418,9 @@ describe('Cooldown', () => {
 
 describe('Construction des liens', () => {
   it('pointe vers le backend, seul a pouvoir servir la page', () => {
-    const url = new URL(backendUrl('/api/auth/verify-email', { token: 'jeton' }));
+    const url = new URL(backendUrl('/api/v2/auth/verify-email', { token: 'jeton' }));
 
-    expect(url.pathname).toBe('/api/auth/verify-email');
+    expect(url.pathname).toBe('/api/v2/auth/verify-email');
     expect(url.searchParams.get('token')).toBe('jeton');
     expect(url.port).toBe('4000');
   });
@@ -438,7 +438,7 @@ describe('Construction des liens', () => {
   });
 
   it('reprend le lien dans le gabarit d email', async () => {
-    const lien = backendUrl('/api/auth/verify-email', { token: 'jeton-de-test' });
+    const lien = backendUrl('/api/v2/auth/verify-email', { token: 'jeton-de-test' });
 
     const html = await renderTemplate('verify-email', {
       heading: 'Confirmez votre adresse',

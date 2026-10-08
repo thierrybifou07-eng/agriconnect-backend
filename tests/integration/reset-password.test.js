@@ -39,9 +39,9 @@ const jetonEnvoye = () => {
   return new URL(envoi.props.resetUrl).searchParams.get('token');
 };
 
-const demander = (email) => client.post('/api/auth/forgot-password').send({ email });
+const demander = (email) => client.post('/api/v2/auth/forgot-password').send({ email });
 const appliquer = (token, password = 'NouveauMdp1!') =>
-  client.post('/api/auth/reset-password').send({ token, password });
+  client.post('/api/v2/auth/reset-password').send({ token, password });
 
 /** Compte inscrit, avec un lien de reinitialisation en cours. */
 async function avecLien(email = 'reset@example.com', motDePasse = 'AncienMdp1!') {
@@ -51,11 +51,11 @@ async function avecLien(email = 'reset@example.com', motDePasse = 'AncienMdp1!')
   return { user, payload, token: jetonEnvoye() };
 }
 
-describe('GET /api/auth/reset-password', () => {
+describe('GET /api/v2/auth/reset-password', () => {
   it('affiche un formulaire pour un lien valide', async () => {
     const { token } = await avecLien();
 
-    const res = await client.get(`/api/auth/reset-password?token=${token}`);
+    const res = await client.get(`/api/v2/auth/reset-password?token=${token}`);
 
     expect(res.status, res.text).toBe(200);
     expect(res.type).toContain('text/html');
@@ -70,7 +70,7 @@ describe('GET /api/auth/reset-password', () => {
   it('ne consomme pas le jeton', async () => {
     const { token } = await avecLien();
 
-    const page = await client.get(`/api/auth/reset-password?token=${token}`);
+    const page = await client.get(`/api/v2/auth/reset-password?token=${token}`);
     expect(page.status).toBe(200);
 
     // Le lien reste valable : c'est le formulaire qui l'applique.
@@ -79,7 +79,7 @@ describe('GET /api/auth/reset-password', () => {
   });
 
   it('n affiche pas le formulaire pour un jeton inconnu', async () => {
-    const res = await client.get(`/api/auth/reset-password?token=${'a'.repeat(80)}`);
+    const res = await client.get(`/api/v2/auth/reset-password?token=${'a'.repeat(80)}`);
 
     expect(res.status).toBe(200);
     expect(res.text).toContain('invalide');
@@ -93,14 +93,14 @@ describe('GET /api/auth/reset-password', () => {
       data: { expiresAt: new Date(Date.now() - 1000) },
     });
 
-    const res = await client.get(`/api/auth/reset-password?token=${token}`);
+    const res = await client.get(`/api/v2/auth/reset-password?token=${token}`);
 
     expect(res.text).toContain('expire');
     expect(res.text).not.toContain('name="password"');
   });
 
   it('affiche quand meme une page lisible sans jeton', async () => {
-    const res = await client.get('/api/auth/reset-password');
+    const res = await client.get('/api/v2/auth/reset-password');
 
     // Un lien casse ou tronque doit expliquer pourquoi, pas renvoyer du JSON.
     expect(res.status).toBe(200);
@@ -109,7 +109,7 @@ describe('GET /api/auth/reset-password', () => {
   });
 });
 
-describe('POST /api/auth/reset-password', () => {
+describe('POST /api/v2/auth/reset-password', () => {
   it('applique le nouveau mot de passe', async () => {
     const { user, payload, token } = await avecLien();
 
@@ -117,13 +117,13 @@ describe('POST /api/auth/reset-password', () => {
 
     expect(res.status, res.text).toBe(200);
     const connexion = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: 'NouveauMdp1!' });
     expect(connexion.status, connexion.text).toBe(200);
 
     // Et l'ancien ne fonctionne plus.
     const ancien = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
     expect(ancien.status).toBe(401);
   });
@@ -178,7 +178,7 @@ describe('POST /api/auth/reset-password', () => {
     // Le mot de passe doit rester le meme : un refus de validation ne consomme
     // pas le lien, l'utilisateur peut corriger et reessayer.
     const connexion = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
     expect(connexion.status).toBe(200);
   });
@@ -224,7 +224,7 @@ describe('Le reset coupe tous les acces', () => {
     await appliquer(resetToken);
 
     for (const jeton of refreshTokens) {
-      const res = await client.post('/api/auth/refresh').send({ refreshToken: jeton });
+      const res = await client.post('/api/v2/auth/refresh').send({ refreshToken: jeton });
       expect(res.status, 'chaque appareil doit etre coupe').toBe(401);
     }
   });
@@ -237,14 +237,14 @@ describe('Le reset coupe tous les acces', () => {
 
     const autre = await registerViaApi(client);
     await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: autre.payload.email, password: autre.payload.password });
 
     await appliquer(resetToken);
 
     // Le compte reinitialise ne peut plus rafraichir...
     for (const jeton of refreshTokens) {
-      expect((await client.post('/api/auth/refresh').send({ refreshToken: jeton })).status).toBe(401);
+      expect((await client.post('/api/v2/auth/refresh').send({ refreshToken: jeton })).status).toBe(401);
     }
 
     // ... et l autre, qui n'a rien demande, continue de fonctionner.
@@ -262,7 +262,7 @@ describe('Le reset coupe tous les acces', () => {
     await appliquer(resetToken);
 
     const res = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: 'NouveauMdp1!' });
     expect(res.status, res.text).toBe(200);
   });
@@ -326,7 +326,7 @@ async function connecterPlusieursAppareils(payload) {
   const refreshTokens = [];
   for (let i = 0; i < 2; i += 1) {
     const res = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
     refreshTokens.push(res.body.refreshToken);
   }

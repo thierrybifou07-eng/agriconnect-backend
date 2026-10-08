@@ -20,11 +20,11 @@ async function buyerToken() {
   return { buyer, token: generateToken({ id: buyer.id, role: 'BUYER' }) };
 }
 
-describe('POST /api/admin/users - creation d un administrateur', () => {
+describe('POST /api/v2/admin/users - creation d un administrateur', () => {
   it('cree le compte avec prenom et nom', async () => {
     const { token } = await rootToken();
 
-    const res = await client.post('/api/admin/users').set(authHeader(token)).send({
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
       firstname: 'Youssef',
       lastname: 'El Amrani',
       phone: '+33612345678',
@@ -42,7 +42,7 @@ describe('POST /api/admin/users - creation d un administrateur', () => {
   it('n expose jamais le hash du mot de passe', async () => {
     const { token } = await rootToken();
 
-    const res = await client.post('/api/admin/users').set(authHeader(token)).send({
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
       firstname: 'Yasmine',
       lastname: 'Tazi',
       phone: '+33612345679',
@@ -61,7 +61,7 @@ describe('POST /api/admin/users - creation d un administrateur', () => {
       { lastname: 'Tazi', phone: '+33612345680', password: 'MotDePasse1!' },
       { firstname: 'Yasmine', phone: '+33612345681', password: 'MotDePasse1!' },
     ]) {
-      const res = await client.post('/api/admin/users').set(authHeader(token)).send(payload);
+      const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send(payload);
       expect(res.status, JSON.stringify(payload)).toBe(400);
     }
   });
@@ -72,7 +72,7 @@ describe('POST /api/admin/users - creation d un administrateur', () => {
     const admin = await createUser({ role: 'ADMIN' });
     const token = generateToken({ id: admin.id, role: 'ADMIN' });
 
-    const res = await client.post('/api/admin/users').set(authHeader(token)).send({
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
       firstname: 'Pirate',
       lastname: 'Intrus',
       phone: '+33612345682',
@@ -84,14 +84,14 @@ describe('POST /api/admin/users - creation d un administrateur', () => {
 });
 
 describe('Forme unique de la reponse utilisateur', () => {
-  // GET /api/users/me renvoyait role et userStatus en lignes de base entieres
+  // GET /api/v2/users/me renvoyait role et userStatus en lignes de base entieres
   // (id, level, isActive, createdAt) alors que register et login renvoyaient un
   // libelle. Deux formes pour le meme champ, dont une qui exposait des colonnes
   // internes. Tout passe maintenant par utils/userApi.js.
   it('expose role et userStatus en { code, label }, et rien de plus', async () => {
     const { buyer, token } = await buyerToken();
 
-    const res = await client.get('/api/auth/me').set(authHeader(token));
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.role).toEqual({ code: 'BUYER', label: 'Acheteur' });
@@ -113,7 +113,7 @@ describe('Forme unique de la reponse utilisateur', () => {
       data: { latitude: 34.02, longitude: -6.84 },
     });
 
-    const res = await client.get('/api/auth/me').set(authHeader(token));
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
 
     expect(res.body.latitude).toBeUndefined();
     expect(res.body.longitude).toBeUndefined();
@@ -123,7 +123,7 @@ describe('Forme unique de la reponse utilisateur', () => {
     const { buyer, token } = await buyerToken();
     await prisma.user.update({ where: { id: buyer.id }, data: { emailVerified: true } });
 
-    const res = await client.get('/api/auth/me').set(authHeader(token));
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
 
     expect(res.body.emailVerified).toBe(true);
   });
@@ -132,9 +132,9 @@ describe('Forme unique de la reponse utilisateur', () => {
   // s'alignent sur /me qui change, pas l'inverse.
   it('est la meme forme sur register, login et me', async () => {
     const { accessToken, user: inscrit, payload } = await registerViaApi(client, { role: 'DRIVER' });
-    const me = await client.get('/api/auth/me').set(authHeader(accessToken));
+    const me = await client.get('/api/v2/auth/me').set(authHeader(accessToken));
     const login = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
 
     expect(login.status, login.text).toBe(200);
@@ -149,22 +149,22 @@ describe('Forme unique de la reponse utilisateur', () => {
   it('conserve la liste des medias sur me', async () => {
     const { token } = await buyerToken();
 
-    const res = await client.get('/api/auth/me').set(authHeader(token));
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
 
     expect(Array.isArray(res.body.media)).toBe(true);
   });
 });
 
-describe('Deplacement des routes profil hors de /api/users', () => {
-  // /api/users est reserve aux endpoints d'administration a venir. Les quatre
+describe('Deplacement des routes profil hors de /api/v2/users', () => {
+  // /api/v2/users est reserve aux endpoints d'administration a venir. Les quatre
   // routes y sont parties, et il n'y a pas de compatibilite : aucun client
   // n'existe encore, donc un point de deplacement explicite dans l'historique
   // vaut mieux qu'un shim qui aurait deux sources de verite.
   const anciennesRoutes = [
-    ['get', '/api/users/me'],
-    ['patch', '/api/users/me'],
-    ['post', '/api/users/me/avatar'],
-    ['patch', '/api/users/me/availability'],
+    ['get', '/api/v2/users/me'],
+    ['patch', '/api/v2/users/me'],
+    ['post', '/api/v2/users/me/avatar'],
+    ['patch', '/api/v2/users/me/availability'],
   ];
 
   it.each(anciennesRoutes)('%s %s ne repond plus', async (methode, chemin) => {
@@ -175,12 +175,12 @@ describe('Deplacement des routes profil hors de /api/users', () => {
     expect(res.status, `${methode.toUpperCase()} ${chemin} devrait etre gone`).toBe(404);
   });
 
-  it('laisse le prefixe /api/users entierement libre', async () => {
+  it('laisse le prefixe /api/v2/users entierement libre', async () => {
     const { token } = await buyerToken();
 
-    // Aucune route sous /api/users : ce prefixe est disponible pour la
+    // Aucune route sous /api/v2/users : ce prefixe est disponible pour la
     // future interface d'administration.
-    for (const chemin of ['/api/users', '/api/users/1', '/api/users/me']) {
+    for (const chemin of ['/api/v2/users', '/api/v2/users/1', '/api/v2/users/me']) {
       const res = await client.get(chemin).set(authHeader(token));
       expect(res.status, `GET ${chemin} devrait etre 404`).toBe(404);
     }
@@ -188,17 +188,17 @@ describe('Deplacement des routes profil hors de /api/users', () => {
 
   // Sansauthentification comprise : une route supprimee repond 404, pas 401.
   it('repond 404 sans jeton, et non 401', async () => {
-    const res = await client.get('/api/users/me');
+    const res = await client.get('/api/v2/users/me');
     expect(res.status).toBe(404);
   });
 });
 
-describe('PATCH /api/auth/me - mise a jour du profil', () => {
+describe('PATCH /api/v2/auth/me - mise a jour du profil', () => {
   it('met a jour le prenom et le nom', async () => {
     const { buyer, token } = await buyerToken();
 
     const res = await client
-      .patch('/api/auth/me')
+      .patch('/api/v2/auth/me')
       .set(authHeader(token))
       .send({ firstname: 'Amina', lastname: 'Benali' });
 
@@ -212,7 +212,7 @@ describe('PATCH /api/auth/me - mise a jour du profil', () => {
     const { buyer, token } = await buyerToken();
     await prisma.user.update({ where: { id: buyer.id }, data: { firstname: 'Fatima', lastname: 'Zahra' } });
 
-    await client.patch('/api/auth/me').set(authHeader(token)).send({ lastname: 'Alaoui' });
+    await client.patch('/api/v2/auth/me').set(authHeader(token)).send({ lastname: 'Alaoui' });
 
     const enBase = await prisma.user.findUnique({ where: { id: buyer.id } });
     expect(enBase.firstname).toBe('Fatima');
@@ -223,7 +223,7 @@ describe('PATCH /api/auth/me - mise a jour du profil', () => {
     const { buyer, token } = await buyerToken();
 
     const res = await client
-      .patch('/api/auth/me')
+      .patch('/api/v2/auth/me')
       .set(authHeader(token))
       .send({ location: 'Salé', email: 'nouveau@example.com' });
 
@@ -238,7 +238,7 @@ describe('PATCH /api/auth/me - mise a jour du profil', () => {
     const { buyer, token } = await buyerToken();
     const avant = await prisma.user.findUnique({ where: { id: buyer.id } });
 
-    const res = await client.patch('/api/auth/me').set(authHeader(token)).send({});
+    const res = await client.patch('/api/v2/auth/me').set(authHeader(token)).send({});
 
     expect(res.status, res.text).toBe(200);
     const apres = await prisma.user.findUnique({ where: { id: buyer.id } });
@@ -247,7 +247,7 @@ describe('PATCH /api/auth/me - mise a jour du profil', () => {
   });
 
   it('refuse une mise a jour sans authentification', async () => {
-    const res = await client.patch('/api/auth/me').send({ firstname: 'Intrus' });
+    const res = await client.patch('/api/v2/auth/me').send({ firstname: 'Intrus' });
     expect(res.status).toBe(401);
   });
 });

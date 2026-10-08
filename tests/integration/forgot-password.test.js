@@ -51,11 +51,11 @@ async function inscrit(email = 'oubli@example.com') {
   return { user, payload };
 }
 
-describe('POST /api/auth/forgot-password', () => {
+describe('POST /api/v2/auth/forgot-password', () => {
   it('repond 200 pour un compte existant', async () => {
     const { payload } = await inscrit();
 
-    const res = await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    const res = await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.message).toBeTruthy();
@@ -64,7 +64,7 @@ describe('POST /api/auth/forgot-password', () => {
   it('envoie un email a la bonne adresse', async () => {
     const { payload, user } = await inscrit();
 
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     expect(emailsReset()).toHaveLength(1);
     expect(emailsReset()[0].to).toBe(user.email);
@@ -73,7 +73,7 @@ describe('POST /api/auth/forgot-password', () => {
   it('emet un jeton pour un compte existant', async () => {
     const { user, payload } = await inscrit();
 
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     const jetons = await jetonsDe(user.id);
     expect(jetons).toHaveLength(1);
@@ -82,7 +82,7 @@ describe('POST /api/auth/forgot-password', () => {
 
   it('ne stocke que l empreinte du jeton', async () => {
     const { user, payload } = await inscrit();
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     const [jeton] = await jetonsDe(user.id);
 
@@ -92,7 +92,7 @@ describe('POST /api/auth/forgot-password', () => {
 
   it('donne 15 minutes de validite', async () => {
     const { user, payload } = await inscrit();
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     const [jeton] = await jetonsDe(user.id);
     const minutes = (jeton.expiresAt.getTime() - Date.now()) / (60 * 1000);
@@ -108,9 +108,9 @@ describe('Le endpoint ne revele pas l existence d un compte', () => {
   it('repond exactement pareil pour une adresse inconnue', async () => {
     const { payload } = await inscrit();
 
-    const connu = await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    const connu = await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
     const inconnu = await client
-      .post('/api/auth/forgot-password')
+      .post('/api/v2/auth/forgot-password')
       .send({ email: 'personne@example.com' });
 
     expect(inconnu.status).toBe(connu.status);
@@ -121,7 +121,7 @@ describe('Le endpoint ne revele pas l existence d un compte', () => {
   it('n envoie rien pour une adresse inconnue', async () => {
     await inscrit();
 
-    await client.post('/api/auth/forgot-password').send({ email: 'personne@example.com' });
+    await client.post('/api/v2/auth/forgot-password').send({ email: 'personne@example.com' });
 
     expect(emailsReset()).toHaveLength(0);
   });
@@ -129,7 +129,7 @@ describe('Le endpoint ne revele pas l existence d un compte', () => {
   it('ne cree aucun jeton pour une adresse inconnue', async () => {
     await inscrit();
 
-    await client.post('/api/auth/forgot-password').send({ email: 'personne@example.com' });
+    await client.post('/api/v2/auth/forgot-password').send({ email: 'personne@example.com' });
 
     expect(await prisma.passwordResetToken.count()).toBe(0);
   });
@@ -143,7 +143,7 @@ describe('Le endpoint ne revele pas l existence d un compte', () => {
 
     const mesurer = async (email) => {
       const debut = process.hrtime.bigint();
-      await client.post('/api/auth/forgot-password').send({ email });
+      await client.post('/api/v2/auth/forgot-password').send({ email });
       return Number(process.hrtime.bigint() - debut) / 1e6;
     };
 
@@ -161,14 +161,14 @@ describe('Le endpoint ne revele pas l existence d un compte', () => {
   it('rejette un format d email invalide sans consulter la base', async () => {
     await inscrit();
 
-    const res = await client.post('/api/auth/forgot-password').send({ email: 'pas-un-email' });
+    const res = await client.post('/api/v2/auth/forgot-password').send({ email: 'pas-un-email' });
 
     expect(res.status).toBe(400);
     expect(emailsReset()).toHaveLength(0);
   });
 
   it('exige une adresse', async () => {
-    const res = await client.post('/api/auth/forgot-password').send({});
+    const res = await client.post('/api/v2/auth/forgot-password').send({});
     expect(res.status).toBe(400);
   });
 });
@@ -180,10 +180,10 @@ describe('Un seul lien valide a la fois', () => {
   it('invalide le lien precedent', async () => {
     const { user, payload } = await inscrit();
 
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
     const premierId = (await jetonsDe(user.id))[0].id;
 
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     const jetons = await jetonsDe(user.id);
     expect(jetons.find((j) => j.id === premierId).usedAt).not.toBeNull();
@@ -194,7 +194,7 @@ describe('Un seul lien valide a la fois', () => {
     const { user, payload } = await inscrit('a@example.com');
     const { user: autre } = await inscrit('b@example.com');
 
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     expect(await jetonsDe(user.id)).toHaveLength(1);
     expect(await jetonsDe(autre.id)).toHaveLength(0);
@@ -205,10 +205,10 @@ describe('Gabarit d email', () => {
   it('porte le lien vers la page de reinitialisation', async () => {
     const { payload } = await inscrit();
 
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     const props = emailsReset()[0].props;
-    expect(props.resetUrl).toContain('/api/auth/reset-password');
+    expect(props.resetUrl).toContain('/api/v2/auth/reset-password');
     expect(props.ttlMinutes).toBe(15);
     expect(props.username).toBeTruthy();
   });
@@ -216,7 +216,7 @@ describe('Gabarit d email', () => {
   it('annonce que la demande n a rien change si l utilisateur n est pas a l origine', async () => {
     const { payload } = await inscrit();
 
-    await client.post('/api/auth/forgot-password').send({ email: payload.email });
+    await client.post('/api/v2/auth/forgot-password').send({ email: payload.email });
 
     // Un email de reinitialisation sans cette phrase fait paniquer les
     // utilisateurs qui recoivent le leur.

@@ -135,10 +135,10 @@ describe('Suspension : les sessions tombent', () => {
     const { token } = await rootToken();
     const user = await createUser();
 
-    await client.post('/api/auth/login').send({ email: user.email, password: 'MotDePasse1!' });
+    await client.post('/api/v2/auth/login').send({ email: user.email, password: 'MotDePasse1!' });
     expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(1);
 
-    await client.patch(`/api/admin/users/${user.id}/suspend`).set(authHeader(token));
+    await client.patch(`/api/v2/admin/users/${user.id}/suspend`).set(authHeader(token));
 
     expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(0);
     expect(await prisma.refreshToken.count({ where: { userId: user.id, revoked: false } })).toBe(0);
@@ -148,16 +148,16 @@ describe('Suspension : les sessions tombent', () => {
     const { token } = await rootToken();
     const user = await createUser();
 
-    const login = await client.post('/api/auth/login').send({
+    const login = await client.post('/api/v2/auth/login').send({
       email: user.email,
       password: 'MotDePasse1!',
     });
     expect(login.status).toBe(200);
 
-    await client.patch(`/api/admin/users/${user.id}/suspend`).set(authHeader(token));
+    await client.patch(`/api/v2/admin/users/${user.id}/suspend`).set(authHeader(token));
 
     const res = await client
-      .post('/api/auth/refresh')
+      .post('/api/v2/auth/refresh')
       .send({ refreshToken: login.body.refreshToken });
     expect(res.status).toBe(401);
   });
@@ -168,10 +168,10 @@ describe('Suspension : les sessions tombent', () => {
     const temoin = await createUser();
 
     for (const user of [sanctionne, temoin]) {
-      await client.post('/api/auth/login').send({ email: user.email, password: 'MotDePasse1!' });
+      await client.post('/api/v2/auth/login').send({ email: user.email, password: 'MotDePasse1!' });
     }
 
-    await client.patch(`/api/admin/users/${sanctionne.id}/suspend`).set(authHeader(token));
+    await client.patch(`/api/v2/admin/users/${sanctionne.id}/suspend`).set(authHeader(token));
 
     expect(await prisma.session.count({ where: { userId: temoin.id, revokedAt: null } })).toBe(1);
   });
@@ -182,7 +182,7 @@ describe('Suspension : les sessions tombent', () => {
     const { token } = await rootToken();
     const user = await createUser();
 
-    const res = await client.patch(`/api/admin/users/${user.id}/suspend`).set(authHeader(token));
+    const res = await client.patch(`/api/v2/admin/users/${user.id}/suspend`).set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
     expect(await statutDe(user.id)).toBe('SUSPENDED');

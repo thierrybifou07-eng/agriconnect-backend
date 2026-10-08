@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import prisma from '../../src/config/prisma.js';
 
 // Fabriques de fixtures. Les utilisateurs sont inseres directement en base
-// plutot que via POST /api/auth/register : les tests qui concernent l'API
+// plutot que via POST /api/v2/auth/register : les tests qui concernent l'API
 // d'authentification utilisent la vraie route, les autres n'ont pas besoin de
 // payer le prix du hachage bcrypt a chaque cas.
 
@@ -116,7 +116,7 @@ export async function registerViaApi(client, overrides = {}) {
     ...(overrides.email ? {} : { email: `api${id}@example.com` }),
   };
 
-  const res = await client.post('/api/auth/register').send(payload);
+  const res = await client.post('/api/v2/auth/register').send(payload);
 
   // A l inscription, le controleur tente un envoi d'email. Si le SMTP est
   // injoignable, Express 5 laisse l'erreur remonter au middleware d'erreur et

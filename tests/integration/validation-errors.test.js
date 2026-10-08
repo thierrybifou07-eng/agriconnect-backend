@@ -39,7 +39,7 @@ describe('Valeurs de reference invalides - creation d annonce', () => {
     const { token } = await farmerToken();
 
     const res = await client
-      .post('/api/listings')
+      .post('/api/v2/listings')
       .set(authHeader(token))
       .send(validListing({ category: 'ROBOTES' }));
 
@@ -52,7 +52,7 @@ describe('Valeurs de reference invalides - creation d annonce', () => {
     const { token } = await farmerToken();
 
     const res = await client
-      .post('/api/listings')
+      .post('/api/v2/listings')
       .set(authHeader(token))
       .send(validListing());
 
@@ -69,7 +69,7 @@ describe('Valeurs de reference invalides - mise a jour d annonce', () => {
     const listing = await createListing({ farmer });
 
     const res = await client
-      .patch(`/api/listings/${listing.id}`)
+      .patch(`/api/v2/listings/${listing.id}`)
       .set(authHeader(token))
       .send({ status: 'EN_VENTE' });
 
@@ -82,7 +82,7 @@ describe('Valeurs de reference invalides - mise a jour d annonce', () => {
     const listing = await createListing({ farmer });
 
     const res = await client
-      .patch(`/api/listings/${listing.id}`)
+      .patch(`/api/v2/listings/${listing.id}`)
       .set(authHeader(token))
       .send({ category: 'CACHOTS' });
 
@@ -92,13 +92,13 @@ describe('Valeurs de reference invalides - mise a jour d annonce', () => {
 
   // La validation doit se produire avant toute ecriture : un rejet ne doit pas
   // avoir modifie l annonce. On relit la base directement, et non via
-  // GET /api/listings, qui repond 500 tant que B1 n'est pas corrige.
+  // GET /api/v2/listings, qui repond 500 tant que B1 n'est pas corrige.
   it('ne modifie rien quand la validation echoue', async () => {
     const { farmer, token } = await farmerToken();
     const listing = await createListing({ farmer, price: 250 });
 
     await client
-      .patch(`/api/listings/${listing.id}`)
+      .patch(`/api/v2/listings/${listing.id}`)
       .set(authHeader(token))
       .send({ price: 999, category: 'ROBOTES' });
 

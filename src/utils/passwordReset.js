@@ -92,7 +92,7 @@ export function dispatchPasswordResetEmail(user, rawToken, { username } = {}) {
     {
       heading: 'Réinitialisation du mot de passe',
       username: username ?? `${user.firstname} ${user.lastname}`,
-      resetUrl: backendUrl('/api/auth/reset-password', { token: rawToken }),
+      resetUrl: backendUrl('/api/v2/auth/reset-password', { token: rawToken }),
       ttlMinutes: TTL_MINUTES,
     }
   );

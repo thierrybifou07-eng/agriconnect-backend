@@ -30,11 +30,11 @@ async function roleCodeOf(user) {
   return row;
 }
 
-describe('B1 - GET /api/listings ne doit pas casser sur un select inexistant', () => {
+describe('B1 - GET /api/v2/listings ne doit pas casser sur un select inexistant', () => {
   it('renvoie 200 sur le listing public', async () => {
     await createListing();
 
-    const res = await client.get('/api/listings');
+    const res = await client.get('/api/v2/listings');
 
     expect(res.status, res.text).toBe(200);
     expect(res.body).toHaveLength(1);
@@ -43,7 +43,7 @@ describe('B1 - GET /api/listings ne doit pas casser sur un select inexistant', (
   it('inclut le nom de l agriculteur dans la reponse', async () => {
     await createListing({ farmer: await createUser({ role: 'FARMER', firstname: 'Amina', lastname: 'Benali' }) });
 
-    const res = await client.get('/api/listings');
+    const res = await client.get('/api/v2/listings');
 
     expect(res.status).toBe(200);
     const listing = res.body[0];
@@ -55,13 +55,13 @@ describe('B1 - GET /api/listings ne doit pas casser sur un select inexistant', (
   });
 });
 
-describe('B1 - POST /api/listings ne doit pas casser apres creation', () => {
+describe('B1 - POST /api/v2/listings ne doit pas casser apres creation', () => {
   it('cree une annonce et renvoie 201', async () => {
     const { farmer, token } = await farmerToken();
     const category = await prisma.listingCategory.findUnique({ where: { code: 'CEREALES' } });
 
     const res = await client
-      .post('/api/listings')
+      .post('/api/v2/listings')
       .set(authHeader(token))
       .send({
         title: 'Orge fourragere',
@@ -78,40 +78,40 @@ describe('B1 - POST /api/listings ne doit pas casser apres creation', () => {
 });
 
 describe('B1 - les autres lectures ne doivent pas casser', () => {
-  it('GET /api/orders renvoie 200', async () => {
+  it('GET /api/v2/orders renvoie 200', async () => {
     const buyer = await createUser({ role: 'BUYER' });
     const token = (await createTokenFor(buyer)).accessToken;
 
-    const res = await client.get('/api/orders').set(authHeader(token));
+    const res = await client.get('/api/v2/orders').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
     expect(res.body).toEqual([]);
   });
 
-  it('GET /api/conversations renvoie 200', async () => {
+  it('GET /api/v2/conversations renvoie 200', async () => {
     const buyer = await createUser({ role: 'BUYER' });
     const token = (await createTokenFor(buyer)).accessToken;
 
-    const res = await client.get('/api/conversations').set(authHeader(token));
+    const res = await client.get('/api/v2/conversations').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
     expect(res.body).toEqual([]);
   });
 
-  it('GET /api/deliveries/available renvoie 200 pour un livreur', async () => {
+  it('GET /api/v2/deliveries/available renvoie 200 pour un livreur', async () => {
     const driver = await createUser({ role: 'DRIVER' });
     const token = (await createTokenFor(driver)).accessToken;
 
-    const res = await client.get('/api/deliveries/available').set(authHeader(token));
+    const res = await client.get('/api/v2/deliveries/available').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
   });
 
-  it('GET /api/admin/users renvoie 200 pour un administrateur', async () => {
+  it('GET /api/v2/admin/users renvoie 200 pour un administrateur', async () => {
     const admin = await createUser({ role: 'ADMIN' });
     const token = (await createTokenFor(admin)).accessToken;
 
-    const res = await client.get('/api/admin/users').set(authHeader(token));
+    const res = await client.get('/api/v2/admin/users').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
   });

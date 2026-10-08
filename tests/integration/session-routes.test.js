@@ -19,11 +19,11 @@ async function deuxAppareils() {
   const utilisateur = await prisma.user.findUnique({ where: { email: payload.email } });
 
   const telephone = await client
-    .post('/api/auth/login')
+    .post('/api/v2/auth/login')
     .set('User-Agent', 'Android/1.0')
     .send({ email: payload.email, password: payload.password });
   const ordinateur = await client
-    .post('/api/auth/login')
+    .post('/api/v2/auth/login')
     .set('User-Agent', 'Firefox/2.0')
     .send({ email: payload.email, password: payload.password });
 
@@ -35,9 +35,9 @@ async function deuxAppareils() {
   };
 }
 
-const lister = (token) => client.get('/api/auth/sessions').set(enTete(token));
+const lister = (token) => client.get('/api/v2/auth/sessions').set(enTete(token));
 
-describe('GET /api/auth/sessions', () => {
+describe('GET /api/v2/auth/sessions', () => {
   it('liste les sessions ouvertes du compte', async () => {
     const { telephone } = await deuxAppareils();
 
@@ -106,11 +106,11 @@ describe('GET /api/auth/sessions', () => {
   });
 
   it('exige une authentification', async () => {
-    expect((await client.get('/api/auth/sessions')).status).toBe(401);
+    expect((await client.get('/api/v2/auth/sessions')).status).toBe(401);
   });
 });
 
-describe('DELETE /api/auth/sessions/:id', () => {
+describe('DELETE /api/v2/auth/sessions/:id', () => {
   it('ferme la session visee et revoque ses jetons', async () => {
     const { utilisateur, telephone, ordinateur } = await deuxAppareils();
 
@@ -118,7 +118,7 @@ describe('DELETE /api/auth/sessions/:id', () => {
       (s) => s.id === verifyToken(ordinateur.accessToken).sessionId
     );
 
-    const res = await client.delete(`/api/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken));
+    const res = await client.delete(`/api/v2/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken));
     expect(res.status).toBe(204);
 
     const fermee = await prisma.session.findUnique({ where: { id: sessionOrdinateur.id } });
@@ -133,10 +133,10 @@ describe('DELETE /api/auth/sessions/:id', () => {
     const sessionOrdinateur = (await lister(telephone.accessToken)).body.sessions.find(
       (s) => s.id === verifyToken(ordinateur.accessToken).sessionId
     );
-    await client.delete(`/api/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken));
+    await client.delete(`/api/v2/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken));
 
-    const coupe = await client.post('/api/auth/refresh').send({ refreshToken: ordinateur.refreshToken });
-    const intact = await client.post('/api/auth/refresh').send({ refreshToken: telephone.refreshToken });
+    const coupe = await client.post('/api/v2/auth/refresh').send({ refreshToken: ordinateur.refreshToken });
+    const intact = await client.post('/api/v2/auth/refresh').send({ refreshToken: telephone.refreshToken });
 
     expect(coupe.status).toBe(401);
     expect(intact.status).toBe(200);
@@ -151,7 +151,7 @@ describe('DELETE /api/auth/sessions/:id', () => {
     const sessionOrdinateur = (await lister(telephone.accessToken)).body.sessions.find(
       (s) => s.id === verifyToken(ordinateur.accessToken).sessionId
     );
-    const res = await client.delete(`/api/auth/sessions/${sessionOrdinateur.id}`).set(enTete(autreJeton));
+    const res = await client.delete(`/api/v2/auth/sessions/${sessionOrdinateur.id}`).set(enTete(autreJeton));
 
     expect(res.status).toBe(404);
     // La session doit etre intacte : un 404 est bien la reponse, mais ce qui
@@ -161,7 +161,7 @@ describe('DELETE /api/auth/sessions/:id', () => {
 
   it('repond 404 sur une session inexistante', async () => {
     const { telephone } = await deuxAppareils();
-    const res = await client.delete('/api/auth/sessions/999999').set(enTete(telephone.accessToken));
+    const res = await client.delete('/api/v2/auth/sessions/999999').set(enTete(telephone.accessToken));
     expect(res.status).toBe(404);
   });
 
@@ -175,8 +175,8 @@ describe('DELETE /api/auth/sessions/:id', () => {
       (s) => s.id === verifyToken(ordinateur.accessToken).sessionId
     );
 
-    expect((await client.delete(`/api/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken))).status).toBe(204);
-    expect((await client.delete(`/api/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken))).status).toBe(204);
+    expect((await client.delete(`/api/v2/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken))).status).toBe(204);
+    expect((await client.delete(`/api/v2/auth/sessions/${sessionOrdinateur.id}`).set(enTete(telephone.accessToken))).status).toBe(204);
 
     // Et la session disparait bien de la liste, une seule fois.
     const res = await lister(telephone.accessToken);
@@ -185,22 +185,22 @@ describe('DELETE /api/auth/sessions/:id', () => {
 
   it('repond 400 sur un identifiant non numerique au lieu de 500', async () => {
     const { telephone } = await deuxAppareils();
-    const res = await client.delete('/api/auth/sessions/pas-un-id').set(enTete(telephone.accessToken));
+    const res = await client.delete('/api/v2/auth/sessions/pas-un-id').set(enTete(telephone.accessToken));
     expect(res.status).toBe(400);
   });
 
   it('exige une authentification', async () => {
     const { telephone } = await deuxAppareils();
-    const res = await client.delete(`/api/auth/sessions/${verifyToken(telephone.accessToken).sessionId}`);
+    const res = await client.delete(`/api/v2/auth/sessions/${verifyToken(telephone.accessToken).sessionId}`);
     expect(res.status).toBe(401);
   });
 });
 
-describe('POST /api/auth/logout-all', () => {
+describe('POST /api/v2/auth/logout-all', () => {
   it('ferme toutes les sessions sauf celle de l appelant', async () => {
     const { utilisateur, telephone } = await deuxAppareils();
 
-    const res = await client.post('/api/auth/logout-all').set(enTete(telephone.accessToken));
+    const res = await client.post('/api/v2/auth/logout-all').set(enTete(telephone.accessToken));
     expect(res.status).toBe(204);
 
     const restantes = await prisma.session.findMany({ where: { userId: utilisateur.id, revokedAt: null } });
@@ -213,9 +213,9 @@ describe('POST /api/auth/logout-all', () => {
   it('preserve la session de l appelant', async () => {
     const { telephone } = await deuxAppareils();
 
-    await client.post('/api/auth/logout-all').set(enTete(telephone.accessToken));
+    await client.post('/api/v2/auth/logout-all').set(enTete(telephone.accessToken));
 
-    const res = await client.post('/api/auth/refresh').send({ refreshToken: telephone.refreshToken });
+    const res = await client.post('/api/v2/auth/refresh').send({ refreshToken: telephone.refreshToken });
     expect(res.status).toBe(200);
   });
 
@@ -226,12 +226,12 @@ describe('POST /api/auth/logout-all', () => {
       where: { id: verifyToken(autre.accessToken).sessionId },
     });
 
-    await client.post('/api/auth/logout-all').set(enTete(telephone.accessToken));
+    await client.post('/api/v2/auth/logout-all').set(enTete(telephone.accessToken));
 
     expect((await prisma.session.findUnique({ where: { id: sessionAutre.id } })).revokedAt).toBeNull();
   });
 
   it('exige une authentification', async () => {
-    expect((await client.post('/api/auth/logout-all')).status).toBe(401);
+    expect((await client.post('/api/v2/auth/logout-all')).status).toBe(401);
   });
 });

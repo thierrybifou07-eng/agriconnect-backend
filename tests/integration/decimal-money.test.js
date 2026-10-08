@@ -13,14 +13,14 @@ import { toNumber } from '../../src/utils/money.js';
 const client = api();
 
 describe('Les montants sortent en nombre, pas en chaine', () => {
-  it('sur POST /api/orders', async () => {
+  it('sur POST /api/v2/orders', async () => {
     const buyer = await createUser({ role: 'BUYER' });
     const farmer = await createUser({ role: 'FARMER' });
     const listing = await createListing({ farmer, price: 12.5, quantity: 10 });
     const token = generateToken({ id: buyer.id, role: 'BUYER' });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 2, deliveryMode: 'PICKUP' });
 
@@ -33,10 +33,10 @@ describe('Les montants sortent en nombre, pas en chaine', () => {
     expect(res.body.totalPrice).toBe(25);
   });
 
-  it('sur GET /api/listings', async () => {
+  it('sur GET /api/v2/listings', async () => {
     await createListing({ price: 250.75, quantity: 5 });
 
-    const res = await client.get('/api/listings');
+    const res = await client.get('/api/v2/listings');
 
     expect(res.status, res.text).toBe(200);
     expect(typeof res.body[0].price).toBe('number');
@@ -51,11 +51,11 @@ describe('Les montants sortent en nombre, pas en chaine', () => {
     const token = generateToken({ id: buyer.id, role: 'BUYER' });
 
     await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 1, deliveryMode: 'PICKUP' });
 
-    const res = await client.get('/api/orders').set(authHeader(token));
+    const res = await client.get('/api/v2/orders').set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
     expect(typeof res.body[0].totalPrice).toBe('number');
@@ -73,7 +73,7 @@ describe('Les totaux sont exacts', () => {
     const token = generateToken({ id: buyer.id, role: 'BUYER' });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 3, deliveryMode: 'PICKUP' });
 
@@ -91,7 +91,7 @@ describe('Les totaux sont exacts', () => {
     const token = generateToken({ id: buyer.id, role: 'BUYER' });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 2.5, deliveryMode: 'PICKUP' });
 
@@ -119,7 +119,7 @@ describe('Les stocks restent coherents avec le Decimal', () => {
     const token = generateToken({ id: buyer.id, role: 'BUYER' });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 5, deliveryMode: 'PICKUP' });
 
@@ -144,7 +144,7 @@ describe('Les frais de livraison sont des montants', () => {
     const farmerToken = generateToken({ id: farmer.id, role: 'FARMER' });
 
     const commande = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(buyerToken))
       .send({
         listingId: listing.id,
@@ -157,7 +157,7 @@ describe('Les frais de livraison sont des montants', () => {
     expect(commande.status, commande.text).toBe(201);
 
     const accepted = await client
-      .patch(`/api/orders/${commande.body.id}/confirm`)
+      .patch(`/api/v2/orders/${commande.body.id}/confirm`)
       .set(authHeader(farmerToken));
 
     expect(accepted.status, accepted.text).toBe(200);

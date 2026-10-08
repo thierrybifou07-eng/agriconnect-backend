@@ -21,14 +21,14 @@ async function buyerToken() {
   return { buyer, token: generateToken({ id: buyer.id, role: 'BUYER' }) };
 }
 
-describe('B2 - POST /api/orders doit accepter un listingId entier', () => {
+describe('B2 - POST /api/v2/orders doit accepter un listingId entier', () => {
   it('cree une commande en retrait', async () => {
     const { buyer, token } = await buyerToken();
     const farmer = await createUser({ role: 'FARMER' });
     const listing = await createListing({ farmer, quantity: 100, price: 250 });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 10, deliveryMode: 'PICKUP' });
 
@@ -41,7 +41,7 @@ describe('B2 - POST /api/orders doit accepter un listingId entier', () => {
     const listing = await createListing();
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: String(listing.id), quantity: 5, deliveryMode: 'PICKUP' });
 
@@ -55,7 +55,7 @@ describe('B2 - POST /api/orders doit accepter un listingId entier', () => {
     const listing = await createListing({ quantity: 100 });
 
     await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 30, deliveryMode: 'PICKUP' });
 
@@ -71,7 +71,7 @@ describe('B2 - POST /api/orders doit accepter un listingId entier', () => {
     const listing = await createListing({ price: 250, quantity: 100 });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 4, deliveryMode: 'PICKUP' });
 
@@ -87,7 +87,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
     const token = generateToken({ id: farmer.id, role: 'FARMER' });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 1, deliveryMode: 'PICKUP' });
 
@@ -100,7 +100,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
     const listing = await createListing({ quantity: 10 });
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 999, deliveryMode: 'PICKUP' });
 
@@ -113,7 +113,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
     const listing = await createListing();
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 1, deliveryMode: 'DELIVERY' });
 
@@ -126,7 +126,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
     const listing = await createListing();
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: listing.id, quantity: 1, deliveryMode: 'TORTUE' });
 
@@ -141,7 +141,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
     const { token } = await buyerToken();
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: 'pas-un-id', quantity: 1, deliveryMode: 'PICKUP' });
 
@@ -154,7 +154,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
 
     for (const listingId of [-1, 0, 2.5]) {
       const res = await client
-        .post('/api/orders')
+        .post('/api/v2/orders')
         .set(authHeader(token))
         .send({ listingId, quantity: 1, deliveryMode: 'PICKUP' });
 
@@ -166,7 +166,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
     const { token } = await buyerToken();
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .set(authHeader(token))
       .send({ listingId: 999999, quantity: 1, deliveryMode: 'PICKUP' });
 
@@ -178,7 +178,7 @@ describe('B2 - les garde-fous de creation de commande', () => {
     const listing = await createListing();
 
     const res = await client
-      .post('/api/orders')
+      .post('/api/v2/orders')
       .send({ listingId: listing.id, quantity: 1, deliveryMode: 'PICKUP' });
 
     expect(res.status).toBe(401);
