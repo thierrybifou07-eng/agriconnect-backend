@@ -1,0 +1,1083 @@
+// =====================================================================
+// AgriConnect — schéma Prisma CIBLE v2.1 (consignation avec intermédiation)
+//
+// MySQL · identifiants Int autoincrement · module auth de la v1 CONSERVÉ tel quel.
+//
+// Conventions héritées de la v1 :
+//  - référentiels ouverts (ajout par simple INSERT, sans migration) = tables "lookup"
+//    identifiées par `code` (Role, UserStatus, MediaType, MimeType, DeliveryMode,
+//    ProductCategory, Unit, AgentCapability) ;
+//  - machines à états et ensembles fermés = enums Prisma ;
+//  - Media : table générique de fichiers, un seul propriétaire par ligne.
+//
+// Règle d'or : aucune relation ne lie un acheteur à un fournisseur. Tout passe par
+// l'équipe AgriConnect.
+// =====================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------
+// ENUMS (machines à états et ensembles fermés)
+// ---------------------------------------------------------------------
+
+enum ProfileVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum DocumentType {
+  ID_CARD
+  BUSINESS_REGISTRATION
+  FARM_PROOF
+  OTHER
+}
+
+enum BuyerType {
+  RETAILER
+  FARMER
+  WHOLESALER
+  OTHER
+}
+
+enum PayoutMethod {
+  MOBILE_MONEY
+  BANK_TRANSFER
+  CASH
+}
+
+enum StorageType {
+  SUPPLIER_SITE
+  HUB
+}
+
+enum LotStatus {
+  PENDING_VALIDATION
+  AVAILABLE
+  FULLY_RESERVED
+  SOLD_OUT
+  EXPIRED
+  RETURNED
+  REJECTED
+  WITHDRAWN
+}
+
+enum StockMovementType {
+  RECEIVED
+  RESERVED
+  RESERVATION_RELEASED
+  SOLD
+  EXPIRED
+  RETURNED
+  ADJUSTMENT
+}
+
+enum OrderStatus {
+  QUOTED
+  CONFIRMED
+  PREPARING
+  READY_FOR_PICKUP
+  OUT_FOR_DELIVERY
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  REFUNDED
+}
+
+enum PaymentMethod {
+  CASH
+  MOBILE_MONEY
+  BANK_TRANSFER
+}
+
+enum PaymentEntryStatus {
+  PENDING
+  CONFIRMED
+  FAILED
+  REFUNDED
+}
+
+enum PayoutStatus {
+  ON_HOLD
+  READY
+  PAID
+  CANCELLED
+}
+
+enum DeliveryStatus {
+  PENDING
+  ACCEPTED
+  PICKED_UP
+  IN_TRANSIT
+  DELIVERED
+  FAILED
+  CANCELLED
+}
+
+enum CompensationReason {
+  EXPIRED_UNSOLD
+  LOST_OR_DAMAGED
+  OTHER
+}
+
+enum CompensationStatus {
+  PENDING_APPROVAL
+  APPROVED
+  PAID
+  REJECTED
+}
+
+enum ReferralKind {
+  BUYER
+  SUPPLIER
+}
+
+enum ReferralStatus {
+  PENDING
+  ELIGIBLE
+  PAID
+  REJECTED
+}
+
+enum BuyerFeeType {
+  NONE
+  FIXED
+  PERCENT
+}
+
+enum AgentKind {
+  HUMAN
+  AI
+}
+
+enum AgentAutonomy {
+  SUGGEST_ONLY
+  ACT_WITH_APPROVAL
+  AUTONOMOUS
+}
+
+enum ConversationType {
+  BUYER_SUPPORT
+  SUPPLIER_SUPPORT
+}
+
+enum ConversationStatus {
+  OPEN
+  WAITING_CUSTOMER
+  CLOSED
+}
+
+enum SenderType {
+  CUSTOMER
+  AGENT
+  SYSTEM
+}
+
+enum LegalVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+// ---------------------------------------------------------------------
+// TABLES DE RÉFÉRENCE (lookup) — codes ajoutés par INSERT, sans migration
+// ---------------------------------------------------------------------
+
+model Role {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // ROOT, ADMIN, AGENT, SUPPLIER, BUYER, DRIVER
+  label     String
+  level     Int      @default(10) // 10 = opérationnel, 30 = agent, 50 = admin, 100 = root
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users User[]
+
+  @@index([level])
+}
+
+model UserStatus {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // ACTIVE, SUSPENDED
+  label     String
+  createdAt DateTime @default(now())
+
+  users User[]
+}
+
+model MediaType {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // IMAGE, VIDEO, DOCUMENT
+  label     String
+  createdAt DateTime @default(now())
+
+  mimeTypes MimeType[]
+  media     Media[]
+}
+
+model MimeType {
+  id          Int       @id @default(autoincrement())
+  code        String    @unique // image/jpeg, image/png, application/pdf...
+  extension   String
+  mediaType   MediaType @relation(fields: [mediaTypeId], references: [id])
+  mediaTypeId Int
+  createdAt   DateTime  @default(now())
+
+  media Media[]
+
+  @@index([mediaTypeId])
+}
+
+// Mode de récupération d'une commande : HUB_PICKUP (retrait en point de dépôt) ou
+// AGENCY_DELIVERY (livraison par l'agence de transport).
+model DeliveryMode {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique
+  label     String
+  createdAt DateTime @default(now())
+
+  orders Order[]
+}
+
+model ProductCategory {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // CEREALES, LEGUMES, FRUITS, ...
+  label     String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  products Product[]
+}
+
+model Unit {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // KG, TON, BAG, CRATE, PIECE, LITER, BUNCH
+  label     String
+  createdAt DateTime @default(now())
+
+  products Product[]
+}
+
+// Capacités d'un agent (ses "rôles" métier). MySQL ne supporte pas les listes
+// d'enums : une table de référence + une table de liaison les remplacent.
+model AgentCapability {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // BUYER_SUPPORT, SUPPLIER_SUPPORT, ORDER_PROCESSING, ...
+  label     String
+  createdAt DateTime @default(now())
+
+  agents AgentCapabilityLink[]
+}
+
+// ---------------------------------------------------------------------
+// MEDIA — fichiers uploadés (avatar, photos de lot, documents de vérification).
+// Exactement UN propriétaire par ligne (vérifié côté application).
+// L'avatar reste porté par ownerUserId ; les documents de vérification ont leur
+// propre propriétaire pour ne jamais être supprimés lors d'un changement d'avatar.
+// ---------------------------------------------------------------------
+
+model Media {
+  id                        Int                   @id @default(autoincrement())
+  ownerUser                 User?                 @relation(fields: [ownerUserId], references: [id])
+  ownerUserId               Int?
+  ownerLot                  StockLot?             @relation(fields: [ownerLotId], references: [id], onDelete: Cascade)
+  ownerLotId                Int?
+  ownerVerificationDocument VerificationDocument? @relation(fields: [ownerVerificationDocumentId], references: [id], onDelete: Cascade)
+  ownerVerificationDocumentId Int?
+  mediaType                 MediaType             @relation(fields: [mediaTypeId], references: [id])
+  mediaTypeId               Int
+  mimeType                  MimeType              @relation(fields: [mimeTypeId], references: [id])
+  mimeTypeId                Int
+  url                       String                @db.VarChar(500)
+  publicId                  String?               @db.VarChar(255)
+  isPrivate                 Boolean               @default(false)
+  fileSize                  Int?
+  width                     Int?
+  height                    Int?
+  isPrimary                 Boolean               @default(false)
+  position                  Int                   @default(0)
+  createdAt                 DateTime              @default(now())
+
+  @@index([ownerUserId])
+  @@index([ownerLotId])
+  @@index([ownerVerificationDocumentId])
+}
+
+// ---------------------------------------------------------------------
+// UTILISATEURS — module auth de la v1 conservé.
+// Retirés : isAvailable (userStatusId porte l'état), vehicleType (déplacé sur
+// DriverProfile). Ajoutés : profileVerificationStatus (+ qui/quand) pour la
+// vérification du PROFIL (futurs badges), distincte de emailVerified ; referralCode.
+// ---------------------------------------------------------------------
+
+model User {
+  id            Int        @id @default(autoincrement())
+  firstname     String
+  lastname      String
+  phone         String     @unique
+  email         String     @unique
+  password      String
+  role          Role       @relation(fields: [roleId], references: [id])
+  roleId        Int
+  userStatus    UserStatus @relation(fields: [userStatusId], references: [id])
+  userStatusId  Int
+  location      String?
+  latitude      Float?
+  longitude     Float?
+  // Vérification de l'ADRESSE EMAIL (v1, non bloquante).
+  emailVerified Boolean    @default(false)
+
+  // Vérification du PROFIL par l'équipe (documents examinés). Indépendante de emailVerified.
+  profileVerificationStatus ProfileVerificationStatus @default(UNVERIFIED)
+  profileVerifiedAt         DateTime?
+  profileVerifiedBy         User?                     @relation("ProfileVerifiedBy", fields: [profileVerifiedById], references: [id])
+  profileVerifiedById       Int?
+  profileVerifiedUsers      User[]                    @relation("ProfileVerifiedBy")
+
+  referralCode  String?    @unique
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // --- auth v1 (inchangé) ---
+  refreshTokens           RefreshToken[]
+  sessions                Session[]
+  media                   Media[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+
+  // --- v2 ---
+  supplierProfile       SupplierProfile?
+  buyerProfile          BuyerProfile?
+  driverProfile         DriverProfile?
+  agent                 Agent?
+  payoutAccounts        PayoutAccount[]
+  verificationDocuments VerificationDocument[] @relation("DocumentOwner")
+  reviewedDocuments     VerificationDocument[] @relation("DocumentReviewer")
+  termsAcceptances      TermsAcceptance[]
+  referralsMade         Referral[]             @relation("Referrer")
+  referralReceived      Referral?              @relation("Referred")
+  conversations         Conversation[]
+  messagesSent          Message[]
+  orders                Order[]
+  paymentsRecorded      Payment[]
+  payoutsPaid           SupplierPayout[]
+  compensationsApproved SupplierCompensation[]
+  stockMovements        StockMovement[]
+  auditLogs             AuditLog[]
+
+  @@index([roleId])
+  @@index([userStatusId])
+  @@index([profileVerificationStatus])
+}
+
+// Verification de l'adresse email (v1). Table separee du jeton de reinitialisation :
+// deux usages, deux durees de vie, deux facons de purger.
+model EmailVerificationToken {
+  id        Int       @id @default(autoincrement())
+  token     String    @unique
+  user      User      @relation(fields: [userId], references: [id])
+  userId    Int
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Reinitialisation de mot de passe (v1). 15 minutes de validite, usage unique.
+model PasswordResetToken {
+  id        Int       @id @default(autoincrement())
+  token     String    @unique
+  user      User      @relation(fields: [userId], references: [id])
+  userId    Int
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// Une session est un appareil connecte (v1).
+model Session {
+  id             Int       @id @default(autoincrement())
+  user           User      @relation(fields: [userId], references: [id])
+  userId         Int
+  userAgent      String?
+  ip             String?
+  lastActivityAt DateTime  @default(now())
+  expiresAt      DateTime
+  revokedAt      DateTime?
+  createdAt      DateTime  @default(now())
+
+  refreshTokens RefreshToken[]
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model RefreshToken {
+  id           Int            @id @default(autoincrement())
+  token        String         @unique
+  user         User           @relation(fields: [userId], references: [id])
+  userId       Int
+  session      Session        @relation(fields: [sessionId], references: [id])
+  sessionId    Int
+  expiresAt    DateTime
+  revoked      Boolean        @default(false)
+  rotatedAt    DateTime?
+  replacedBy   RefreshToken?  @relation("TokenRotation", fields: [replacedById], references: [id])
+  replacedById Int?
+  replaces     RefreshToken[] @relation("TokenRotation")
+  createdAt    DateTime       @default(now())
+
+  @@index([userId])
+  @@index([sessionId])
+}
+
+// ---------------------------------------------------------------------
+// PROFILS PAR RÔLE (les coordonnées générales restent sur User)
+// ---------------------------------------------------------------------
+
+model SupplierProfile {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  farmName    String
+  description String?  @db.Text
+  zoneId      Int?
+  zone        Zone?    @relation(fields: [zoneId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lots          StockLot[]
+  payouts       SupplierPayout[]
+  compensations SupplierCompensation[]
+}
+
+model BuyerProfile {
+  id           Int       @id @default(autoincrement())
+  userId       Int       @unique
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  buyerType    BuyerType @default(RETAILER)
+  businessName String?
+  zoneId       Int?
+  zone         Zone?     @relation(fields: [zoneId], references: [id])
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+// Livreur d'une agence. Pas de champ "disponible" : un livreur peut accepter une
+// course s'il est ACTIVE (userStatus) et n'a aucune livraison en cours (déduit).
+model DriverProfile {
+  id          Int             @id @default(autoincrement())
+  userId      Int             @unique
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agencyId    Int
+  agency      TransportAgency @relation(fields: [agencyId], references: [id])
+  vehicleType String?
+  plateNumber String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  deliveries Delivery[]
+
+  @@index([agencyId])
+}
+
+model PayoutAccount {
+  id            Int          @id @default(autoincrement())
+  userId        Int
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  method        PayoutMethod
+  provider      String?
+  accountNumber String       @db.VarChar(64)
+  accountName   String?
+  isDefault     Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+
+  supplierPayouts SupplierPayout[]
+
+  @@index([userId])
+}
+
+// Document déposé pour la vérification du profil. Le fichier est une ligne Media
+// (ownerVerificationDocumentId), privée, jamais exposée publiquement.
+model VerificationDocument {
+  id           Int                       @id @default(autoincrement())
+  userId       Int
+  user         User                      @relation("DocumentOwner", fields: [userId], references: [id], onDelete: Cascade)
+  type         DocumentType
+  status       ProfileVerificationStatus @default(PENDING)
+  reviewedById Int?
+  reviewedBy   User?                     @relation("DocumentReviewer", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  note         String?                   @db.Text
+  createdAt    DateTime                  @default(now())
+
+  media Media[]
+
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------
+// CGU / CONDITIONS — versionnées et traduites (FR / EN) en base
+// ---------------------------------------------------------------------
+
+model LegalDocument {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // CGU, BUYER_TERMS, SUPPLIER_CONSIGNMENT_TERMS
+  label     String
+  createdAt DateTime @default(now())
+
+  versions LegalDocumentVersion[]
+}
+
+model LegalDocumentVersion {
+  id          Int                @id @default(autoincrement())
+  documentId  Int
+  document    LegalDocument      @relation(fields: [documentId], references: [id])
+  version     String             @db.VarChar(20)
+  status      LegalVersionStatus @default(DRAFT)
+  publishedAt DateTime?
+  createdAt   DateTime           @default(now())
+
+  translations LegalDocumentTranslation[]
+  acceptances  TermsAcceptance[]
+
+  @@unique([documentId, version])
+  @@index([documentId, status])
+}
+
+model LegalDocumentTranslation {
+  id        Int                  @id @default(autoincrement())
+  versionId Int
+  version   LegalDocumentVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  locale    String               @db.VarChar(5) // fr, en
+  title     String               @db.VarChar(200)
+  content   String               @db.LongText
+
+  @@unique([versionId, locale])
+}
+
+model TermsAcceptance {
+  id         Int                  @id @default(autoincrement())
+  userId     Int
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  versionId  Int
+  version    LegalDocumentVersion @relation(fields: [versionId], references: [id])
+  ipAddress  String?
+  acceptedAt DateTime             @default(now())
+
+  @@unique([userId, versionId])
+}
+
+// ---------------------------------------------------------------------
+// AGENTS AGRICONNECT (humains aujourd'hui, IA demain)
+// Un agent HUMAN est lié à un User de rôle AGENT ; un agent AI n'a pas de compte.
+// ---------------------------------------------------------------------
+
+model Agent {
+  id          Int           @id @default(autoincrement())
+  kind        AgentKind     @default(HUMAN)
+  displayName String
+  userId      Int?          @unique
+  user        User?         @relation(fields: [userId], references: [id])
+  autonomy    AgentAutonomy? // utile pour kind = AI uniquement
+  isActive    Boolean       @default(true)
+  aiProvider  String?
+  aiModel     String?
+  aiConfig    Json?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  capabilities   AgentCapabilityLink[]
+  conversations  Conversation[]
+  messages       Message[]
+  orders         Order[]
+  lotsCreated    StockLot[]            @relation("LotCreatedByAgent")
+  lotsValidated  StockLot[]            @relation("LotValidatedByAgent")
+  stockMovements StockMovement[]
+  auditLogs      AuditLog[]
+
+  @@index([kind, isActive])
+}
+
+model AgentCapabilityLink {
+  agentId      Int
+  agent        Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  capabilityId Int
+  capability   AgentCapability @relation(fields: [capabilityId], references: [id])
+
+  @@id([agentId, capabilityId])
+}
+
+// ---------------------------------------------------------------------
+// ZONES, AGENCES DE TRANSPORT, POINTS DE DÉPÔT / RETRAIT
+// Une seule ligne de chaque au MVP ; prêt pour plusieurs agences et zones.
+// ---------------------------------------------------------------------
+
+model Zone {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  city      String?
+  region    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  agencies  AgencyZone[]
+  hubs      Hub[]
+  lots      StockLot[]
+  suppliers SupplierProfile[]
+  buyers    BuyerProfile[]
+  orders    Order[]
+}
+
+model TransportAgency {
+  id                    Int       @id @default(autoincrement())
+  name                  String    @unique
+  contactName           String?
+  phone                 String
+  email                 String?
+  insuranceProvider     String?
+  insurancePolicyNumber String?
+  insuranceExpiresAt    DateTime?
+  isActive              Boolean   @default(true)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  zones      AgencyZone[]
+  drivers    DriverProfile[]
+  deliveries Delivery[]
+}
+
+model AgencyZone {
+  agencyId Int
+  agency   TransportAgency @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  zoneId   Int
+  zone     Zone            @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  baseFee  Decimal         @default(0) @db.Decimal(14, 2)
+  perKmFee Decimal         @default(0) @db.Decimal(14, 2)
+  isActive Boolean         @default(true)
+
+  @@id([agencyId, zoneId])
+}
+
+model Hub {
+  id             Int      @id @default(autoincrement())
+  name           String
+  address        String   @db.Text
+  city           String?
+  latitude       Float
+  longitude      Float
+  zoneId         Int
+  zone           Zone     @relation(fields: [zoneId], references: [id])
+  acceptsDropoff Boolean  @default(true)
+  acceptsPickup  Boolean  @default(true)
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  lots       StockLot[]
+  orders     Order[]
+  deliveries Delivery[]
+}
+
+// ---------------------------------------------------------------------
+// CATALOGUE & STOCK (consignation)
+// ---------------------------------------------------------------------
+
+model Product {
+  id           Int             @id @default(autoincrement())
+  categoryId   Int
+  category     ProductCategory @relation(fields: [categoryId], references: [id])
+  unitId       Int
+  unit         Unit            @relation(fields: [unitId], references: [id])
+  name         String
+  description  String?         @db.Text
+  imageUrl     String?         @db.VarChar(500)
+  isPerishable Boolean         @default(true)
+  isActive     Boolean         @default(true)
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  lots          StockLot[]
+  conversations Conversation[]
+
+  @@unique([categoryId, name])
+  @@index([unitId])
+}
+
+// Lot confié par un fournisseur. agreedUnitPrice = prix convenu avec le fournisseur
+// (prix garanti : base de la commission et de l'indemnisation).
+// Invariant : quantityInitial = disponible + réservé + vendu + perdu.
+// Les photos sont des lignes Media (ownerLotId).
+model StockLot {
+  id                 Int             @id @default(autoincrement())
+  lotCode            String          @unique
+  supplierId         Int
+  supplier           SupplierProfile @relation(fields: [supplierId], references: [id])
+  productId          Int
+  product            Product         @relation(fields: [productId], references: [id])
+  zoneId             Int
+  zone               Zone            @relation(fields: [zoneId], references: [id])
+  storageType        StorageType     @default(SUPPLIER_SITE)
+  hubId              Int?
+  hub                Hub?            @relation(fields: [hubId], references: [id])
+  pickupAddress      String?         @db.Text
+  pickupLatitude     Float?
+  pickupLongitude    Float?
+
+  agreedUnitPrice    Decimal         @db.Decimal(14, 2)
+  quantityInitial    Decimal         @db.Decimal(12, 3)
+  quantityAvailable  Decimal         @db.Decimal(12, 3)
+  quantityReserved   Decimal         @default(0) @db.Decimal(12, 3)
+  quantitySold       Decimal         @default(0) @db.Decimal(12, 3)
+  quantityLost       Decimal         @default(0) @db.Decimal(12, 3)
+
+  packagingNote      String?
+  qualityNote        String?
+  harvestedAt        DateTime?
+  expiresAt          DateTime?
+  status             LotStatus       @default(PENDING_VALIDATION)
+
+  createdByAgentId   Int?
+  createdByAgent     Agent?          @relation("LotCreatedByAgent", fields: [createdByAgentId], references: [id])
+  validatedByAgentId Int?
+  validatedByAgent   Agent?          @relation("LotValidatedByAgent", fields: [validatedByAgentId], references: [id])
+  validatedAt        DateTime?
+  rejectionReason    String?         @db.Text
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  media         Media[]
+  movements     StockMovement[]
+  orderItems    OrderItem[]
+  compensations SupplierCompensation[]
+
+  @@index([status, productId, zoneId])
+  @@index([supplierId])
+  @@index([expiresAt])
+}
+
+// Journal de stock : chaque variation de quantité est tracée.
+model StockMovement {
+  id            Int               @id @default(autoincrement())
+  lotId         Int
+  lot           StockLot          @relation(fields: [lotId], references: [id])
+  type          StockMovementType
+  quantityDelta Decimal           @db.Decimal(12, 3)
+  orderItemId   Int?
+  orderItem     OrderItem?        @relation(fields: [orderItemId], references: [id])
+  note          String?
+  actorUserId   Int?
+  actorUser     User?             @relation(fields: [actorUserId], references: [id])
+  actorAgentId  Int?
+  actorAgent    Agent?            @relation(fields: [actorAgentId], references: [id])
+  createdAt     DateTime          @default(now())
+
+  @@index([lotId, createdAt])
+}
+
+// ---------------------------------------------------------------------
+// MESSAGERIE (client <-> équipe AgriConnect, jamais acheteur <-> fournisseur)
+// ---------------------------------------------------------------------
+
+model Conversation {
+  id               Int                @id @default(autoincrement())
+  type             ConversationType
+  customerId       Int
+  customer         User               @relation(fields: [customerId], references: [id])
+  assignedAgentId  Int?
+  assignedAgent    Agent?             @relation(fields: [assignedAgentId], references: [id])
+  productId        Int?
+  product          Product?           @relation(fields: [productId], references: [id])
+  status           ConversationStatus @default(OPEN)
+  subject          String?
+  escalatedAt      DateTime?
+  escalationReason String?            @db.Text
+  lastMessageAt    DateTime           @default(now())
+  createdAt        DateTime           @default(now())
+
+  messages Message[]
+  orders   Order[]
+
+  @@index([customerId])
+  @@index([status, lastMessageAt])
+  @@index([assignedAgentId, status])
+}
+
+model Message {
+  id             Int          @id @default(autoincrement())
+  conversationId Int
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  senderType     SenderType
+  senderUserId   Int?
+  senderUser     User?        @relation(fields: [senderUserId], references: [id])
+  senderAgentId  Int?
+  senderAgent    Agent?       @relation(fields: [senderAgentId], references: [id])
+  content        String       @db.Text
+  isInternal     Boolean      @default(false)
+  readAt         DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// ---------------------------------------------------------------------
+// COMMANDES, PAIEMENTS, REVERSEMENTS
+// ---------------------------------------------------------------------
+
+model Order {
+  id                 Int           @id @default(autoincrement())
+  orderNumber        String        @unique
+  buyerId            Int
+  buyer              User          @relation(fields: [buyerId], references: [id])
+  handledByAgentId   Int?
+  handledByAgent     Agent?        @relation(fields: [handledByAgentId], references: [id])
+  conversationId     Int?
+  conversation       Conversation? @relation(fields: [conversationId], references: [id])
+
+  status             OrderStatus   @default(QUOTED)
+  paymentStatus      PaymentStatus @default(UNPAID)
+  deliveryModeId     Int
+  deliveryMode       DeliveryMode  @relation(fields: [deliveryModeId], references: [id])
+  pickupHubId        Int?
+  pickupHub          Hub?          @relation(fields: [pickupHubId], references: [id])
+  deliveryZoneId     Int?
+  deliveryZone       Zone?         @relation(fields: [deliveryZoneId], references: [id])
+  deliveryAddress    String?       @db.Text
+  deliveryLatitude   Float?
+  deliveryLongitude  Float?
+
+  reservedUntil      DateTime?
+  subtotal           Decimal       @db.Decimal(14, 2)
+  buyerFee           Decimal       @default(0) @db.Decimal(14, 2)
+  deliveryFee        Decimal       @default(0) @db.Decimal(14, 2)
+  total              Decimal       @db.Decimal(14, 2)
+  commissionTotal    Decimal       @default(0) @db.Decimal(14, 2)
+
+  notes              String?       @db.Text
+  confirmedAt        DateTime?
+  completedAt        DateTime?
+  cancelledAt        DateTime?
+  cancellationReason String?       @db.Text
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  items      OrderItem[]
+  payments   Payment[]
+  payouts    SupplierPayout[]
+  deliveries Delivery[]
+
+  @@index([buyerId, status])
+  @@index([status, createdAt])
+  @@index([deliveryModeId])
+}
+
+// Prix et commission figés à la commande (historique fiable).
+// Base de commission = quantity x supplierUnitPrice ; unitPrice = prix payé par l'acheteur.
+model OrderItem {
+  id                Int        @id @default(autoincrement())
+  orderId           Int
+  order             Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lotId             Int
+  lot               StockLot   @relation(fields: [lotId], references: [id])
+  deliveryId        Int?
+  delivery          Delivery?  @relation(fields: [deliveryId], references: [id])
+  quantity          Decimal    @db.Decimal(12, 3)
+  unitPrice         Decimal    @db.Decimal(14, 2)
+  supplierUnitPrice Decimal    @db.Decimal(14, 2)
+  lineTotal         Decimal    @db.Decimal(14, 2)
+  commissionRate    Decimal    @db.Decimal(5, 4)
+  commissionAmount  Decimal    @db.Decimal(14, 2)
+  supplierNetAmount Decimal    @db.Decimal(14, 2)
+
+  movements StockMovement[]
+
+  @@index([orderId])
+  @@index([lotId])
+}
+
+model Payment {
+  id             Int                @id @default(autoincrement())
+  orderId        Int
+  order          Order              @relation(fields: [orderId], references: [id])
+  amount         Decimal            @db.Decimal(14, 2)
+  method         PaymentMethod
+  status         PaymentEntryStatus @default(PENDING)
+  provider       String?
+  reference      String?
+  idempotencyKey String?            @unique @db.VarChar(100)
+  paidAt         DateTime?
+  recordedById   Int?
+  recordedBy     User?              @relation(fields: [recordedById], references: [id])
+  createdAt      DateTime           @default(now())
+
+  @@index([orderId])
+}
+
+// Un reversement par fournisseur et par commande.
+model SupplierPayout {
+  id               Int             @id @default(autoincrement())
+  orderId          Int
+  order            Order           @relation(fields: [orderId], references: [id])
+  supplierId       Int
+  supplier         SupplierProfile @relation(fields: [supplierId], references: [id])
+  grossAmount      Decimal         @db.Decimal(14, 2)
+  commissionAmount Decimal         @db.Decimal(14, 2)
+  netAmount        Decimal         @db.Decimal(14, 2)
+  status           PayoutStatus    @default(ON_HOLD)
+  payoutAccountId  Int?
+  payoutAccount    PayoutAccount?  @relation(fields: [payoutAccountId], references: [id])
+  reference        String?
+  paidAt           DateTime?
+  paidById         Int?
+  paidBy           User?           @relation(fields: [paidById], references: [id])
+  createdAt        DateTime        @default(now())
+
+  @@unique([orderId, supplierId])
+  @@index([supplierId, status])
+}
+
+// Indemnisation du fournisseur (périmé sans acheteur, perte, casse...).
+// amount = quantity x unitPrice (prix convenu) x rate.
+model SupplierCompensation {
+  id           Int                @id @default(autoincrement())
+  supplierId   Int
+  supplier     SupplierProfile    @relation(fields: [supplierId], references: [id])
+  lotId        Int
+  lot          StockLot           @relation(fields: [lotId], references: [id])
+  deliveryId   Int?
+  delivery     Delivery?          @relation(fields: [deliveryId], references: [id])
+  reason       CompensationReason
+  quantity     Decimal            @db.Decimal(12, 3)
+  unitPrice    Decimal            @db.Decimal(14, 2)
+  rate         Decimal            @default(1) @db.Decimal(5, 4)
+  amount       Decimal            @db.Decimal(14, 2)
+  status       CompensationStatus @default(PENDING_APPROVAL)
+  note         String?            @db.Text
+  approvedById Int?
+  approvedBy   User?              @relation(fields: [approvedById], references: [id])
+  approvedAt   DateTime?
+  paidAt       DateTime?
+  createdAt    DateTime           @default(now())
+
+  @@index([supplierId, status])
+  @@index([lotId])
+}
+
+// ---------------------------------------------------------------------
+// LIVRAISON (agence partenaire, dispatch "pull")
+// Une commande peut avoir plusieurs livraisons (une par point d'enlèvement).
+// ---------------------------------------------------------------------
+
+model Delivery {
+  id                    Int             @id @default(autoincrement())
+  orderId               Int
+  order                 Order           @relation(fields: [orderId], references: [id])
+  agencyId              Int
+  agency                TransportAgency @relation(fields: [agencyId], references: [id])
+  driverId              Int?
+  driver                DriverProfile?  @relation(fields: [driverId], references: [id])
+  status                DeliveryStatus  @default(PENDING)
+
+  pickupHubId           Int?
+  pickupHub             Hub?            @relation(fields: [pickupHubId], references: [id])
+  pickupAddress         String?         @db.Text
+  pickupLatitude        Float?
+  pickupLongitude       Float?
+  dropoffAddress        String          @db.Text
+  dropoffLatitude       Float?
+  dropoffLongitude      Float?
+
+  distanceKm            Float?
+  agencyCost            Decimal         @default(0) @db.Decimal(14, 2)
+  deliveryFee           Decimal         @default(0) @db.Decimal(14, 2)
+  insuredValue          Decimal?        @db.Decimal(14, 2)
+  insurancePolicyNumber String?
+
+  acceptedAt            DateTime?
+  pickedUpAt            DateTime?
+  deliveredAt           DateTime?
+  failureReason         String?         @db.Text
+  incidentNote          String?         @db.Text
+  proofOfDeliveryUrl    String?         @db.VarChar(500)
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  items         OrderItem[]
+  compensations SupplierCompensation[]
+
+  @@index([agencyId, status])
+  @@index([driverId, status])
+  @@index([orderId])
+}
+
+// ---------------------------------------------------------------------
+// PARRAINAGE (montant fixe, acheteurs et fournisseurs vérifiés)
+// ---------------------------------------------------------------------
+
+model Referral {
+  id              Int            @id @default(autoincrement())
+  referrerId      Int
+  referrer        User           @relation("Referrer", fields: [referrerId], references: [id])
+  referredId      Int            @unique
+  referred        User           @relation("Referred", fields: [referredId], references: [id])
+  kind            ReferralKind
+  status          ReferralStatus @default(PENDING)
+  rewardAmount    Decimal?       @db.Decimal(14, 2)
+  eligibleAt      DateTime?
+  paidAt          DateTime?
+  rejectionReason String?        @db.Text
+  createdAt       DateTime       @default(now())
+
+  @@index([referrerId, status])
+}
+
+// ---------------------------------------------------------------------
+// CONFIGURATION & AUDIT
+// ---------------------------------------------------------------------
+
+// Ligne unique (id = 1). Les taux sont figés sur chaque OrderItem à la commande.
+model PlatformSetting {
+  id                     Int          @id @default(1)
+  currency               String       @default("XAF")
+  supplierCommissionRate Decimal      @default(0) @db.Decimal(5, 4)
+  buyerFeeType           BuyerFeeType @default(NONE)
+  buyerFeeValue          Decimal      @default(0) @db.Decimal(14, 4)
+  transportMarkupRate    Decimal      @default(0) @db.Decimal(5, 4)
+  referralBuyerReward    Decimal      @default(5000) @db.Decimal(14, 2)
+  referralSupplierReward Decimal      @default(10000) @db.Decimal(14, 2)
+  reservationHours       Int          @default(24)
+  expiryCompensationRate Decimal      @default(1) @db.Decimal(5, 4)
+  updatedAt              DateTime     @updatedAt
+}
+
+model AuditLog {
+  id           Int      @id @default(autoincrement())
+  actorUserId  Int?
+  actorUser    User?    @relation(fields: [actorUserId], references: [id])
+  actorAgentId Int?
+  actorAgent   Agent?   @relation(fields: [actorAgentId], references: [id])
+  action       String   @db.VarChar(80)
+  entityType   String   @db.VarChar(50)
+  entityId     Int
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([actorUserId, createdAt])
+  @@index([actorAgentId, createdAt])
+}

@@ -25,7 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
-app.use('/api', apiLimiter, routes);
+app.use('/api/v2', apiLimiter, routes);
 
 app.use(notFound);
 app.use(errorHandler);
