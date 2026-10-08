@@ -1,20 +1,50 @@
 import prisma from '../../src/config/prisma.js';
 
 // Tables métier vidées entre chaque test. Les tables de référence (Role,
-// UserStatus, ListingStatus...) sont volontairement conservées : le seed les
-// remplit et chaque test en a besoin.
+// UserStatus, MediaType, MimeType, DeliveryMode, ProductCategory, Unit,
+// AgentCapability) et la configuration (PlatformSetting, LegalDocument,
+// LegalDocumentVersion, LegalDocumentTranslation) sont volontairement
+// conservées : le seed les remplit et chaque test en a besoin.
 const BUSINESS_TABLES = [
-  'RefreshToken',
+  // auth
   'Session',
+  'RefreshToken',
   'EmailVerificationToken',
   'PasswordResetToken',
-  'Message',
-  'Conversation',
-  'Delivery',
-  'Order',
-  'Media',
-  'Listing',
+  // utilisateurs et profils
   'User',
+  'SupplierProfile',
+  'BuyerProfile',
+  'DriverProfile',
+  'PayoutAccount',
+  'VerificationDocument',
+  'TermsAcceptance',
+  // agents
+  'Agent',
+  'AgentCapabilityLink',
+  // géographie et logistique
+  'Zone',
+  'TransportAgency',
+  'AgencyZone',
+  'Hub',
+  // catalogue et stock
+  'Product',
+  'StockLot',
+  'StockMovement',
+  // messagerie
+  'Conversation',
+  'Message',
+  // commandes et paiements
+  'Order',
+  'OrderItem',
+  'Payment',
+  'SupplierPayout',
+  'SupplierCompensation',
+  'Delivery',
+  // divers
+  'Referral',
+  'Media',
+  'AuditLog',
 ];
 
 // DELETE, et non TRUNCATE.

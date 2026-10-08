@@ -23,13 +23,10 @@ async function main() {
     { code: 'SUSPENDED', label: 'Suspendu' },
   ]);
 
-  await upsertByCode('listingStatus', [
-    { code: 'ACTIVE', label: 'Active' },
-    { code: 'SOLD', label: 'Vendue' },
-    { code: 'INACTIVE', label: 'Inactive' },
-  ]);
+  // listingStatus et listingCategory n'existent plus dans le schéma v2
+  // (remplacés par ProductCategory ; les statuts d'annonce arrivent avec P2.5).
 
-  await upsertByCode('listingCategory', [
+  await upsertByCode('productCategory', [
     { code: 'CEREALES', label: 'Céréales' },
     { code: 'LEGUMES', label: 'Légumes' },
     { code: 'FRUITS', label: 'Fruits' },
@@ -38,9 +35,33 @@ async function main() {
     { code: 'AUTRE', label: 'Autre' },
   ]);
 
+  await upsertByCode('unit', [
+    { code: 'KG', label: 'Kilogramme' },
+    { code: 'TON', label: 'Tonne' },
+    { code: 'BAG', label: 'Sac' },
+    { code: 'CRATE', label: 'Caisse' },
+    { code: 'PIECE', label: 'Pièce' },
+    { code: 'LITER', label: 'Litre' },
+    { code: 'BUNCH', label: 'Botte' },
+  ]);
+
+  await upsertByCode('agentCapability', [
+    { code: 'BUYER_SUPPORT', label: 'Support acheteur' },
+    { code: 'SUPPLIER_SUPPORT', label: 'Support fournisseur' },
+    { code: 'LISTING_MANAGEMENT', label: 'Gestion des annonces' },
+    { code: 'ORDER_PROCESSING', label: 'Traitement des commandes' },
+    { code: 'STOCK_VALIDATION', label: 'Validation des stocks' },
+    { code: 'PAYMENT_FOLLOWUP', label: 'Suivi des paiements' },
+    { code: 'DISPATCH_COORDINATION', label: 'Coordination des expéditions' },
+    { code: 'USER_VERIFICATION', label: 'Vérification des utilisateurs' },
+    { code: 'DISPUTE_HANDLING', label: 'Gestion des litiges' },
+  ]);
+
+  // Les lignes PICKUP/DELIVERY ont été renommées HUB_PICKUP/AGENCY_DELIVERY
+  // par la migration v2_domain (mêmes ids).
   await upsertByCode('deliveryMode', [
-    { code: 'PICKUP', label: 'Retrait sur place' },
-    { code: 'DELIVERY', label: 'Livraison' },
+    { code: 'HUB_PICKUP', label: 'Retrait en point de dépôt' },
+    { code: 'AGENCY_DELIVERY', label: "Livraison par l'agence" },
   ]);
 
   await upsertByCode('mediaType', [
@@ -61,7 +82,34 @@ async function main() {
     { code: 'application/pdf', extension: '.pdf', mediaTypeId: documentType.id },
   ]);
 
-  console.log('Seed terminé : rôles, statuts, catégories et types de médias créés.');
+  // Réglages plateforme : ligne unique (id = 1), valeurs par défaut du schéma.
+  // Les taux sont figés sur chaque OrderItem à la commande : ne pas les
+  // modifier à la légère.
+  await prisma.platformSetting.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      currency: 'XAF',
+      supplierCommissionRate: 0,
+      buyerFeeType: 'NONE',
+      buyerFeeValue: 0,
+      transportMarkupRate: 0,
+      referralBuyerReward: 5000,
+      referralSupplierReward: 10000,
+      reservationHours: 24,
+      expiryCompensationRate: 1,
+    },
+  });
+
+  // CGU : les versions (PUBLISHED, traductions FR/EN) arrivent en P1.1.
+  await upsertByCode('legalDocument', [
+    { code: 'CGU', label: "Conditions générales d'utilisation" },
+    { code: 'BUYER_TERMS', label: 'Conditions acheteurs' },
+    { code: 'SUPPLIER_CONSIGNMENT_TERMS', label: 'Conditions de consignation fournisseurs' },
+  ]);
+
+  console.log('Seed terminé : rôles, statuts, catégories, unités, capacités, modes de livraison, réglages et CGU créés.');
 }
 
 main()
