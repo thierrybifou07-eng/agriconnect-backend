@@ -10,12 +10,21 @@ import {
   createQualityCheck,
   listQualityChecks,
 } from '../controllers/staffLot.controller.js';
+import {
+  createListing,
+  listListings,
+  getListing,
+  updateListing,
+  publishListing,
+  unpublishListing,
+} from '../controllers/staffListing.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { lotCreateSchema } from '../validators/lot.validator.js';
+import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
 import Joi from 'joi';
 
 const router = Router();
@@ -26,6 +35,9 @@ router.param('id', coerceIdParam);
 
 // Les routes staff exigent STOCK_VALIDATION (AGENT) ou ADMIN/ROOT (level >= 50).
 const STAFF = [protect, requireCapability('STOCK_VALIDATION')];
+
+// Les routes d'annonces exigent LISTING_MANAGEMENT (AGENT) ou ADMIN/ROOT.
+const STAFF_LISTING = [protect, requireCapability('LISTING_MANAGEMENT')];
 
 // Sans ce callback, un sixième fichier arrêterait multer avec
 // LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
@@ -83,5 +95,13 @@ router.get('/stock-movements', STAFF, listStockMovements);
 // Contrôles qualité.
 router.post('/lots/:id/quality-checks', STAFF, validate(qualityCheckSchema), createQualityCheck);
 router.get('/lots/:id/quality-checks', STAFF, listQualityChecks);
+
+// Annonces publiées par l'équipe à partir des lots validés (P2.5).
+router.post('/listings', STAFF_LISTING, uploadImages, validate(listingCreateSchema), createListing);
+router.get('/listings', STAFF_LISTING, listListings);
+router.get('/listings/:id', STAFF_LISTING, getListing);
+router.patch('/listings/:id', STAFF_LISTING, validate(listingUpdateSchema), updateListing);
+router.post('/listings/:id/publish', STAFF_LISTING, publishListing);
+router.post('/listings/:id/unpublish', STAFF_LISTING, unpublishListing);
 
 export default router;

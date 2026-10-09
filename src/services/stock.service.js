@@ -1,4 +1,5 @@
 import { toDecimal } from '../utils/money.js';
+import { syncListingsForLot } from './listing.service.js';
 
 // Cœur transactionnel du stock : chaque fonction reçoit un client de
 // transaction `tx` en premier argument et ne s'exécute JAMAIS hors
@@ -124,6 +125,7 @@ export async function receiveLot(tx, lotId, actor = {}) {
     data: { status: 'AVAILABLE' },
   });
   await ecrireMouvement(tx, { lotId, type: 'RECEIVED', quantite: lot.quantityInitial, ctx: actor });
+  await syncListingsForLot(tx, lotId);
   return relireEtVerifier(tx, lotId);
 }
 
@@ -154,6 +156,7 @@ export async function reserve(tx, lotId, qty, ctx = {}) {
     data: { status: computeLotStatus(lot, new Date()) },
   });
   await ecrireMouvement(tx, { lotId, type: 'RESERVED', quantite, ctx });
+  await syncListingsForLot(tx, lotId);
   return relireEtVerifier(tx, lotId);
 }
 
@@ -182,6 +185,7 @@ export async function releaseReservation(tx, lotId, qty, ctx = {}) {
     data: { status: computeLotStatus(lot, new Date()) },
   });
   await ecrireMouvement(tx, { lotId, type: 'RESERVATION_RELEASED', quantite: quantite.negated(), ctx });
+  await syncListingsForLot(tx, lotId);
   return relireEtVerifier(tx, lotId);
 }
 
@@ -209,6 +213,7 @@ export async function commitSale(tx, lotId, qty, ctx = {}) {
     data: { status: computeLotStatus(lot, new Date()) },
   });
   await ecrireMouvement(tx, { lotId, type: 'SOLD', quantite, ctx });
+  await syncListingsForLot(tx, lotId);
   return relireEtVerifier(tx, lotId);
 }
 
@@ -238,6 +243,7 @@ export async function expireAvailable(tx, lotId, ctx = {}) {
     data: { status: 'EXPIRED' },
   });
   await relireEtVerifier(tx, lotId);
+  await syncListingsForLot(tx, lotId);
   return perdue;
 }
 
@@ -272,5 +278,6 @@ export async function returnAvailable(tx, lotId, qty, ctx = {}, finalStatus) {
     data: { status: finalStatus },
   });
   await ecrireMouvement(tx, { lotId, type: 'RETURNED', quantite, ctx });
+  await syncListingsForLot(tx, lotId);
   return relireEtVerifier(tx, lotId);
 }
