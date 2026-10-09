@@ -10,6 +10,23 @@ import {
 } from '../controllers/admin.controller.js';
 import { createLegalVersion, publishLegalVersion } from '../controllers/legal.controller.js';
 import { listAgents, updateAgent, createAiAgent } from '../controllers/agent.controller.js';
+import {
+  listCategories,
+  createCategory,
+  updateCategory,
+  listUnits,
+  createUnit,
+  updateUnit,
+  listProducts,
+  createProduct,
+  updateProduct,
+  listZones,
+  createZone,
+  updateZone,
+  listHubs,
+  createHub,
+  updateHub,
+} from '../controllers/referential.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
@@ -17,6 +34,18 @@ import { coerceIdParam } from '../middlewares/params.middleware.js';
 import { createStaffUserSchema, createLegalVersionSchema } from '../validators/admin.validator.js';
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 import { reviewVerificationSchema } from '../validators/verification.validator.js';
+import {
+  createCategorySchema,
+  updateCategorySchema,
+  createUnitSchema,
+  updateUnitSchema,
+  createProductSchema,
+  updateProductSchema,
+  createZoneSchema,
+  updateZoneSchema,
+  createHubSchema,
+  updateHubSchema,
+} from '../validators/referential.validator.js';
 
 const router = Router();
 
@@ -51,5 +80,29 @@ router.patch('/legal/versions/:id/publish', publishLegalVersion);
 router.get('/agents', listAgents);
 router.patch('/agents/:id', validate(updateAgentSchema), updateAgent);
 router.post('/agents/ai', validate(createAiAgentSchema), createAiAgent);
+
+// Référentiels du catalogue (ADMIN et plus) : catégories, unités, produits,
+// zones et points de dépôt. Pas de suppression : une ligne se désactive
+// (isActive=false via PATCH), ce qui préserve les lots, commandes et profils
+// qui y font référence.
+router.get('/categories', listCategories);
+router.post('/categories', validate(createCategorySchema), createCategory);
+router.patch('/categories/:id', validate(updateCategorySchema), updateCategory);
+
+router.get('/units', listUnits);
+router.post('/units', validate(createUnitSchema), createUnit);
+router.patch('/units/:id', validate(updateUnitSchema), updateUnit);
+
+router.get('/products', listProducts);
+router.post('/products', validate(createProductSchema), createProduct);
+router.patch('/products/:id', validate(updateProductSchema), updateProduct);
+
+router.get('/zones', listZones);
+router.post('/zones', validate(createZoneSchema), createZone);
+router.patch('/zones/:id', validate(updateZoneSchema), updateZone);
+
+router.get('/hubs', listHubs);
+router.post('/hubs', validate(createHubSchema), createHub);
+router.patch('/hubs/:id', validate(updateHubSchema), updateHub);
 
 export default router;
