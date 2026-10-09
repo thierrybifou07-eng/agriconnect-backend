@@ -282,6 +282,18 @@ model AgentCapability {
   agents AgentCapabilityLink[]
 }
 
+// Statuts d'annonce (lookup conservée de la v1, codes DRAFT, ACTIVE, SOLD,
+// INACTIVE). L'annonce est la SEULE chose que voient les acheteurs : son
+// statut pilote la visibilité publique du lot dont elle est issue.
+model ListingStatus {
+  id        Int      @id @default(autoincrement())
+  code      String   @unique // DRAFT, ACTIVE, SOLD, INACTIVE
+  label     String
+  createdAt DateTime @default(now())
+
+  listings Listing[]
+}
+
 // ---------------------------------------------------------------------
 // MEDIA — fichiers uploadés (avatar, photos de lot, documents de vérification).
 // Exactement UN propriétaire par ligne (vérifié côté application).
@@ -297,6 +309,10 @@ model Media {
   ownerLotId                Int?
   ownerVerificationDocument VerificationDocument? @relation(fields: [ownerVerificationDocumentId], references: [id], onDelete: Cascade)
   ownerVerificationDocumentId Int?
+  // Photos d'annonce (propriétaire restauré du domaine v1, M9) : la
+  // suppression d'une annonce emporte ses photos avec elle.
+  ownerListing           Listing?              @relation(fields: [ownerListingId], references: [id], onDelete: Cascade)
+  ownerListingId         Int?
   mediaType                 MediaType             @relation(fields: [mediaTypeId], references: [id])
   mediaTypeId               Int
   mimeType                  MimeType              @relation(fields: [mimeTypeId], references: [id])
@@ -314,6 +330,7 @@ model Media {
   @@index([ownerUserId])
   @@index([ownerLotId])
   @@index([ownerVerificationDocumentId])
+  @@index([ownerListingId])
 }
 
 // ---------------------------------------------------------------------
@@ -378,6 +395,7 @@ model User {
   stockMovements        StockMovement[]
   auditLogs             AuditLog[]
   lotQualityChecks      LotQualityCheck[]
+  listingsCreated      Listing[]          @relation("ListingCreatedBy")
 
   @@index([roleId])
   @@index([userStatusId])
@@ -613,6 +631,7 @@ model Agent {
   stockMovements StockMovement[]
   auditLogs      AuditLog[]
   lotQualityChecks LotQualityCheck[]
+  listingsCreated Listing[] @relation("ListingCreatedByAgent")
 
   @@index([kind, isActive])
 }
@@ -645,6 +664,7 @@ model Zone {
   suppliers SupplierProfile[]
   buyers    BuyerProfile[]
   orders    Order[]
+  listings  Listing[]
 }
 
 model TransportAgency {
@@ -716,6 +736,7 @@ model Product {
 
   lots          StockLot[]
   conversations Conversation[]
+  listings      Listing[]
 
   @@unique([categoryId, name])
   @@index([unitId])
@@ -769,6 +790,7 @@ model StockLot {
   orderItems    OrderItem[]
   compensations SupplierCompensation[]
   qualityChecks LotQualityCheck[]
+  listingLots   ListingLot[]
 
   @@index([status, productId, zoneId])
   @@index([supplierId])
@@ -810,6 +832,53 @@ model StockMovement {
   createdAt     DateTime          @default(now())
 
   @@index([lotId, createdAt])
+}
+
+// ---------------------------------------------------------------------
+// ANNONCES — offres publiques publiées par l'équipe (P2.5)
+// ---------------------------------------------------------------------
+// L'annonce est la SEULE chose que voient les acheteurs ; le lot reste
+// interne (prix convenu, quantités). Une annonce = exactement un lot au
+// MVP (C7) ; ListingLot permet d'en agréger plusieurs plus tard sans
+// migration. Le prix public (unitPrice) est fixé par l'équipe : c'est
+// ainsi que les prix sont contrôlés.
+model Listing {
+  id              Int           @id @default(autoincrement())
+  reference       String        @unique // 'ANN-' + id sur 6 chiffres, écrit juste après l'insertion
+  title           String
+  description     String?       @db.Text
+  unitPrice       Decimal       @db.Decimal(14, 2) // prix public fixé par l'équipe
+  productId       Int           // celui du lot : l'annonce expose un produit, jamais un lot
+  product         Product       @relation(fields: [productId], references: [id])
+  zoneId          Int
+  zone            Zone          @relation(fields: [zoneId], references: [id])
+  statusId        Int
+  status          ListingStatus @relation(fields: [statusId], references: [id])
+  publishedAt     DateTime?
+  createdByUserId Int?
+  createdByUser   User?         @relation("ListingCreatedBy", fields: [createdByUserId], references: [id])
+  createdByAgentId Int?
+  createdByAgent   Agent?       @relation("ListingCreatedByAgent", fields: [createdByAgentId], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  lots ListingLot[]
+  media Media[]
+
+  @@index([statusId])
+  @@index([productId])
+  @@index([zoneId])
+}
+
+// Lien annonce <-> lot. Clé composée : un lot n'est relié qu'à une
+// annonce, et une annonce porte un lot au MVP.
+model ListingLot {
+  listingId Int
+  listing   Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  lotId     Int
+  lot       StockLot @relation(fields: [lotId], references: [id])
+
+  @@id([listingId, lotId])
 }
 
 // ---------------------------------------------------------------------

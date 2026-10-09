@@ -23,8 +23,13 @@ async function main() {
     { code: 'SUSPENDED', label: 'Suspendu' },
   ]);
 
-  // listingStatus et listingCategory n'existent plus dans le schéma v2
-  // (remplacés par ProductCategory ; les statuts d'annonce arrivent avec P2.5).
+  // Statuts d'annonce (lookup conservée de la v1, codes DRAFT, ACTIVE, SOLD, INACTIVE).
+  await upsertByCode('listingStatus', [
+    { code: 'DRAFT', label: 'Brouillon' },
+    { code: 'ACTIVE', label: 'Visible' },
+    { code: 'SOLD', label: 'Vendue' },
+    { code: 'INACTIVE', label: 'Masquée' },
+  ]);
 
   await upsertByCode('productCategory', [
     { code: 'CEREALES', label: 'Céréales' },

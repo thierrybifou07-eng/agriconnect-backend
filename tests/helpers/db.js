@@ -32,6 +32,9 @@ const BUSINESS_TABLES = [
   'StockLot',
   'StockMovement',
   'LotQualityCheck',
+  // annonces
+  'Listing',
+  'ListingLot',
   // messagerie
   'Conversation',
   'Message',
