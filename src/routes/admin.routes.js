@@ -6,10 +6,12 @@ import {
   createStaffUser,
 } from '../controllers/admin.controller.js';
 import { createLegalVersion, publishLegalVersion } from '../controllers/legal.controller.js';
+import { listAgents, updateAgent, createAiAgent } from '../controllers/agent.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import { createStaffUserSchema, createLegalVersionSchema } from '../validators/admin.validator.js';
+import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 
 const router = Router();
 
@@ -30,5 +32,11 @@ router.post('/users', validate(createStaffUserSchema), createStaffUser);
 // Gestion des CGU : création de versions brouillons et publication.
 router.post('/legal/:code/versions', validate(createLegalVersionSchema), createLegalVersion);
 router.patch('/legal/versions/:id/publish', publishLegalVersion);
+
+// Administration des fiches d'agents (ADMIN et plus) : lecture, modification
+// (dont les capacités) et création d'agents IA sans compte utilisateur.
+router.get('/agents', listAgents);
+router.patch('/agents/:id', validate(updateAgentSchema), updateAgent);
+router.post('/agents/ai', validate(createAiAgentSchema), createAiAgent);
 
 export default router;
