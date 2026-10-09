@@ -20,15 +20,19 @@ const userSafeSelect = {
   createdAt: true,
 };
 
-// GET /api/admin/users?role=&search=&status=
+// GET /api/admin/users?role=&search=&status=&profileVerificationStatus=
 // Note MySQL : pas de "mode: insensitive" (non supporté par ce connecteur Prisma).
 export const listUsers = async (req, res) => {
-  const { role, search, status } = req.query;
+  const { role, search, status, profileVerificationStatus } = req.query;
 
   const users = await prisma.user.findMany({
     where: {
       ...(role && { role: { code: role } }),
       ...(status && { userStatus: { code: status } }),
+      // La verification du PROFIL (documents) est distincte de emailVerified :
+      // un filtre separe permet de lister les comptes a examiner sans melanger
+      // les deux notions.
+      ...(profileVerificationStatus && { profileVerificationStatus }),
       ...(search && {
         // Le nom est stocke en deux colonnes : la recherche doit porter sur les
         // deux, sinon un administrateur qui cherche "Benali" ne trouve rien.
@@ -100,37 +104,82 @@ export const reactivateUser = async (req, res) => {
   res.json(updated);
 };
 
-// POST /api/admin/users  (ROOT uniquement)
-export const createAdmin = async (req, res) => {
-  const { firstname, lastname, phone, email, password } = req.body;
+// POST /api/admin/users  (ADMIN et ROOT)
+// ADMIN est le compte le plus eleve que l API puisse creer : seul ROOT peut le
+// delivrer. AGENT et DRIVER peuvent l etre par un ADMIN, avec leur profil dedie.
+export const createStaffUser = async (req, res) => {
+  const { firstname, lastname, phone, email, password, role, agent, driver } = req.body;
 
-  const existing = await prisma.user.findUnique({ where: { phone } });
-  if (existing) {
+  if (role === 'ADMIN' && req.user.role.code !== 'ROOT') {
+    return res.status(403).json({ error: 'Seul ROOT peut créer un compte administrateur' });
+  }
+
+  // L unicite de l email est verifiee comme celle du numero : la v1 ne
+  // controlait que le telephone, et une collision d email faisait echouer la
+  // creation en 500 au lieu de renvoyer un 409 lisible.
+  const existingPhone = await prisma.user.findUnique({ where: { phone } });
+  if (existingPhone) {
     return res.status(409).json({ error: 'Un compte existe déjà avec ce numéro' });
+  }
+  const existingEmail = await prisma.user.findUnique({ where: { email } });
+  if (existingEmail) {
+    return res.status(409).json({ error: 'Un compte existe déjà avec cet email' });
   }
 
   const [roleId, userStatusId] = await Promise.all([
-    getLookupId('role', 'ADMIN'),
+    getLookupId('role', role),
     getLookupId('userStatus', 'ACTIVE'),
   ]);
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const admin = await prisma.user.create({
-    data: { firstname, lastname, phone, email, password: hashedPassword, roleId, userStatusId },
-    select: userSafeSelect,
+  // Compte et profil dans une seule transaction : un echec sur le profil ne
+  // doit pas laisser un compte orphelin, et inversement (meme principe que
+  // l inscription, src/controllers/auth.controller.js).
+  const staffUser = await prisma.$transaction(async (tx) => {
+    const user = await tx.user.create({
+      data: { firstname, lastname, phone, email, password: hashedPassword, roleId, userStatusId },
+      select: userSafeSelect,
+    });
+
+    if (role === 'AGENT') {
+      const fiche = await tx.agent.create({
+        data: { kind: 'HUMAN', userId: user.id, displayName: agent.displayName },
+      });
+      // Les codes ont valide en base dans le validator : ne reste que la
+      // resolution code -> id pour les lignes de liaison.
+      const capacites = await tx.agentCapability.findMany({
+        where: { code: { in: agent.capabilities } },
+        select: { id: true },
+      });
+      await tx.agentCapabilityLink.createMany({
+        data: capacites.map((capacite) => ({ agentId: fiche.id, capabilityId: capacite.id })),
+      });
+    } else if (role === 'DRIVER') {
+      await tx.driverProfile.create({
+        data: {
+          userId: user.id,
+          agencyId: driver.agencyId,
+          vehicleType: driver.vehicleType,
+          plateNumber: driver.plateNumber,
+        },
+      });
+    }
+
+    return user;
   });
 
   // Non-bloquant : l'email part apres la reponse, et ne peut pas faire echouer
-  // la creation du compte. Aucune donnee sensible n'y figure.
-  if (admin.email) {
+  // la creation du compte. Aucune donnee sensible n'y figure. roleLabel porte
+  // le libelle du role cree (Administrateur, Agent AgriConnect, Livreur).
+  if (staffUser.email) {
     sendTemplateEmail(
-      admin.email,
-      'Votre compte administrateur AgriConnect',
+      staffUser.email,
+      'Votre compte AgriConnect',
       'welcome',
-      { username: `${admin.firstname} ${admin.lastname}`, roleLabel: 'Administrateur' }
+      { username: `${staffUser.firstname} ${staffUser.lastname}`, roleLabel: staffUser.role.label }
     );
   }
 
-  res.status(201).json(admin);
+  res.status(201).json(staffUser);
 };

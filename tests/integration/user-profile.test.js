@@ -20,8 +20,21 @@ async function buyerToken() {
   return { buyer, token: generateToken({ id: buyer.id, role: 'BUYER' }) };
 }
 
-describe('POST /api/v2/admin/users - creation d un administrateur', () => {
-  it('cree le compte avec prenom et nom', async () => {
+async function adminToken() {
+  const admin = await createUser({ role: 'ADMIN' });
+  return { admin, token: generateToken({ id: admin.id, role: 'ADMIN' }) };
+}
+
+async function agentToken() {
+  const agent = await createUser({ role: 'AGENT' });
+  return { agent, token: generateToken({ id: agent.id, role: 'AGENT' }) };
+}
+
+// Matrice d'autorisation de la creation staff : ADMIN n'est delivable que par
+// ROOT ; AGENT et DRIVER peuvent l'etre par un ADMIN ; en dessous du niveau 50
+// la route refuse (requireMinLevel), avant toute validation du corps.
+describe('POST /api/v2/admin/users - creation de comptes staff (ADMIN, AGENT, DRIVER)', () => {
+  it('ROOT cree un administrateur', async () => {
     const { token } = await rootToken();
 
     const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
@@ -30,10 +43,15 @@ describe('POST /api/v2/admin/users - creation d un administrateur', () => {
       phone: '+33612345678',
       email: 'youssef@example.com',
       password: 'MotDePasse1!',
+      role: 'ADMIN',
     });
 
     expect(res.status, res.text).toBe(201);
-    expect(res.body).toMatchObject({ firstname: 'Youssef', lastname: 'El Amrani' });
+    expect(res.body).toMatchObject({
+      firstname: 'Youssef',
+      lastname: 'El Amrani',
+      role: { code: 'ADMIN', label: 'Administrateur' },
+    });
 
     const enBase = await prisma.user.findUnique({ where: { email: 'youssef@example.com' } });
     expect(enBase).toBeTruthy();
@@ -48,6 +66,7 @@ describe('POST /api/v2/admin/users - creation d un administrateur', () => {
       phone: '+33612345679',
       email: 'yasmine@example.com',
       password: 'MotDePasse1!',
+      role: 'ADMIN',
     });
 
     expect(res.status, res.text).toBe(201);
@@ -58,28 +77,308 @@ describe('POST /api/v2/admin/users - creation d un administrateur', () => {
     const { token } = await rootToken();
 
     for (const payload of [
-      { lastname: 'Tazi', phone: '+33612345680', password: 'MotDePasse1!' },
-      { firstname: 'Yasmine', phone: '+33612345681', password: 'MotDePasse1!' },
+      { lastname: 'Tazi', phone: '+33612345680', password: 'MotDePasse1!', role: 'ADMIN' },
+      { firstname: 'Yasmine', phone: '+33612345681', password: 'MotDePasse1!', role: 'ADMIN' },
     ]) {
       const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send(payload);
       expect(res.status, JSON.stringify(payload)).toBe(400);
     }
   });
 
-  // La creation d'un administrateur est la privilege le plus eleve de l'API :
-  // un roles moins eleve ne doit pas y acceder.
-  it('refuse un roles non ROOT', async () => {
-    const admin = await createUser({ role: 'ADMIN' });
-    const token = generateToken({ id: admin.id, role: 'ADMIN' });
+  it('ROOT cree un agent avec ses capacites', async () => {
+    const { token } = await rootToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Salma',
+      lastname: 'Bennani',
+      phone: '+33612345689',
+      email: 'salma@example.com',
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { displayName: 'Khadija Support', capabilities: ['BUYER_SUPPORT', 'ORDER_PROCESSING'] },
+    });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.role).toMatchObject({ code: 'AGENT', label: 'Agent AgriConnect' });
+
+    const enBase = await prisma.user.findUnique({ where: { email: 'salma@example.com' } });
+    expect(enBase).toBeTruthy();
+  });
+
+  it('l agent cree a bien ses capacites en base', async () => {
+    const { token } = await rootToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Omar',
+      lastname: 'Fassi',
+      phone: '+33612345691',
+      email: 'omar@example.com',
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { capabilities: ['BUYER_SUPPORT', 'ORDER_PROCESSING'] },
+    });
+
+    expect(res.status, res.text).toBe(201);
+
+    // Le profil agent et ses lignes de liaison doivent exister : un compte
+    // AGENT sans fiche Agent est un compte qui ne peut rien faire.
+    const enBase = await prisma.user.findUnique({ where: { email: 'omar@example.com' } });
+    const fiche = await prisma.agent.findUnique({ where: { userId: enBase.id } });
+    expect(fiche).toBeTruthy();
+    expect(fiche.kind).toBe('HUMAN');
+    expect(fiche.displayName).toBe('Équipe AgriConnect');
+
+    const liens = await prisma.agentCapabilityLink.findMany({
+      where: { agentId: fiche.id },
+      include: { capability: { select: { code: true } } },
+    });
+    expect(liens.map((lien) => lien.capability.code).sort()).toEqual(['BUYER_SUPPORT', 'ORDER_PROCESSING']);
+  });
+
+  it('ROOT cree un livreur rattache a son agence', async () => {
+    const { token } = await rootToken();
+    const agence = await prisma.transportAgency.create({
+      data: { name: 'Agence de test', phone: '+33699999999' },
+    });
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Rachid',
+      lastname: 'Oukerzaz',
+      phone: '+33612345690',
+      email: 'rachid@example.com',
+      password: 'MotDePasse1!',
+      role: 'DRIVER',
+      driver: { agencyId: agence.id, vehicleType: 'Moto', plateNumber: 'AA-123-BB' },
+    });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.role).toMatchObject({ code: 'DRIVER', label: 'Livreur' });
+
+    const enBase = await prisma.user.findUnique({ where: { email: 'rachid@example.com' } });
+    const profil = await prisma.driverProfile.findUnique({ where: { userId: enBase.id } });
+    expect(profil).toBeTruthy();
+    expect(profil.agencyId).toBe(agence.id);
+    expect(profil.vehicleType).toBe('Moto');
+    expect(profil.plateNumber).toBe('AA-123-BB');
+  });
+
+  it('un administrateur ne peut pas creer un administrateur', async () => {
+    const { token } = await adminToken();
 
     const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
       firstname: 'Pirate',
       lastname: 'Intrus',
       phone: '+33612345682',
+      email: 'pirate@example.com',
       password: 'MotDePasse1!',
+      role: 'ADMIN',
     });
 
-    expect(res.status).toBe(403);
+    expect(res.status, res.text).toBe(403);
+  });
+
+  it('un administrateur cree un agent', async () => {
+    const { token } = await adminToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Nadia',
+      lastname: 'Cherkaoui',
+      phone: '+33612345683',
+      email: 'nadia@example.com',
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { capabilities: ['SUPPLIER_SUPPORT'] },
+    });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.role).toMatchObject({ code: 'AGENT', label: 'Agent AgriConnect' });
+  });
+
+  it('un administrateur cree un livreur', async () => {
+    const { token } = await adminToken();
+    const agence = await prisma.transportAgency.create({
+      data: { name: 'Agence de test', phone: '+33699999998' },
+    });
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Driss',
+      lastname: 'Alaoui',
+      phone: '+33612345684',
+      email: 'driss@example.com',
+      password: 'MotDePasse1!',
+      role: 'DRIVER',
+      driver: { agencyId: agence.id },
+    });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.role).toMatchObject({ code: 'DRIVER', label: 'Livreur' });
+  });
+
+  it('refuse un agent : niveau insuffisant', async () => {
+    const { token } = await agentToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Intrus',
+      lastname: 'Agent',
+      phone: '+33612345692',
+      email: 'intrus-agent@example.com',
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { capabilities: [] },
+    });
+
+    expect(res.status, res.text).toBe(403);
+  });
+
+  it('refuse un acheteur : niveau insuffisant', async () => {
+    const { token } = await buyerToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Intrus',
+      lastname: 'Acheteur',
+      phone: '+33612345693',
+      email: 'intrus-acheteur@example.com',
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { capabilities: [] },
+    });
+
+    expect(res.status, res.text).toBe(403);
+  });
+
+  it('repond 409 quand l email existe deja', async () => {
+    const { token } = await rootToken();
+    const existant = await createUser({ role: 'BUYER' });
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Doublon',
+      lastname: 'Email',
+      phone: '+33612345687',
+      email: existant.email,
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { capabilities: [] },
+    });
+
+    expect(res.status, res.text).toBe(409);
+  });
+
+  it('repond 409 quand le numero existe deja', async () => {
+    const { token } = await rootToken();
+    const existant = await createUser({ role: 'BUYER' });
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Doublon',
+      lastname: 'Telephone',
+      phone: existant.phone,
+      email: 'doublon-tel@example.com',
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { capabilities: [] },
+    });
+
+    expect(res.status, res.text).toBe(409);
+  });
+
+  it('refuse un livreur sans agence', async () => {
+    const { token } = await rootToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Sans',
+      lastname: 'Agence',
+      phone: '+33612345688',
+      email: 'sans-agence@example.com',
+      password: 'MotDePasse1!',
+      role: 'DRIVER',
+      driver: {},
+    });
+
+    expect(res.status, res.text).toBe(400);
+  });
+
+  it('refuse une agence inconnue', async () => {
+    const { token } = await rootToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Agence',
+      lastname: 'Inconnue',
+      phone: '+33612345694',
+      email: 'agence-inconnue@example.com',
+      password: 'MotDePasse1!',
+      role: 'DRIVER',
+      driver: { agencyId: 999999 },
+    });
+
+    expect(res.status, res.text).toBe(400);
+  });
+
+  it('refuse une agence inactive', async () => {
+    const { token } = await rootToken();
+    const agence = await prisma.transportAgency.create({
+      data: { name: 'Agence inactive', phone: '+33699999997', isActive: false },
+    });
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Agence',
+      lastname: 'Inactive',
+      phone: '+33612345685',
+      email: 'agence-inactive@example.com',
+      password: 'MotDePasse1!',
+      role: 'DRIVER',
+      driver: { agencyId: agence.id },
+    });
+
+    expect(res.status, res.text).toBe(400);
+  });
+
+  it('refuse une capacite inconnue', async () => {
+    const { token } = await rootToken();
+
+    const res = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Capacite',
+      lastname: 'Inconnue',
+      phone: '+33612345686',
+      email: 'capacite-inconnue@example.com',
+      password: 'MotDePasse1!',
+      role: 'AGENT',
+      agent: { capabilities: ['BUYER_SUPPORT', 'TELEPATHIE'] },
+    });
+
+    expect(res.status, res.text).toBe(400);
+  });
+});
+
+describe('GET /api/v2/admin/users - filtre profileVerificationStatus', () => {
+  // Le filtre porte sur la verification du PROFIL (documents), distincte de
+  // emailVerified. La reponse reste un tableau brut, comme avant l'ajout du
+  // filtre : aucun client ne depend d une mise en forme pagination ici.
+  it('ne renvoie que les comptes du statut demande', async () => {
+    const { token } = await adminToken();
+    const verifie = await createUser({ role: 'BUYER' });
+    const enAttente = await createUser({ role: 'BUYER' });
+    await prisma.user.update({ where: { id: verifie.id }, data: { profileVerificationStatus: 'VERIFIED' } });
+    await prisma.user.update({ where: { id: enAttente.id }, data: { profileVerificationStatus: 'PENDING' } });
+
+    const res = await client
+      .get('/api/v2/admin/users?profileVerificationStatus=VERIFIED')
+      .set(authHeader(token));
+
+    expect(res.status, res.text).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBe(1);
+    expect(res.body[0].id).toBe(verifie.id);
+    expect(res.body[0].profileVerificationStatus).toBe('VERIFIED');
+  });
+
+  it('renvoie tous les comptes sans le filtre', async () => {
+    const { token } = await adminToken();
+    await createUser({ role: 'BUYER' });
+
+    const res = await client.get('/api/v2/admin/users').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(200);
+    expect(Array.isArray(res.body)).toBe(true);
+    expect(res.body.length).toBeGreaterThanOrEqual(1);
   });
 });
 

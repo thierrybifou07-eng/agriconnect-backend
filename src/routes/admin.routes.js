@@ -3,13 +3,13 @@ import {
   listUsers,
   suspendUser,
   reactivateUser,
-  createAdmin,
+  createStaffUser,
 } from '../controllers/admin.controller.js';
 import { createLegalVersion, publishLegalVersion } from '../controllers/legal.controller.js';
-import { protect, requireRole, requireMinLevel } from '../middlewares/auth.middleware.js';
+import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
-import { createAdminSchema, createLegalVersionSchema } from '../validators/admin.validator.js';
+import { createStaffUserSchema, createLegalVersionSchema } from '../validators/admin.validator.js';
 
 const router = Router();
 
@@ -22,7 +22,10 @@ router.get('/users', listUsers);
 router.patch('/users/:id/suspend', suspendUser);
 router.patch('/users/:id/reactivate', reactivateUser);
 
-router.post('/users', requireRole('ROOT'), validate(createAdminSchema), createAdmin);
+// Le role ADMIN n est delivable que par ROOT : le controleur le verifie
+// (403 sinon), car c est une regle d autorisation, pas une regle de forme du
+// corps. Cette route reste sous protect + requireMinLevel(50) (AGENTS refused).
+router.post('/users', validate(createStaffUserSchema), createStaffUser);
 
 // Gestion des CGU : création de versions brouillons et publication.
 router.post('/legal/:code/versions', validate(createLegalVersionSchema), createLegalVersion);
