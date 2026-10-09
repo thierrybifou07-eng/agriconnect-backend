@@ -90,3 +90,47 @@ export const forgotPasswordSchema = Joi.object({
     'any.required': 'Email is required',
   }),
 });
+
+// PATCH /api/v2/auth/me/profile — un role ne peut modifier que les champs de
+// son propre profil : un SUPPLIER n a pas a connaitre ceux d un BUYER, et
+// inversement. Le schema applique depend du role (voir auth.routes.js) ; les
+// champs d un autre role sont refuses par stripUnknown du middleware de
+// validation. zoneId est optionnel et nullable (la colonne l est) : son
+// existence est verifiee par le controleur, pas ici.
+export const supplierProfileSchema = Joi.object({
+  farmName: Joi.string().trim().min(2).max(120).optional(),
+  description: Joi.string().trim().max(2000).allow(null).optional(),
+  zoneId: Joi.number().integer().positive().allow(null).optional(),
+});
+
+export const buyerProfileSchema = Joi.object({
+  buyerType: Joi.string().valid('RETAILER', 'FARMER', 'WHOLESALER', 'OTHER').optional(),
+  businessName: Joi.string().trim().max(120).allow(null).optional(),
+  zoneId: Joi.number().integer().positive().allow(null).optional(),
+});
+
+export const driverProfileSchema = Joi.object({
+  vehicleType: Joi.string().trim().max(50).allow(null).optional(),
+  plateNumber: Joi.string().trim().max(20).allow(null).optional(),
+});
+
+// Comptes de paiement (SUPPLIER et BUYER). Le numero est requis a la creation
+// et fait au moins quatre caracteres : le masque n expose que les quatre
+// derniers, un numero plus court n aurait pas de sens. Il n est jamais
+// renvoye par l API : voir payoutAccountToApi dans utils/userApi.js.
+export const payoutAccountCreateSchema = Joi.object({
+  method: Joi.string().valid('MOBILE_MONEY', 'BANK_TRANSFER', 'CASH').required(),
+  provider: Joi.string().trim().max(80).allow(null).optional(),
+  accountNumber: Joi.string().trim().min(4).max(64).required(),
+  accountName: Joi.string().trim().max(120).allow(null).optional(),
+  isDefault: Joi.boolean().optional(),
+});
+
+// Meme formulaire, mais partiel : un PATCH ne renvoie que ce qui change.
+export const payoutAccountUpdateSchema = Joi.object({
+  method: Joi.string().valid('MOBILE_MONEY', 'BANK_TRANSFER', 'CASH').optional(),
+  provider: Joi.string().trim().max(80).allow(null).optional(),
+  accountNumber: Joi.string().trim().min(4).max(64).optional(),
+  accountName: Joi.string().trim().max(120).allow(null).optional(),
+  isDefault: Joi.boolean().optional(),
+});

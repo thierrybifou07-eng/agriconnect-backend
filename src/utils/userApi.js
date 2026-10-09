@@ -17,6 +17,35 @@
 /** Reduit une entite de reference a { code, label }. */
 const reference = (row) => (row ? { code: row.code, label: row.label } : null);
 
+// Un compte de paiement porte un numero que son proprietaire seul doit
+// pouvoir relire : le renvoyer en clair dans une reponse, meme a son
+// proprietaire, creerait une fuite des qu un journal ou un proxy passe la
+// reponse. On n expose donc que les quatre derniers caracteres.
+function maskAccountNumber(numero) {
+  // Quatre caracteres ou moins : slice(-4) revelerait le numero entier, on
+  // n affiche donc rien du tout plutot que de le devoiler partiellement.
+  if (numero.length <= 4) return '••••';
+  return `••••${numero.slice(-4)}`;
+}
+
+/**
+ * Forme API d un compte de paiement. Le numero complet ne sort jamais : voir
+ * maskAccountNumber.
+ *
+ * @param {object} account  Ligne PayoutAccount telle que la renvoie Prisma.
+ */
+export function payoutAccountToApi(account) {
+  return {
+    id: account.id,
+    method: account.method,
+    provider: account.provider ?? null,
+    accountName: account.accountName ?? null,
+    accountNumberMasked: maskAccountNumber(account.accountNumber),
+    isDefault: account.isDefault,
+    createdAt: account.createdAt,
+  };
+}
+
 /**
  * @param {object} user  Utilisateur charge avec `role` et `userStatus`.
  * @param {object} [extra]  Champs a joindre, par exemple la liste des medias.

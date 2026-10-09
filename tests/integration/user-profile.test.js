@@ -462,8 +462,9 @@ describe('Forme unique de la reponse utilisateur', () => {
     expect(login.status, login.text).toBe(200);
 
     const cles = (u) => Object.keys(u).sort().join(',');
-    // /me porte en plus "media", qui n'a pas sa place dans une inscription.
-    expect(cles(me.body).replace(',media', '')).toBe(cles(inscrit));
+    // /me porte en plus "media" et "profile", qui n'ont pas sa place dans une
+    // inscription.
+    expect(cles(me.body).replace(',media', '').replace(',profile', '')).toBe(cles(inscrit));
     expect(cles(login.body.user)).toBe(cles(inscrit));
     expect(inscrit.role).toEqual({ code: 'SUPPLIER', label: 'Fournisseur' });
   });
@@ -581,5 +582,302 @@ describe('PATCH /api/v2/auth/me - mise a jour du profil', () => {
   it('refuse une mise a jour sans authentification', async () => {
     const res = await client.patch('/api/v2/auth/me').send({ firstname: 'Intrus' });
     expect(res.status).toBe(401);
+  });
+});
+
+describe('GET /api/v2/auth/me - profil du role', () => {
+  // Le profil vit dans une table par role ; /me l'expose tel quel, ou null
+  // pour les comptes d equipe qui n'en ont pas.
+  it('expose le profil BuyerProfile d un acheteur', async () => {
+    const { buyer, token } = await buyerToken();
+    await prisma.buyerProfile.create({
+      data: { userId: buyer.id, buyerType: 'WHOLESALER', businessName: 'Grossiste du Sud' },
+    });
+
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.profile).toMatchObject({
+      userId: buyer.id,
+      buyerType: 'WHOLESALER',
+      businessName: 'Grossiste du Sud',
+    });
+  });
+
+  it('expose le profil SupplierProfile d un fournisseur', async () => {
+    const supplier = await createUser({ role: 'SUPPLIER' });
+    const token = generateToken({ id: supplier.id, role: 'SUPPLIER' });
+    await prisma.supplierProfile.create({
+      data: { userId: supplier.id, farmName: 'Ferme des Oliviers', description: 'Olives et huile' },
+    });
+
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.profile).toMatchObject({
+      userId: supplier.id,
+      farmName: 'Ferme des Oliviers',
+      description: 'Olives et huile',
+    });
+  });
+
+  it('expose le profil DriverProfile d un livreur', async () => {
+    const driver = await createUser({ role: 'DRIVER' });
+    const token = generateToken({ id: driver.id, role: 'DRIVER' });
+    const agence = await prisma.transportAgency.create({
+      data: { name: 'Agence de test', phone: '+33699999996' },
+    });
+    await prisma.driverProfile.create({
+      data: { userId: driver.id, agencyId: agence.id, vehicleType: 'Camion', plateNumber: 'CD-456-EF' },
+    });
+
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.profile).toMatchObject({
+      userId: driver.id,
+      vehicleType: 'Camion',
+      plateNumber: 'CD-456-EF',
+    });
+  });
+
+  it('renvoie profile null pour un compte d equipe sans profil', async () => {
+    const { token } = await adminToken();
+
+    const res = await client.get('/api/v2/auth/me').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.profile).toBeNull();
+  });
+});
+
+describe('PATCH /api/v2/auth/me/profile', () => {
+  it('met a jour le profil d un fournisseur', async () => {
+    const supplier = await createUser({ role: 'SUPPLIER' });
+    const token = generateToken({ id: supplier.id, role: 'SUPPLIER' });
+    const zone = await prisma.zone.create({ data: { name: 'Zone de test' } });
+    await prisma.supplierProfile.create({ data: { userId: supplier.id, farmName: 'Ancienne ferme' } });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ farmName: 'Nouvelle ferme', description: 'Maraîchage', zoneId: zone.id });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ farmName: 'Nouvelle ferme', description: 'Maraîchage', zoneId: zone.id });
+
+    const enBase = await prisma.supplierProfile.findUnique({ where: { userId: supplier.id } });
+    expect(enBase.farmName).toBe('Nouvelle ferme');
+    expect(enBase.zoneId).toBe(zone.id);
+  });
+
+  it('met a jour le profil d un acheteur', async () => {
+    const { buyer, token } = await buyerToken();
+    const zone = await prisma.zone.create({ data: { name: 'Zone de test' } });
+    await prisma.buyerProfile.create({ data: { userId: buyer.id, buyerType: 'RETAILER' } });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ buyerType: 'WHOLESALER', businessName: 'Grossiste du Sud', zoneId: zone.id });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ buyerType: 'WHOLESALER', businessName: 'Grossiste du Sud', zoneId: zone.id });
+  });
+
+  it('met a jour le profil d un livreur', async () => {
+    const driver = await createUser({ role: 'DRIVER' });
+    const token = generateToken({ id: driver.id, role: 'DRIVER' });
+    const agence = await prisma.transportAgency.create({
+      data: { name: 'Agence de test', phone: '+33699999995' },
+    });
+    await prisma.driverProfile.create({ data: { userId: driver.id, agencyId: agence.id } });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ vehicleType: 'Moto', plateNumber: 'AA-123-BB' });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ vehicleType: 'Moto', plateNumber: 'AA-123-BB' });
+  });
+
+  it('repond 400 quand la zone n existe pas', async () => {
+    const { buyer, token } = await buyerToken();
+    await prisma.buyerProfile.create({ data: { userId: buyer.id } });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ zoneId: 999999 });
+
+    expect(res.status, res.text).toBe(400);
+  });
+
+  it('ignore les champs d un autre role', async () => {
+    // Un acheteur qui envoie farmName (champ fournisseur) ne doit ni le voir
+    // applique ni declencher d erreur : stripUnknown du schema par role
+    // l'elimine avant l ecriture.
+    const { buyer, token } = await buyerToken();
+    await prisma.buyerProfile.create({ data: { userId: buyer.id, buyerType: 'RETAILER' } });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ farmName: 'Ferme intruse', buyerType: 'FARMER' });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ buyerType: 'FARMER' });
+    expect(res.body.farmName).toBeUndefined();
+  });
+
+  it('repond 403 pour un administrateur', async () => {
+    const { token } = await adminToken();
+
+    const res = await client.patch('/api/v2/auth/me/profile').set(authHeader(token)).send({ farmName: 'X' });
+
+    expect(res.status, res.text).toBe(403);
+  });
+
+  it('repond 403 pour un agent', async () => {
+    const { token } = await agentToken();
+
+    const res = await client.patch('/api/v2/auth/me/profile').set(authHeader(token)).send({ buyerType: 'FARMER' });
+
+    expect(res.status, res.text).toBe(403);
+  });
+
+  it('accepte la mise a jour pour un livreur, qui a un profil', async () => {
+    // Un livreur a bien un profil (DriverProfile) : la route lui est ouverte,
+    // a la difference des comptes d equipe.
+    const driver = await createUser({ role: 'DRIVER' });
+    const token = generateToken({ id: driver.id, role: 'DRIVER' });
+    const agence = await prisma.transportAgency.create({
+      data: { name: 'Agence de test', phone: '+33699999994' },
+    });
+    await prisma.driverProfile.create({ data: { userId: driver.id, agencyId: agence.id } });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ vehicleType: 'Vélo' });
+
+    expect(res.status, res.text).toBe(200);
+  });
+});
+
+describe('Comptes de paiement - /api/v2/auth/me/payout-accounts', () => {
+  const numero = '1234567890';
+
+  it('cree un compte et n expose jamais le numero complet', async () => {
+    const { buyer, token } = await buyerToken();
+
+    const res = await client
+      .post('/api/v2/auth/me/payout-accounts')
+      .set(authHeader(token))
+      .send({ method: 'MOBILE_MONEY', provider: 'Orange Money', accountNumber: numero, accountName: 'Amina Benali' });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.accountNumberMasked).toBe('••••7890');
+    expect(res.body.accountNumber).toBeUndefined();
+    expect(res.body).toMatchObject({ method: 'MOBILE_MONEY', provider: 'Orange Money', isDefault: false });
+  });
+
+  it('liste les comptes du connecte, masques', async () => {
+    const { buyer, token } = await buyerToken();
+    await prisma.payoutAccount.create({
+      data: { userId: buyer.id, method: 'BANK_TRANSFER', accountNumber: numero },
+    });
+
+    const res = await client.get('/api/v2/auth/me/payout-accounts').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toHaveLength(1);
+    expect(res.body[0].accountNumberMasked).toBe('••••7890');
+    expect(res.body[0].accountNumber).toBeUndefined();
+  });
+
+  it('met a jour un compte', async () => {
+    const { buyer, token } = await buyerToken();
+    const compte = await prisma.payoutAccount.create({
+      data: { userId: buyer.id, method: 'MOBILE_MONEY', accountNumber: numero },
+    });
+
+    const res = await client
+      .patch(`/api/v2/auth/me/payout-accounts/${compte.id}`)
+      .set(authHeader(token))
+      .send({ accountName: 'Nouveau nom' });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ id: compte.id, accountName: 'Nouveau nom', accountNumberMasked: '••••7890' });
+  });
+
+  it('supprime un compte', async () => {
+    const { buyer, token } = await buyerToken();
+    const compte = await prisma.payoutAccount.create({
+      data: { userId: buyer.id, method: 'CASH', accountNumber: numero },
+    });
+
+    const res = await client.delete(`/api/v2/auth/me/payout-accounts/${compte.id}`).set(authHeader(token));
+
+    expect(res.status, res.text).toBe(204);
+    const enBase = await prisma.payoutAccount.findUnique({ where: { id: compte.id } });
+    expect(enBase).toBeNull();
+  });
+
+  it('ne garde qu un seul compte par defaut', async () => {
+    const { buyer, token } = await buyerToken();
+    const premier = await prisma.payoutAccount.create({
+      data: { userId: buyer.id, method: 'MOBILE_MONEY', accountNumber: numero, isDefault: true },
+    });
+
+    // Le second passe par defaut : le premier doit perdre le flag, en base
+    // comme dans la reponse.
+    const res = await client
+      .post('/api/v2/auth/me/payout-accounts')
+      .set(authHeader(token))
+      .send({ method: 'BANK_TRANSFER', accountNumber: '0987654321', isDefault: true });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.isDefault).toBe(true);
+
+    const enBase = await prisma.payoutAccount.findMany({ where: { userId: buyer.id } });
+    const defauts = enBase.filter((c) => c.isDefault);
+    expect(defauts).toHaveLength(1);
+    expect(defauts[0].id).not.toBe(premier.id);
+  });
+
+  it('repond 404 quand le compte appartient a un autre', async () => {
+    const { buyer, token } = await buyerToken();
+    const autre = await createUser({ role: 'BUYER' });
+    const compte = await prisma.payoutAccount.create({
+      data: { userId: autre.id, method: 'MOBILE_MONEY', accountNumber: numero },
+    });
+
+    const resPatch = await client
+      .patch(`/api/v2/auth/me/payout-accounts/${compte.id}`)
+      .set(authHeader(token))
+      .send({ accountName: 'Pirate' });
+    expect(resPatch.status, resPatch.text).toBe(404);
+
+    const resDelete = await client.delete(`/api/v2/auth/me/payout-accounts/${compte.id}`).set(authHeader(token));
+    expect(resDelete.status, resDelete.text).toBe(404);
+  });
+
+  it('repond 403 pour un livreur', async () => {
+    const driver = await createUser({ role: 'DRIVER' });
+    const token = generateToken({ id: driver.id, role: 'DRIVER' });
+
+    const res = await client.get('/api/v2/auth/me/payout-accounts').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(403);
+  });
+
+  it('repond 403 pour un administrateur', async () => {
+    const { token } = await adminToken();
+
+    const res = await client.get('/api/v2/auth/me/payout-accounts').set(authHeader(token));
+
+    expect(res.status, res.text).toBe(403);
   });
 });
