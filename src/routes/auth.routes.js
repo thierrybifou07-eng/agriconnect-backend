@@ -23,6 +23,8 @@ import {
   createPayoutAccount,
   updatePayoutAccount,
   deletePayoutAccount,
+  submitDocument,
+  listMyDocuments,
 } from '../controllers/user.controller.js';
 import {
   authLimiter,
@@ -46,6 +48,8 @@ import {
   payoutAccountCreateSchema,
   payoutAccountUpdateSchema,
 } from '../validators/auth.validator.js';
+import { submitDocumentSchema } from '../validators/verification.validator.js';
+import uploadDocument from '../middlewares/uploadDocument.middleware.js';
 
 const router = Router();
 
@@ -125,5 +129,12 @@ router.get('/me/payout-accounts', protect, requireRole('SUPPLIER', 'BUYER'), lis
 router.post('/me/payout-accounts', protect, requireRole('SUPPLIER', 'BUYER'), validate(payoutAccountCreateSchema), createPayoutAccount);
 router.patch('/me/payout-accounts/:id', protect, requireRole('SUPPLIER', 'BUYER'), validate(payoutAccountUpdateSchema), updatePayoutAccount);
 router.delete('/me/payout-accounts/:id', protect, requireRole('SUPPLIER', 'BUYER'), deletePayoutAccount);
+
+// Documents de vérification du profil : SUPPLIER et BUYER uniquement — ce sont
+// les deux rôles dont le profil est vérifié par l'équipe (plan v2, P1.6).
+// multer parse d'abord le multipart (champ fichier + champ texte "type"),
+// puis validate controle le corps : l'ordre des middlewares est important.
+router.post('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), uploadDocument.single('file'), validate(submitDocumentSchema), submitDocument);
+router.get('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), listMyDocuments);
 
 export default router;

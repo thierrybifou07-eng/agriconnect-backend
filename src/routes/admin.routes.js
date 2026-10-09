@@ -4,19 +4,32 @@ import {
   suspendUser,
   reactivateUser,
   createStaffUser,
+  listVerifications,
+  getVerification,
+  reviewVerification,
 } from '../controllers/admin.controller.js';
 import { createLegalVersion, publishLegalVersion } from '../controllers/legal.controller.js';
 import { listAgents, updateAgent, createAiAgent } from '../controllers/agent.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
+import { requireCapability } from '../middlewares/capability.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import { createStaffUserSchema, createLegalVersionSchema } from '../validators/admin.validator.js';
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
+import { reviewVerificationSchema } from '../validators/verification.validator.js';
 
 const router = Router();
 
 // Toutes les cles primaires sont des Int : voir middlewares/params.middleware.js
 router.param('id', coerceIdParam);
+
+// Vérification des profils : ADMIN et plus, ou AGENT avec USER_VERIFICATION.
+// Monte AVANT le requireMinLevel(50) global : un AGENT (niveau 30) muni de la
+// capacite USER_VERIFICATION doit passer ici, alors que le reste de /admin lui
+// est ferme. requireCapability laisse passer les niveaux 50+ sans controle.
+router.get('/verifications', protect, requireCapability('USER_VERIFICATION'), listVerifications);
+router.get('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), getVerification);
+router.patch('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), validate(reviewVerificationSchema), reviewVerification);
 
 router.use(protect, requireMinLevel(50));
 

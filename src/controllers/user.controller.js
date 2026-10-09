@@ -213,3 +213,81 @@ export const deletePayoutAccount = async (req, res) => {
   await prisma.payoutAccount.delete({ where: { id: compte.id } });
   res.status(204).send();
 };
+
+// POST /api/auth/me/documents
+//
+// Dépôt d'un document de vérification du profil. Le fichier part en mode privé
+// sur Cloudinary (type 'authenticated') : il n'est jamais servi publiquement,
+// seule une URL signée de courte durée le rend lisible par le staff.
+export const submitDocument = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Aucun fichier fourni (champ "file")' });
+  }
+
+  const { type } = req.body; // validé par submitDocumentSchema en amont
+
+  // Le mimeType doit exister en base (clé étrangère) : le middleware ne laisse
+  // passer que les 4 types seedés, mais la lecture du mediaTypeId évite une
+  // erreur serveur si la table de référence n'est pas peuplée.
+  const mimeType = await prisma.mimeType.findUnique({ where: { code: req.file.mimetype } });
+  if (!mimeType) {
+    return res.status(400).json({ error: 'Type de fichier non supporté' });
+  }
+
+  const { url, public_id } = await uploadBufferToCloudinary(req.file.buffer, {
+    folder: 'agriconnect/verification-documents',
+    type: 'authenticated',
+  });
+
+  const document = await prisma.$transaction(async (tx) => {
+    const doc = await tx.verificationDocument.create({
+      data: { userId: req.user.id, type },
+    });
+    await tx.media.create({
+      data: {
+        ownerVerificationDocumentId: doc.id,
+        mediaTypeId: mimeType.mediaTypeId,
+        mimeTypeId: mimeType.id,
+        url,
+        publicId: public_id,
+        isPrivate: true,
+        fileSize: req.file.size,
+      },
+    });
+
+    // Un nouveau dépôt relance l'examen : UNVERIFIED ou REJECTED repassent en
+    // PENDING. Un compte déjà VERIFIED n'est pas dévérifié par un nouveau dépôt.
+    const courant = await tx.user.findUnique({
+      where: { id: req.user.id },
+      select: { profileVerificationStatus: true },
+    });
+    if (courant.profileVerificationStatus === 'UNVERIFIED' || courant.profileVerificationStatus === 'REJECTED') {
+      await tx.user.update({ where: { id: req.user.id }, data: { profileVerificationStatus: 'PENDING' } });
+    }
+
+    return doc;
+  });
+
+  // Réponse volontairement minimale : aucune URL (le fichier est privé, seule
+  // une URL signée de courte durée est délivrée au staff).
+  res.status(201).json({
+    id: document.id,
+    type: document.type,
+    status: document.status,
+    note: document.note,
+    createdAt: document.createdAt,
+  });
+};
+
+// GET /api/auth/me/documents
+//
+// Liste des documents déposés, sans aucune URL : un document de vérification
+// est privé, le propriétaire n'a pas à se renvoyer son propre fichier.
+export const listMyDocuments = async (req, res) => {
+  const documents = await prisma.verificationDocument.findMany({
+    where: { userId: req.user.id },
+    select: { id: true, type: true, status: true, note: true, createdAt: true },
+    orderBy: { createdAt: 'desc' },
+  });
+  res.json(documents);
+};

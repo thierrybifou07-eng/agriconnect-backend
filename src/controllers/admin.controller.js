@@ -6,6 +6,10 @@ import { emitSessionRevoked } from '../sockets/revocation.js';
 // Meme pile que l inscription (src/config/email) : un seul moteur de rendu,
 // une seule configuration SMTP.
 import { sendTemplateEmail } from '../config/email/sendMail.js';
+// v2 du SDK : utils.private_download_url genere l URL signée de courte duree
+// qui donne acces a un asset private (type 'authenticated').
+import { v2 as cloudinary } from 'cloudinary';
+import { recordAudit } from '../utils/audit.js';
 
 const userSafeSelect = {
   id: true,
@@ -182,4 +186,191 @@ export const createStaffUser = async (req, res) => {
   }
 
   res.status(201).json(staffUser);
+};
+
+// GET /api/v2/admin/verifications?status=
+//
+// Liste paginée des documents de verification. Le filtre porte sur le statut
+// du document (PENDING par defaut côté client), pas sur celui du compte.
+export const listVerifications = async (req, res) => {
+  const { status } = req.query;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+
+  const where = status ? { status } : {};
+
+  const [items, total] = await Promise.all([
+    prisma.verificationDocument.findMany({
+      where,
+      select: {
+        id: true,
+        type: true,
+        status: true,
+        note: true,
+        createdAt: true,
+        reviewedAt: true,
+        user: {
+          select: {
+            id: true,
+            firstname: true,
+            lastname: true,
+            email: true,
+            role: { select: { code: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.verificationDocument.count({ where }),
+  ]);
+
+  res.json({ items, page, limit, total });
+};
+
+// GET /api/v2/admin/verifications/:id
+//
+// Detail d'un document + URL signée de courte duree (10 minutes). L'asset est
+// prive (type 'authenticated') : seule une URL signée avec expiration permet de
+// le servir, et elle devient inutilisable apres coup.
+export const getVerification = async (req, res) => {
+  const document = await prisma.verificationDocument.findUnique({
+    where: { id: req.params.id },
+    include: {
+      user: {
+        select: {
+          id: true,
+          firstname: true,
+          lastname: true,
+          email: true,
+          role: { select: { code: true } },
+        },
+      },
+      media: { include: { mimeType: { select: { code: true, extension: true } } } },
+    },
+  });
+  if (!document) {
+    return res.status(404).json({ error: 'Document introuvable' });
+  }
+
+  // Un document a un seul Media en pratique, mais la relation est 1-N : media
+  // est un tableau, on prend la première ligne.
+  const media = document.media[0] ?? null;
+  let urlSignee = null;
+  if (media?.publicId) {
+    // Format depuis l extension seedee (.jpg, .png, .webp, .pdf) : c est le
+    // format tel que Cloudinary l attend, sans le point.
+    const format = media.mimeType?.extension?.replace(/^\./, '') ?? null;
+    urlSignee = cloudinary.utils.private_download_url(media.publicId, format, {
+      type: 'authenticated',
+      expires_at: Math.floor(Date.now() / 1000) + 10 * 60,
+    });
+  }
+
+  res.json({
+    id: document.id,
+    type: document.type,
+    status: document.status,
+    note: document.note,
+    createdAt: document.createdAt,
+    reviewedAt: document.reviewedAt,
+    user: document.user,
+    media: media
+      ? {
+          id: media.id,
+          isPrivate: media.isPrivate,
+          mimeType: media.mimeType?.code ?? null,
+          createdAt: media.createdAt,
+          url: urlSignee,
+        }
+      : null,
+  });
+};
+
+// PATCH /api/v2/admin/verifications/:id
+//
+// Decision d'examen. APPROVE -> document VERIFIED ; l'utilisateur devient
+// VERIFIED quand il a au moins un document VERIFIED et aucun PENDING. REJECT ->
+// document REJECTED ; sans document VERIFIED, l'utilisateur devient REJECTED.
+// L'audit est ecrit dans la meme transaction que la decision.
+export const reviewVerification = async (req, res) => {
+  const { decision, note } = req.body; // validé par reviewVerificationSchema en amont
+
+  const document = await prisma.verificationDocument.findUnique({ where: { id: req.params.id } });
+  if (!document) {
+    return res.status(404).json({ error: 'Document introuvable' });
+  }
+  if (document.status !== 'PENDING') {
+    return res.status(409).json({ error: 'Ce document a déjà été examiné' });
+  }
+
+  const statutDocument = decision === 'APPROVE' ? 'VERIFIED' : 'REJECTED';
+
+  const { doc, profilMisAJour } = await prisma.$transaction(async (tx) => {
+    const misAJour = await tx.verificationDocument.update({
+      where: { id: document.id },
+      data: {
+        status: statutDocument,
+        reviewedById: req.user.id,
+        reviewedAt: new Date(),
+        note: note ?? null,
+      },
+    });
+
+    // Relecture des documents du compte : la regle porte sur l'ensemble des
+    // depots, pas sur le seul document examine ici.
+    const documents = await tx.verificationDocument.findMany({
+      where: { userId: document.userId },
+      select: { status: true },
+    });
+    const aVerifie = documents.some((d) => d.status === 'VERIFIED');
+    const aEnAttente = documents.some((d) => d.status === 'PENDING');
+
+    let nouveauStatut = null;
+    if (decision === 'APPROVE') {
+      // APPROVE : VERIFIED seulement si aucun autre depot attend encore —
+      // un compte verifié à moitié reste en attente.
+      if (aVerifie && !aEnAttente) {
+        nouveauStatut = 'VERIFIED';
+      }
+    } else if (!aVerifie) {
+      // REJECT : rejete seulement si aucun document n'a ete valide.
+      nouveauStatut = 'REJECTED';
+    }
+
+    if (nouveauStatut) {
+      await tx.user.update({
+        where: { id: document.userId },
+        data:
+          nouveauStatut === 'VERIFIED'
+            ? { profileVerificationStatus: 'VERIFIED', profileVerifiedAt: new Date(), profileVerifiedById: req.user.id }
+            : { profileVerificationStatus: 'REJECTED' },
+      });
+    }
+
+    await recordAudit(tx, {
+      actorUser: req.user,
+      action: decision === 'APPROVE' ? 'PROFILE_DOCUMENT_APPROVED' : 'PROFILE_DOCUMENT_REJECTED',
+      entityType: 'VerificationDocument',
+      entityId: document.id,
+      metadata: {
+        decision,
+        note: note ?? null,
+        userId: document.userId,
+        profileVerificationStatus: nouveauStatut,
+      },
+    });
+
+    return { doc: misAJour, profilMisAJour: nouveauStatut };
+  });
+
+  res.json({
+    id: document.id,
+    type: document.type,
+    status: doc.status,
+    note: doc.note,
+    reviewedAt: doc.reviewedAt,
+    createdAt: doc.createdAt,
+  });
 };
