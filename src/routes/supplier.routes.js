@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import Joi from 'joi';
 import {
   createLot,
   listLots,
   getLot,
   updateLot,
   deleteLot,
+  withdrawLot,
 } from '../controllers/supplierLot.controller.js';
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
@@ -29,6 +31,12 @@ const uploadImages = (req, res, next) => {
   });
 };
 
+const withdrawSchema = Joi.object({
+  reason: Joi.string().trim().min(1).max(500).required().messages({
+    'any.required': 'reason est requis',
+  }),
+});
+
 // POST /api/v2/supplier/lots — déclaration d'un lot avec photos.
 //
 // multer parse d'abord le multipart (champ `images` + champs texte), puis
@@ -41,5 +49,6 @@ router.get('/lots', protect, requireRole('SUPPLIER'), listLots);
 router.get('/lots/:id', protect, requireRole('SUPPLIER'), getLot);
 router.patch('/lots/:id', protect, requireRole('SUPPLIER'), validate(lotUpdateSchema), updateLot);
 router.delete('/lots/:id', protect, requireRole('SUPPLIER'), deleteLot);
+router.post('/lots/:id/withdraw', protect, requireRole('SUPPLIER'), validate(withdrawSchema), withdrawLot);
 
 export default router;

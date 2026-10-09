@@ -2,9 +2,12 @@ import { randomInt } from 'node:crypto';
 import prisma from '../config/prisma.js';
 import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
 import { getLookupId } from '../utils/lookupCache.js';
-import { asMoney, asQuantity } from '../utils/money.js';
+import { asMoney, asQuantity, toNumber } from '../utils/money.js';
 import { lotToSupplierDto } from '../utils/dto/lot.dto.js';
 import { LOT_STATUSES } from '../validators/lot.validator.js';
+import { returnAvailable } from '../services/stock.service.js';
+import { assertTransition } from '../services/lot.state.js';
+import { recordAudit } from '../utils/audit.js';
 
 // Un lot ne peut être modifié ou supprimé que tant qu'il n'a pas été validé :
 // une fois l'équipe passée, les quantités sont pilotées par les mouvements de
@@ -289,4 +292,55 @@ export const deleteLot = async (req, res) => {
 
   await prisma.stockLot.delete({ where: { id: lot.id } });
   res.status(204).send();
+};
+
+// POST /api/v2/supplier/lots/:id/withdraw
+//
+// Le fournisseur retire un lot qui n'a jamais été réservé. La condition
+// quantityReserved = 0 garantit qu'aucune commande n'est en attente : retirer
+// un lot réservé obligerait à annuler des commandes, ce qui n'est pas le
+// périmètre de cette action.
+export const withdrawLot = async (req, res) => {
+  const profile = await profilFournisseur(req.user.id);
+  const { reason } = req.body;
+
+  const lot = await prisma.stockLot.findFirst({
+    where: { id: req.params.id, supplierId: profile.id },
+  });
+  if (!lot) {
+    return res.status(404).json({ error: 'Lot introuvable' });
+  }
+
+  // Un lot avec une réservation ne peut pas être retiré : il faudrait d'abord
+  // libérer la réservation (P3.x).
+  if (toNumber(lot.quantityReserved) !== 0) {
+    throw Object.assign(
+      new Error('Un lot avec une réservation ne peut pas être retiré'),
+      { statusCode: 409, code: 'INVALID_STATE_TRANSITION' }
+    );
+  }
+
+  assertTransition(lot.status, 'WITHDRAWN');
+
+  const ctx = { actorUserId: req.user.id };
+  const quantite = lot.quantityAvailable;
+
+  const result = await prisma.$transaction(async (tx) => {
+    const maj = await returnAvailable(tx, lot.id, quantite, ctx, 'WITHDRAWN');
+    await recordAudit(tx, {
+      actorUser: req.user,
+      action: 'LOT_WITHDRAWN',
+      entityType: 'StockLot',
+      entityId: lot.id,
+      metadata: { reason, quantity: toNumber(quantite) },
+    });
+    return maj;
+  });
+
+  const complet = await prisma.stockLot.findUnique({
+    where: { id: result.id },
+    include: LOT_INCLUDE,
+  });
+
+  res.json(lotToSupplierDto(complet));
 };

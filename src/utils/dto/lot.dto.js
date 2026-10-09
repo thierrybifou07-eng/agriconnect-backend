@@ -58,5 +58,8 @@ export function lotToStaffDto(lot) {
       farmName: lot.supplier.farmName,
       profileVerificationStatus: lot.supplier.user?.profileVerificationStatus ?? null,
     },
+    validatedAt: lot.validatedAt,
+    validatedByAgentId: lot.validatedByAgentId,
+    qualityGrade: lot.qualityGrade,
   };
 }
