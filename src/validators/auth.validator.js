@@ -34,6 +34,17 @@ export const registerSchema = Joi.object({
     'any.only': 'role doit être SUPPLIER ou BUYER',
   }),
   location: Joi.string().optional().allow(null, ''),
+  // L'inscription emporte acceptation des documents requis pour le role : le
+  // controller enregistre une TermsAcceptance par document, donc sans accord
+  // explicite il n'y a rien a enregistrer.
+  acceptTerms: Joi.boolean().valid(true).required().messages({
+    'any.required': 'Vous devez accepter les conditions',
+    'any.only': 'Vous devez accepter les conditions',
+  }),
+  referralCode: Joi.string().trim().max(20).optional(),
+  farmName: Joi.string().trim().min(2).max(120).optional(),
+  buyerType: Joi.string().valid('RETAILER', 'FARMER', 'WHOLESALER', 'OTHER').optional(),
+  businessName: Joi.string().trim().max(120).optional(),
 });
 
 export const loginSchema = Joi.object({

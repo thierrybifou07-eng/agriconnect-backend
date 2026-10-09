@@ -44,6 +44,7 @@ describe('POST /api/v2/auth/register', () => {
         email: `${role.toLowerCase()}@example.com`,
         password: 'MotDePasse1!',
         role,
+        acceptTerms: true,
       });
       expect(res.status, `role ${role} doit etre refuse`).toBe(400);
     }
@@ -62,6 +63,7 @@ describe('POST /api/v2/auth/register', () => {
         email: `${role.toLowerCase()}-refuse@example.com`,
         password: 'MotDePasse1!',
         role,
+        acceptTerms: true,
       });
       expect(res.status, `role ${role} doit etre refuse`).toBe(400);
     }
@@ -77,6 +79,7 @@ describe('POST /api/v2/auth/register', () => {
       email: 'doublon@example.com',
       password: 'MotDePasse1!',
       role: 'BUYER',
+      acceptTerms: true,
     });
     expect(res.status).toBe(409);
   });
@@ -89,9 +92,96 @@ describe('POST /api/v2/auth/register', () => {
       email: 'faible@example.com',
       password: 'tropcourt',
       role: 'BUYER',
+      acceptTerms: true,
     });
     expect(res.status).toBe(400);
     expect(res.body.details.some((d) => d.field === 'password')).toBe(true);
+  });
+
+  // Profil, acceptations et code de parrainage sont crees dans la meme
+  // transaction que le compte : voir register dans auth.controller.js.
+  it('cree le profil acheteur, enregistre les acceptations et renvoie le code de parrainage', async () => {
+    const { user, accessToken } = await registerViaApi(client, { role: 'BUYER' });
+
+    const profil = await prisma.buyerProfile.findUnique({ where: { userId: user.id } });
+    expect(profil).not.toBeNull();
+    expect(profil.buyerType).toBe('RETAILER');
+
+    // Deux documents requis pour un acheteur (CGU + BUYER_TERMS), chacun dans
+    // sa version PUBLISHED, avec l IP de la requete.
+    const acceptations = await prisma.termsAcceptance.findMany({
+      where: { userId: user.id },
+      include: { version: { select: { status: true } } },
+    });
+    expect(acceptations).toHaveLength(2);
+    expect(acceptations.every((a) => a.version.status === 'PUBLISHED')).toBe(true);
+    expect(acceptations.every((a) => a.ipAddress)).toBe(true);
+
+    const me = await client.get('/api/v2/auth/me').set('Authorization', `Bearer ${accessToken}`);
+    expect(me.status).toBe(200);
+    expect(me.body.referralCode).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/);
+  });
+
+  it('cree le profil fournisseur avec le nom de ferme fourni', async () => {
+    const { user } = await registerViaApi(client, { role: 'SUPPLIER', farmName: 'Ferme des Hauts' });
+
+    const profil = await prisma.supplierProfile.findUnique({ where: { userId: user.id } });
+    expect(profil).not.toBeNull();
+    expect(profil.farmName).toBe('Ferme des Hauts');
+  });
+
+  // Sans nom fourni, le profil porte le nom complet : le compte est
+  // immediatement identifiable par l equipe et par les acheteurs.
+  it('prend le nom complet comme nom de ferme par defaut', async () => {
+    const { user } = await registerViaApi(client, { role: 'SUPPLIER' });
+
+    const profil = await prisma.supplierProfile.findUnique({ where: { userId: user.id } });
+    expect(profil.farmName).toBe('Amina Benali');
+  });
+
+  it('refuse sans acceptation des conditions', async () => {
+    const res = await client.post('/api/v2/auth/register').send({
+      firstname: 'Sans',
+      lastname: 'Conditions',
+      phone: '+33655550000',
+      email: 'sans-conditions@example.com',
+      password: 'MotDePasse1!',
+      role: 'BUYER',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.details.some((d) => d.field === 'acceptTerms')).toBe(true);
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  it('annule toute la creation si le code de parrainage est inconnu', async () => {
+    const res = await client.post('/api/v2/auth/register').send({
+      firstname: 'Filleul',
+      lastname: 'Inconnu',
+      phone: '+33666660000',
+      email: 'filleul-inconnu@example.com',
+      password: 'MotDePasse1!',
+      role: 'BUYER',
+      acceptTerms: true,
+      referralCode: 'ZZZZZZZZ',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Code de parrainage invalide');
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  it('cree un parrainage PENDING quand le code est valide', async () => {
+    const parrain = await registerViaApi(client, { role: 'SUPPLIER' });
+    const codeParrain = (await prisma.user.findUnique({ where: { email: parrain.payload.email } })).referralCode;
+
+    const filleul = await registerViaApi(client, { role: 'BUYER', referralCode: codeParrain });
+
+    const parrainage = await prisma.referral.findFirst({ where: { referredId: filleul.user.id } });
+    expect(parrainage).not.toBeNull();
+    expect(parrainage.referrerId).toBe(parrain.user.id);
+    expect(parrainage.kind).toBe('BUYER');
+    expect(parrainage.status).toBe('PENDING');
   });
 });
 

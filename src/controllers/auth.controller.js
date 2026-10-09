@@ -1,4 +1,5 @@
 import bcrypt from 'bcrypt';
+import { randomInt } from 'node:crypto';
 import prisma from '../config/prisma.js';
 import { generateToken } from '../utils/jwt.js';
 import { hashToken } from '../utils/refreshToken.js';
@@ -27,6 +28,7 @@ import {
   checkPasswordResetToken,
   sendSecurityAlertEmail,
 } from '../utils/passwordReset.js';
+import { getCurrentVersion, REQUIRED_DOCUMENTS_BY_ROLE } from '../utils/legal.js';
 
 // Rôles autorisés à l'inscription publique. ADMIN, AGENT, ROOT et DRIVER ne sont
 // JAMAIS accessibles ici : ROOT se crée uniquement via scripts/create-root.js
@@ -35,6 +37,19 @@ import {
 // code, pas pilotée par la table Role, pour ne jamais faire dépendre une décision
 // de sécurité d'une donnée modifiable.
 const PUBLIC_ROLES = ['SUPPLIER', 'BUYER'];
+
+// Alphabet prive de 0, O, 1 et I : un code de parrainage se recopie a la main
+// et se lit a voix haute ; deux caracteres qui se confondent n'y ont pas leur
+// place.
+const REFERRAL_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+
+function generateReferralCode() {
+  let code = '';
+  for (let i = 0; i < 8; i += 1) {
+    code += REFERRAL_ALPHABET[randomInt(REFERRAL_ALPHABET.length)];
+  }
+  return code;
+}
 
 function userFullName(user) {
   return `${user.firstname} ${user.lastname}`;
@@ -51,7 +66,7 @@ const accessTokenFor = (user, sessionId) =>
   });
 // POST /api/auth/register
 export const register = async (req, res) => {
-  const { firstname, lastname, phone, email, password, role, location } = req.body;
+  const { firstname, lastname, phone, email, password, role, location, referralCode, farmName, buyerType, businessName } = req.body;
 
   if (!PUBLIC_ROLES.includes(role)) {
     return res.status(400).json({ error: 'role doit être SUPPLIER ou BUYER' });
@@ -73,19 +88,96 @@ export const register = async (req, res) => {
 
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  const user = await prisma.user.create({
-    data: {
-      firstname,
-      lastname,
-      phone,
-      email,
-      password: hashedPassword,
-      roleId,
-      userStatusId,
-      location,
-    },
-    include: { role: true, userStatus: true },
+  // Compte, profil, acceptations et parrainage dans une seule transaction : un
+  // code de parrainage invalide ne doit laisser aucun compte derriere lui, et
+  // un echec sur le profil ne doit pas laisser un compte orphelin.
+  const inscription = await prisma.$transaction(async (tx) => {
+    // Code unique : 5 essais, puis on abandonne plutot que de repondre avec
+    // un code deja pris.
+    let codeParrainage = null;
+    for (let essai = 0; essai < 5 && !codeParrainage; essai += 1) {
+      const candidat = generateReferralCode();
+      const collision = await tx.user.findUnique({ where: { referralCode: candidat } });
+      if (!collision) codeParrainage = candidat;
+    }
+    if (!codeParrainage) {
+      throw Object.assign(new Error('Impossible de generer un code de parrainage unique'), {
+        statusCode: 500,
+        code: 'REFERRAL_CODE_UNAVAILABLE',
+      });
+    }
+
+    const user = await tx.user.create({
+      data: {
+        firstname,
+        lastname,
+        phone,
+        email,
+        password: hashedPassword,
+        roleId,
+        userStatusId,
+        location,
+        referralCode: codeParrainage,
+      },
+      include: { role: true, userStatus: true },
+    });
+
+    // Le profil est cree des l'inscription : un compte sans profil est un
+    // compte qui ne peut rien faire sur la plateforme.
+    if (role === 'SUPPLIER') {
+      await tx.supplierProfile.create({
+        data: {
+          userId: user.id,
+          farmName: farmName ?? `${firstname} ${lastname}`,
+        },
+      });
+    } else {
+      await tx.buyerProfile.create({
+        data: {
+          userId: user.id,
+          buyerType: buyerType ?? 'RETAILER',
+          businessName: businessName ?? null,
+        },
+      });
+    }
+
+    // Acceptation des documents requis du role, dans leur version PUBLISHED :
+    // c'est cette version que l'utilisateur a acceptee sous acceptTerms.
+    for (const code of REQUIRED_DOCUMENTS_BY_ROLE[role]) {
+      const version = await getCurrentVersion(code);
+      if (version) {
+        await tx.termsAcceptance.create({
+          data: { userId: user.id, versionId: version.id, ipAddress: req.ip },
+        });
+      }
+    }
+
+    // Parrainage : le code est verifie dans la transaction, sinon un code
+    // invalide laisserait le compte du filleul derriere lui. Le throw annule la
+    // transaction : c'est le seul moyen de rollback, un simple return commiterait
+    // le compte deja cree.
+    if (referralCode) {
+      const parrain = await tx.user.findUnique({ where: { referralCode } });
+      if (!parrain) {
+        throw Object.assign(new Error('Code de parrainage invalide'), {
+          statusCode: 400,
+          code: 'REFERRAL_CODE_UNKNOWN',
+        });
+      }
+      await tx.referral.create({
+        data: {
+          referrerId: parrain.id,
+          referredId: user.id,
+          kind: role,
+          status: 'PENDING',
+        },
+      });
+    }
+
+    return user;
   });
+
+  const user = inscription;
 
   // Inscription et connexion ouvrent chacune une session : une session est un
   // appareil connecte, et c'est elle qui portera les jetons de rafraichissement

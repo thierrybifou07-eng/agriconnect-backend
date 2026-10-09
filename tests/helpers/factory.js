@@ -86,6 +86,9 @@ export async function registerViaApi(client, overrides = {}) {
     email: `api${id}@example.com`,
     password: 'MotDePasse1!',
     role: 'BUYER',
+    // L'inscription enregistre l'acceptation des documents requis : sans accord
+    // explicite, la validation Joi refuse la requete (voir registerSchema).
+    acceptTerms: true,
     ...overrides,
     // L email est unique : on le regener systematiquement sauf si le test
     // fournit le sien explicitement.
