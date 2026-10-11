@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../../src/config/prisma.js';
-import { createUser } from '../helpers/factory.js';
+import { createUser, createListingForLot } from '../helpers/factory.js';
 import {
   receiveLot,
   reserve,
@@ -377,9 +377,11 @@ describe('Service de stock — journal des mouvements', () => {
         total: '10000.00',
       },
     });
+    const annonce = await createListingForLot(lot);
     const ligne = await prisma.orderItem.create({
       data: {
         orderId: commande.id,
+        listingId: annonce.id,
         lotId: lot.id,
         quantity: new Decimal(10),
         unitPrice: '1000.00',

@@ -186,6 +186,12 @@ enum SenderType {
   SYSTEM
 }
 
+enum QualityGrade {
+  A
+  B
+  C
+}
+
 enum LegalVersionStatus {
   DRAFT
   PUBLISHED
@@ -734,9 +740,8 @@ model Product {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  lots          StockLot[]
-  conversations Conversation[]
-  listings      Listing[]
+  lots     StockLot[]
+  listings Listing[]
 
   @@unique([categoryId, name])
   @@index([unitId])
@@ -771,7 +776,7 @@ model StockLot {
 
   packagingNote      String?
   qualityNote        String?
-  qualityGrade       String?
+  qualityGrade       QualityGrade?
   harvestedAt        DateTime?
   expiresAt          DateTime?
   status             LotStatus       @default(PENDING_VALIDATION)
@@ -791,6 +796,7 @@ model StockLot {
   compensations SupplierCompensation[]
   qualityChecks LotQualityCheck[]
   listingLots   ListingLot[]
+  conversations Conversation[]
 
   @@index([status, productId, zoneId])
   @@index([supplierId])
@@ -804,7 +810,7 @@ model LotQualityCheck {
   id                Int       @id @default(autoincrement())
   lotId             Int
   lot               StockLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
-  grade             String    @db.VarChar(1) // 'A', 'B' ou 'C'
+  grade             QualityGrade
   notes             String?   @db.Text
   inspectedByUserId Int?
   inspectedByUser   User?     @relation(fields: [inspectedByUserId], references: [id])
@@ -862,8 +868,10 @@ model Listing {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  lots ListingLot[]
-  media Media[]
+  lots          ListingLot[]
+  media         Media[]
+  conversations Conversation[]
+  orderItems    OrderItem[]
 
   @@index([statusId])
   @@index([productId])
@@ -892,8 +900,10 @@ model Conversation {
   customer         User               @relation(fields: [customerId], references: [id])
   assignedAgentId  Int?
   assignedAgent    Agent?             @relation(fields: [assignedAgentId], references: [id])
-  productId        Int?
-  product          Product?           @relation(fields: [productId], references: [id])
+  listingId        Int?
+  listing          Listing?           @relation(fields: [listingId], references: [id])
+  lotId            Int?
+  lot              StockLot?          @relation(fields: [lotId], references: [id])
   status           ConversationStatus @default(OPEN)
   subject          String?
   escalatedAt      DateTime?
@@ -905,6 +915,8 @@ model Conversation {
   orders   Order[]
 
   @@index([customerId])
+  @@index([listingId])
+  @@index([lotId])
   @@index([status, lastMessageAt])
   @@index([assignedAgentId, status])
 }
@@ -983,6 +995,8 @@ model OrderItem {
   id                Int        @id @default(autoincrement())
   orderId           Int
   order             Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  listingId         Int
+  listing           Listing    @relation(fields: [listingId], references: [id])
   lotId             Int
   lot               StockLot   @relation(fields: [lotId], references: [id])
   deliveryId        Int?
@@ -998,6 +1012,7 @@ model OrderItem {
   movements StockMovement[]
 
   @@index([orderId])
+  @@index([listingId])
   @@index([lotId])
 }
 

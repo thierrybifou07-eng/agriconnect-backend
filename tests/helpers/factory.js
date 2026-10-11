@@ -75,6 +75,27 @@ export async function createRefreshToken(user, session, overrides = {}) {
   });
 }
 
+// Crée une annonce ACTIVE reliée à un lot (ListingLot). Les commandes et les
+// conversations portent désormais une annonce, plus directement un produit.
+export async function createListingForLot(lot, overrides = {}) {
+  const statusId = await lookupId('listingStatus', 'ACTIVE');
+  const annonce = await prisma.listing.create({
+    data: {
+      reference: `ANN-TMP-${nextId()}`,
+      title: `Annonce ${nextId()}`,
+      unitPrice: lot.agreedUnitPrice,
+      productId: lot.productId,
+      zoneId: lot.zoneId,
+      statusId,
+      publishedAt: new Date(),
+    },
+  });
+  await prisma.listingLot.create({
+    data: { listingId: annonce.id, lotId: lot.id },
+  });
+  return { ...annonce, ...overrides };
+}
+
 // Enregistre l'utilisateur via l'API et renvoie son jeton : à utiliser quand le
 // test porte justement sur la route d'inscription.
 export async function registerViaApi(client, overrides = {}) {

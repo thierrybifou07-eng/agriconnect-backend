@@ -13,6 +13,7 @@
     "seed": "node prisma/seed.js",
     "seed:dev": "node prisma/seed.dev.js",
     "create:root": "node scripts/create-root.js",
+    "db:drift": "node scripts/check-drift.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:unit": "vitest run --project unit",
