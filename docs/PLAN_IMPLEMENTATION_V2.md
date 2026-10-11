@@ -1,7 +1,8 @@
 # AgriConnect Backend — Plan d'implémentation v2 (prompts pour OpenCode)
 
 **Date :** 8 octobre 2026 · **Dépôt :** `thierrybifou07-eng/agriconnect-backend`
-**Branche de travail :** `feature/v2-consignation`, créée depuis `development` (commit `d83ce69`, état final de la v1)
+**Branche de travail :** `feature/dev-v2` (créée depuis `development`, commit `d83ce69`, état final de la v1)
+**Progression :** P0.2 à P2.6 réalisés. **Prochaine étape : bloc S (S1 à S4), puis P3.1.**
 **Base :** MySQL · identifiants **Int** · module auth de la v1 **conservé**
 
 Ce document remplace `PLAN_REFORME_V2.md` de l'ancienne branche. Il est conçu pour des modèles gratuits : prompts courts, périmètre fermé, critères de sortie vérifiables, **un prompt = un commit**.
@@ -13,7 +14,7 @@ Ce document remplace `PLAN_REFORME_V2.md` de l'ancienne branche. Il est conçu p
 - `development` = v1 complète, auth terminée (sessions, rotation des refresh tokens, suspension, vérification d'email, mot de passe oublié). Elle utilise **déjà des identifiants Int**.
 - L'ancienne branche `refactor/schema-v2-consignation` contient une « Phase 0 » construite sur mon premier schéma : identifiants **UUID**, `fullName`, `passwordHash`. Elle est **incompatible** avec l'auth v1 (`firstname/lastname`, `password`, login par email). Elle est **archivée telle quelle** (jamais fusionnée, jamais supprimée).
 - La v1 stocke ses référentiels dans des **tables lookup** (`Role`, `UserStatus`, …) et ses machines à états dans des **enums**. Le plan garde cette convention.
-- Format des erreurs v1 : `{ "error": "message" }`. Validation : Joi. Préfixe d'API : `/api`. Montants : `Decimal` converti en nombre par `decimal-json.middleware.js`.
+- Format des erreurs v1 : `{ "error": "message" }`. Validation : Joi. Préfixe d'API : `/api/v2`. Montants : `Decimal` converti en nombre par `decimal-json.middleware.js`.
 
 ---
 
@@ -57,8 +58,8 @@ Principe : **modifier le strict nécessaire**. Tout ce qui n'est pas dans ce tab
 | M2 | Rôles : la ligne `FARMER` est **renommée** `SUPPLIER` (même `id`, donc les comptes existants suivent) ; ajout de `AGENT` (niveau 30). `ROOT`, `ADMIN`, `BUYER`, `DRIVER` inchangés | D8 (rôles v2). Les niveaux restent compatibles avec `requireMinLevel` | migration SQL, `seed.js` |
 | M3 | Inscription publique : rôles autorisés `SUPPLIER` et `BUYER` seulement. `DRIVER` n'est plus public : il est créé par un ADMIN et rattaché à une agence | Règle v2 : le livreur appartient à l'agence | `auth.controller.js` (`PUBLIC_ROLES`), `auth.validator.js` |
 | M4 | Inscription : champs optionnels `referralCode`, `farmName`, `buyerType`, `businessName` ; champ obligatoire `acceptTerms: true`. Tout s'exécute dans **une transaction** : utilisateur + profil + acceptation des CGU + parrainage. L'ouverture de session, les jetons et les emails restent **exactement** comme en v1 | CGU obligatoires (RG-13), profils, parrainage | `auth.controller.js` (`register`), `auth.validator.js` |
-| M5 | Suppression de `PATCH /api/v2/auth/me/availability` et de `updateAvailability` | D7 : la disponibilité d'un livreur se déduit (compte ACTIVE et aucune livraison en cours). **Conséquence côté Flutter : pas d'interrupteur « Je suis disponible »** | `auth.routes.js`, `user.controller.js` |
-| M6 | `userToApi`, sélection de `protect` et `userSafeSelect` : retrait de `vehicleType` et `isAvailable`, ajout de `profileVerificationStatus` et `referralCode`. `GET /api/v2/auth/me` renvoie en plus l'objet `profile` du rôle | Cohérence avec M1 | `userApi.js`, `auth.middleware.js`, `admin.controller.js`, `user.controller.js` |
+| M5 | Suppression de `PATCH /api/auth/me/availability` et de `updateAvailability` | D7 : la disponibilité d'un livreur se déduit (compte ACTIVE et aucune livraison en cours). **Conséquence côté Flutter : pas d'interrupteur « Je suis disponible »** | `auth.routes.js`, `user.controller.js` |
+| M6 | `userToApi`, sélection de `protect` et `userSafeSelect` : retrait de `vehicleType` et `isAvailable`, ajout de `profileVerificationStatus` et `referralCode`. `GET /api/auth/me` renvoie en plus l'objet `profile` du rôle | Cohérence avec M1 | `userApi.js`, `auth.middleware.js`, `admin.controller.js`, `user.controller.js` |
 | M7 | `createAdmin` devient `createStaffUser` : crée ADMIN (ROOT seulement), AGENT et DRIVER (ADMIN ou plus), avec leur profil. Correction au passage : l'unicité de l'**email** est vérifiée (la v1 ne vérifie que le téléphone, une collision email donnerait une erreur 500) | Comptes d'équipe v2 | `admin.controller.js`, `admin.validator.js`, `admin.routes.js` |
 | M8 | `errorHandler` : renvoie aussi `code` quand l'erreur en porte un (`{ error, code }`). Ajout **non cassant** | Le client Flutter doit distinguer `INSUFFICIENT_STOCK`, `INVALID_STATE_TRANSITION`, etc. | `error.middleware.js` |
 | M9 | `Media` étendu : **`ownerListingId` conservé** (photos d'annonce, v1) ; ajout des propriétaires `ownerLotId` (photos de lot) et `ownerVerificationDocumentId` (documents), plus `publicId`, `isPrivate`, `position`. **La logique d'avatar ne change pas** : l'avatar reste `ownerUserId`, et les documents ont leur propre propriétaire pour ne jamais être supprimés quand on change d'avatar | Photos suivies par leur propriétaire ; documents d'identité jamais publics | `schema.prisma` |
@@ -86,39 +87,54 @@ Principe : **modifier le strict nécessaire**. Tout ce qui n'est pas dans ce tab
 
 ```
 CONTEXTE
-Projet : agriconnect-backend, branche feature/v2-consignation.
-Stack : Node.js ESM, Express 5, Prisma 6 + MySQL, Joi, Socket.io, Cloudinary, Vitest + supertest.
-Référence schéma : docs/schema.v2.target.prisma (ne jamais le modifier ; c'est la cible).
+Projet : agriconnect-backend, branche feature/dev-v2.
+Stack : Node.js ESM, Express 5, Prisma 6 + MySQL, Joi 18, Socket.io, Cloudinary, Vitest + supertest.
+Source de vérité du schéma : prisma/schema.prisma ET docs/schema.v2.target.prisma, toujours IDENTIQUES.
 
 RÈGLES ABSOLUES
 1. Identifiants entiers (Int). Jamais d'UUID. Toute route avec :id passe par coerceIdParam.
-2. Préfixe d'API : /api/v1. Les routes "/me/*" sont /api/v2/auth/me/*.
+2. Préfixe d'API : /api/v2. Dans les prompts, toute route écrite "/api/xxx" se lit "/api/v2/xxx", et "/me/*"
+   est /api/v2/auth/me/*. src/routes/index.js peut être modifié UNIQUEMENT pour monter un nouveau routeur.
 3. Erreurs : res.status(n).json({ error: 'message en français' }) ; erreurs levées :
    Object.assign(new Error('message'), { statusCode: 409, code: 'CODE_MAJUSCULE' }).
    Succès : objet brut. Listes paginées : { items, page, limit, total }.
 4. Validation : Joi via middlewares/validate.middleware.js (lire ce fichier d'abord).
-5. Argent et quantités : Prisma.Decimal et utils/money.js. JAMAIS de calcul d'argent en Number.
+5. Argent et quantités : Prisma.Decimal et utils/money.js. JAMAIS de calcul d'argent en Number
+   (un DTO peut convertir en Number pour l'AFFICHAGE seulement).
 6. Lookups : getLookupId('role', 'BUYER') (utils/lookupCache.js). Pas de "mode: insensitive" (MySQL).
 7. Commentaires et messages en français, dans le style des fichiers existants :
    le commentaire explique le POURQUOI, pas le quoi.
 8. NE PAS MODIFIER le module auth (liste "Intouchable" du plan), sauf si le prompt l'écrit.
 9. Aucune dépendance npm nouvelle, sauf si le prompt la nomme.
-10. Migrations : `npx prisma migrate dev --create-only --name <nom>`, relis le SQL généré,
-    puis `npx prisma migrate dev`. SQL écrit à la main uniquement s'il est demandé.
-    Jamais de `migrate reset` hors base de développement/test.
-11. Tests Vitest obligatoires dans chaque prompt. `npm test` DOIT être vert avant de commiter.
-    Si le schéma gagne une table métier, l'ajouter à BUSINESS_TABLES (tests/helpers/db.js).
-12. Périmètre : modifie UNIQUEMENT les fichiers que le prompt autorise. Si un fichier hors liste
-    te semble nécessaire, ARRÊTE-TOI et demande.
-13. Si une instruction est ambiguë ou contredit le code existant : ARRÊTE-TOI et pose la question.
-    N'invente pas.
-14. Avant d'écrire du code : lis les fichiers cités par le prompt, et uniquement ceux-là.
+10. Migrations : `prisma migrate dev` est interactif et échoue sans terminal. Procédure :
+    a) modifie prisma/schema.prisma ; b) enregistre l'ANCIEN schéma hors du dépôt (git show HEAD:prisma/schema.prisma) ;
+    c) génère le SQL : npx prisma migrate diff --from-schema-datamodel <ancien> --to-schema-datamodel prisma/schema.prisma --script ;
+    d) crée prisma/migrations/<AAAAMMJJHHMMSS>_<nom>/migration.sql avec ce SQL (noms de tables en casse mixte comme les
+       migrations existantes : User, StockLot...) ; e) npx prisma migrate deploy ; f) npx prisma generate.
+    Si le SQL contient un DROP que le prompt n'annonce pas : ARRÊTE-TOI. Jamais de `migrate reset` hors base de développement
+    ou de test.
+11. Schéma : tout changement de prisma/schema.prisma est recopié à l'identique dans docs/schema.v2.target.prisma, dans le
+    MÊME commit. Si un prompt suppose un modèle ou un champ absent du schéma : ARRÊTE-TOI et demande ; ne le crée pas de ta
+    propre initiative.
+12. Tests : Vitest obligatoire. `npm test` DOIT être entièrement vert avant de commiter.
+    INTERDIT : commiter avec un test rouge ; affaiblir ou contourner un test (relever une limite, retirer une assertion,
+    skip) pour le faire passer. Un test rouge qui semble préexistant : vérifie avec `git stash`, puis ARRÊTE-TOI, ne
+    commite pas et explique.
+    Toute nouvelle table est ajoutée à BUSINESS_TABLES (données de test) ou REFERENCE_TABLES (référentiel seedé) dans
+    tests/helpers/db.js.
+13. Périmètre : modifie UNIQUEMENT les fichiers que le prompt autorise. Si un fichier hors liste te semble nécessaire,
+    ARRÊTE-TOI et demande.
+14. Si une instruction est ambiguë ou contredit le code existant : ARRÊTE-TOI et pose la question. N'invente pas.
+15. Avant d'écrire du code : lis les fichiers cités par le prompt, et uniquement ceux-là.
 
 FIN DE PROMPT (toujours)
-a) npm test  -> tout vert.   b) npx prisma validate  -> OK.
-c) git status puis git diff --stat : vérifie qu'aucun fichier hors périmètre n'a changé.
-d) Commit unique avec le gabarit ci-dessous.
-e) Affiche : hash du commit, 5 lignes de résumé, liste des tests ajoutés, points douteux.
+a) npm test -> tout vert.   b) npx prisma validate -> OK.
+c) Si le schéma a changé : npm run db:drift -> code 0. Un écart qui ne concerne QUE la casse des noms de tables
+   (artefact Windows, lower_case_table_names=1) se signale mais ne bloque pas ; tout autre écart : ARRÊTE-TOI.
+d) git status puis git diff --stat : vérifie qu'aucun fichier hors périmètre n'a changé.
+e) Commit unique avec le gabarit ci-dessous.
+f) Termine par UN SEUL bloc final intitulé "RÉSUMÉ <ID du prompt>" contenant : la sortie de `git log -1 --oneline`
+   (copiée, jamais écrite de mémoire), 5 lignes de résumé, les tests ajoutés, les points douteux. RIEN après ce bloc.
 ```
 
 ### Gabarit de commit (la description documente la diff)
@@ -153,6 +169,7 @@ Le corps doit être rédigé **à partir de `git diff --cached`** : pas de gén�
 3. Relis `git show --stat` et le diff. Lance `npm test`. Vérifie les critères d'acceptation.
 4. Si le résultat dérape : `git reset --hard HEAD~1`, reformule le prompt (plus précis), relance.
 5. Prompt suivant seulement quand le commit est propre.
+6. Quand tu me transmets la réponse d'OpenCode, copie UNIQUEMENT le bloc final « RÉSUMÉ <ID> » (jamais les messages intermédiaires) : les points douteux y sont tous.
 
 ---
 
@@ -163,13 +180,14 @@ Le corps doit être rédigé **à partir de `git diff --cached`** : pas de gén�
 | 0 — Socle | P0.0 à P0.4 | Branche, docs, retrait marketplace, compte aligné v2, schéma de domaine |
 | 1 — Comptes | P1.1 à P1.6 | CGU FR/EN, inscription v2, comptes d'équipe, agents et audit, profils, vérification |
 | 2 — Lots et annonces | P2.1 à P2.6 | Référentiels admin, lots du promoteur, service de stock, validation et qualité, annonces publiées par l'équipe, catalogue acheteur |
+| S — Stabilisation | S1 à S4 | Schéma réconcilié et contrôle de dérive, fiabilité des tests, règles de péremption, profils manquants |
 | 3 — Commandes | P3.1 à P3.5 | Messagerie REST puis temps réel, moteur de prix, devis, cycle de vie |
 | 4 — Argent | P4.1 à P4.2 | Paiements manuels idempotents, reversements |
 | 5 — Livraison | P5.1 à P5.3 | Agences et tarifs, création des livraisons, dispatch livreur |
 | 6 — Équipe et jobs | P6.1 à P6.4 | Parrainage, indemnisation, tâches planifiées, tableau de bord et audit |
 | 7 — Finition | P7.1 à P7.3 | Confidentialité, documentation, vérification finale |
 
-**32 commits** après le commit de documentation. Ordre strict : chaque prompt suppose les précédents terminés.
+**36 commits** après le commit de documentation (32 prompts du plan + 4 de stabilisation). Ordre strict : chaque prompt suppose les précédents terminés.
 
 ---
 
@@ -238,7 +256,7 @@ src/sockets/chat.socket.js, tests/helpers/factory.js, tests/helpers/db.js.
 À NE PAS TOUCHER : prisma/schema.prisma, utils/distance.js, utils/money.js, tout le module auth.
 
 Critères : npm test vert ; le serveur démarre ; GET /health répond 200 ;
-GET /api/v2/listings répond 404.
+GET /api/listings répond 404.
 Commit : refactor(api): remove the v1 marketplace modules (listings, orders, conversations, deliveries)
 ```
 
@@ -284,7 +302,7 @@ isAvailable, vehicleType ou FARMER.
 10. error.middleware.js : errorHandler ajoute `code` à la réponse quand err.code est une chaîne
     (réponse { error, code }). Sans code : réponse inchangée.
 11. Tests : remplacer FARMER par SUPPLIER partout ; supprimer les cas disponibilité ;
-    AJOUTER : PATCH /api/v2/auth/me/availability -> 404 ; register avec role DRIVER ou FARMER -> 400 ;
+    AJOUTER : PATCH /api/auth/me/availability -> 404 ; register avec role DRIVER ou FARMER -> 400 ;
     GET /me contient profileVerificationStatus = 'UNVERIFIED' et emailVerified indépendant ;
     errorHandler renvoie code quand fourni.
 
@@ -367,15 +385,15 @@ prisma/seed.js, modèles LegalDocument* dans prisma/schema.prisma.
 - src/utils/legal.js : resolveLocale(req) = ?lang= > en-tête Accept-Language (fr|en) > 'fr' ;
   getCurrentVersion(code) = version PUBLISHED du document ; REQUIRED_DOCUMENTS_BY_ROLE =
   { BUYER: ['CGU','BUYER_TERMS'], SUPPLIER: ['CGU','SUPPLIER_CONSIGNMENT_TERMS'] }.
-- src/controllers/legal.controller.js + src/routes/legal.routes.js (monté sur /api/v2/legal, PUBLIC) :
-  GET /api/v2/legal -> liste des documents courants { code, label, version, publishedAt } ;
-  GET /api/v2/legal/:code?lang= -> { code, version, locale, title, content, publishedAt } ;
+- src/controllers/legal.controller.js + src/routes/legal.routes.js (monté sur /api/legal, PUBLIC) :
+  GET /api/legal -> liste des documents courants { code, label, version, publishedAt } ;
+  GET /api/legal/:code?lang= -> { code, version, locale, title, content, publishedAt } ;
   si la langue demandée n'existe pas, repli sur 'fr' et renvoyer le champ locale réel ;
   404 si le code est inconnu ou sans version publiée.
 - Admin (ADMIN et plus), dans admin.routes.js :
-  POST /api/v2/admin/legal/:code/versions { version, translations:[{locale,title,content}] }
+  POST /api/admin/legal/:code/versions { version, translations:[{locale,title,content}] }
   crée une version DRAFT ('fr' obligatoire, 'en' facultatif) ;
-  PATCH /api/v2/admin/legal/versions/:id/publish passe la version en PUBLISHED et archive la
+  PATCH /api/admin/legal/versions/:id/publish passe la version en PUBLISHED et archive la
   précédente du même document, dans une transaction ; 409 si déjà publiée.
 - prisma/seed-data/legal.js : pour chacun des 3 documents, une version '1.0' PUBLISHED avec une
   traduction fr ET en. Textes COURTS et PROVISOIRES, commençant par la ligne
@@ -434,7 +452,7 @@ Objectif : créer ADMIN, AGENT et DRIVER par l'API.
 Lis d'abord : src/controllers/admin.controller.js (createAdmin), src/validators/admin.validator.js,
 src/routes/admin.routes.js, tests/integration (tests admin existants).
 
-1. Remplace createAdmin par createStaffUser (POST /api/v2/admin/users, mêmes protections protect +
+1. Remplace createAdmin par createStaffUser (POST /api/admin/users, mêmes protections protect +
    requireMinLevel(50)). Corps : firstname, lastname, phone, email, password (mêmes règles que
    l'inscription), role ∈ ADMIN|AGENT|DRIVER, et selon le rôle :
    AGENT -> agent: { displayName (défaut "Équipe AgriConnect"), capabilities: [codes] } ;
@@ -470,8 +488,8 @@ AgentCapability, AgentCapabilityLink, AuditLog dans prisma/schema.prisma.
   où db est prisma ou un client de transaction. Il ne masque jamais ses erreurs. Convention
   d'action : MAJUSCULES_AVEC_UNDERSCORES (ex. LOT_VALIDATED).
 - Routes admin (ADMIN et plus), dans admin.routes.js :
-  GET /api/v2/admin/agents ; PATCH /api/v2/admin/agents/:id { displayName?, isActive?, capabilities?, autonomy? } ;
-  POST /api/v2/admin/agents/ai { displayName, aiProvider, aiModel, aiConfig?, autonomy } crée un agent AI
+  GET /api/admin/agents ; PATCH /api/admin/agents/:id { displayName?, isActive?, capabilities?, autonomy? } ;
+  POST /api/admin/agents/ai { displayName, aiProvider, aiModel, aiConfig?, autonomy } crée un agent AI
   SANS utilisateur (autonomy par défaut SUGGEST_ONLY).
 - Règle C6 : un agent kind AI ne peut jamais recevoir la capacité PAYMENT_FOLLOWUP (400).
 - Chaque création ou modification d'agent écrit un AuditLog dans la même transaction.
@@ -490,13 +508,13 @@ Objectif : exposer et modifier le profil du rôle ; gérer les comptes de paieme
 Lis d'abord : src/utils/userApi.js, src/controllers/user.controller.js, src/routes/auth.routes.js,
 modèles SupplierProfile, BuyerProfile, DriverProfile, PayoutAccount.
 
-1. GET /api/v2/auth/me : ajouter l'objet `profile` (SupplierProfile, BuyerProfile ou DriverProfile
+1. GET /api/auth/me : ajouter l'objet `profile` (SupplierProfile, BuyerProfile ou DriverProfile
    selon le rôle, sinon null) via le paramètre `extra` de userToApi. Rien d'autre ne change.
-2. PATCH /api/v2/auth/me/profile (protect) : SUPPLIER { farmName, description, zoneId } ;
+2. PATCH /api/auth/me/profile (protect) : SUPPLIER { farmName, description, zoneId } ;
    BUYER { buyerType, businessName, zoneId } ; DRIVER { vehicleType, plateNumber }. Schéma Joi par
    rôle ; zoneId doit exister ; ADMIN/AGENT/ROOT -> 403.
 3. Comptes de paiement (SUPPLIER et BUYER uniquement) : GET, POST, PATCH /:id, DELETE /:id sur
-   /api/v2/auth/me/payout-accounts. Les réponses n'exposent JAMAIS le numéro complet :
+   /api/auth/me/payout-accounts. Les réponses n'exposent JAMAIS le numéro complet :
    `accountNumberMasked` ("••••1234"). isDefault : un seul par utilisateur (transaction qui retire
    l'ancien). Un compte ne peut être modifié ou supprimé que par son propriétaire (404 sinon).
 4. Toutes ces routes se placent dans auth.routes.js APRÈS les routes existantes ; ne modifie pas
@@ -522,16 +540,16 @@ src/middlewares/capability.middleware.js, src/utils/audit.js.
    Étends uploadBufferToCloudinary(buffer, options = {}) de façon RÉTROCOMPATIBLE : sans options,
    comportement identique à aujourd'hui ; avec { folder, type: 'authenticated' } l'envoi est privé et
    la fonction renvoie aussi public_id. Ne modifie pas upload.middleware.js (avatars).
-2. POST /api/v2/auth/me/documents (protect, SUPPLIER ou BUYER) : champ fichier `file`, champ `type`
+2. POST /api/auth/me/documents (protect, SUPPLIER ou BUYER) : champ fichier `file`, champ `type`
    (DocumentType). Crée VerificationDocument (PENDING) et Media (ownerVerificationDocumentId, isPrivate
    true, publicId, mediaType IMAGE ou DOCUMENT selon le mime). Si profileVerificationStatus vaut
-   UNVERIFIED ou REJECTED, il passe à PENDING. GET /api/v2/auth/me/documents liste id, type, status,
+   UNVERIFIED ou REJECTED, il passe à PENDING. GET /api/auth/me/documents liste id, type, status,
    note, createdAt — SANS URL.
 3. Staff (ADMIN et plus, ou AGENT avec USER_VERIFICATION) :
-   GET /api/v2/admin/verifications?status=PENDING (paginé) ;
-   GET /api/v2/admin/verifications/:id : détail + URL SIGNÉE valable 10 minutes (utilise l'API du SDK
+   GET /api/admin/verifications?status=PENDING (paginé) ;
+   GET /api/admin/verifications/:id : détail + URL SIGNÉE valable 10 minutes (utilise l'API du SDK
    Cloudinary v2 ; si tu n'es pas certain de la bonne fonction, ARRÊTE-TOI et demande) ;
-   PATCH /api/v2/admin/verifications/:id { decision: 'APPROVE'|'REJECT', note } (note obligatoire pour
+   PATCH /api/admin/verifications/:id { decision: 'APPROVE'|'REJECT', note } (note obligatoire pour
    REJECT).
 4. Règle : APPROVE -> document VERIFIED. L'utilisateur devient VERIFIED (profileVerifiedAt,
    profileVerifiedById) quand il a au moins un document VERIFIED et aucun PENDING. REJECT sans
@@ -561,7 +579,7 @@ modèles ProductCategory, Unit, Product, Zone, Hub.
 
 Crée src/controllers/referential.controller.js, src/validators/referential.validator.js et monte
 les routes dans admin.routes.js (ADMIN et plus) :
-GET, POST, PATCH /:id sur /api/v2/admin/categories, /units, /products, /zones, /hubs.
+GET, POST, PATCH /:id sur /api/admin/categories, /units, /products, /zones, /hubs.
 - Pas de DELETE : on désactive (isActive=false via PATCH). Les listes acceptent ?active=true|false et
   sont paginées { items, page, limit, total }.
 - Unicité : code (catégories, unités), couple (categoryId, name) pour les produits, name pour les zones ;
@@ -583,21 +601,21 @@ Lis d'abord : src/middlewares/upload.middleware.js, src/utils/cloudinaryUpload.j
 modèles StockLot, Media, Product.
 
 À CRÉER : src/controllers/supplierLot.controller.js, src/routes/supplier.routes.js (monté sur
-/api/v2/supplier, protect + requireRole('SUPPLIER')), src/validators/lot.validator.js,
+/api/supplier, protect + requireRole('SUPPLIER')), src/validators/lot.validator.js,
 src/utils/dto/lot.dto.js (fonctions lotToSupplierDto et lotToStaffDto). Le catalogue acheteur n'utilise PAS les lots : il utilise les annonces (P2.5, P2.6).
 
 Routes :
-- POST /api/v2/supplier/lots (multipart, champ `images`, 5 maximum, via upload.array) avec productId, zoneId,
+- POST /api/supplier/lots (multipart, champ `images`, 5 maximum, via upload.array) avec productId, zoneId,
   agreedUnitPrice, quantity, storageType (SUPPLIER_SITE|HUB), hubId (obligatoire si HUB, actif et
   acceptsDropoff), pickupAddress + pickupLatitude + pickupLongitude (obligatoires si SUPPLIER_SITE),
   expiresAt (obligatoire si le produit est périssable, date future), harvestedAt?, packagingNote?, qualityNote?.
   Création dans une transaction : StockLot avec quantityInitial = quantityAvailable = quantity, statut
   PENDING_VALIDATION ; lotCode = 'LOT-' + id sur 6 chiffres, écrit juste après l'insertion ; upload des images
   puis lignes Media (ownerLotId, position, isPrimary pour la première).
-- GET /api/v2/supplier/lots (paginé, filtre ?status=) ; GET /api/v2/supplier/lots/:id (404 si le lot n'est pas à lui).
-- PATCH /api/v2/supplier/lots/:id : autorisé SEULEMENT en PENDING_VALIDATION (409 INVALID_STATE_TRANSITION sinon),
+- GET /api/supplier/lots (paginé, filtre ?status=) ; GET /api/supplier/lots/:id (404 si le lot n'est pas à lui).
+- PATCH /api/supplier/lots/:id : autorisé SEULEMENT en PENDING_VALIDATION (409 INVALID_STATE_TRANSITION sinon),
   champs modifiables : prix, quantité (réécrit quantityInitial et quantityAvailable), dates, notes.
-- DELETE /api/v2/supplier/lots/:id : autorisé SEULEMENT en PENDING_VALIDATION ou REJECTED (suppression définitive
+- DELETE /api/supplier/lots/:id : autorisé SEULEMENT en PENDING_VALIDATION ou REJECTED (suppression définitive
   du lot et de ses photos Media, aucun mouvement de stock) ; tout autre statut -> 409 (utiliser le retrait, P2.4).
 - DTO fournisseur : lotCode, produit, les quatre quantités, prix, statut, rejectionReason, images, dates.
   JAMAIS de donnée acheteur.
@@ -653,23 +671,23 @@ Objectif : l'équipe valide, rejette, retourne les lots, note leur qualité et c
 Lis d'abord : src/services/stock.service.js, src/utils/dto/lot.dto.js, src/middlewares/capability.middleware.js,
 src/utils/audit.js, src/controllers/supplierLot.controller.js.
 
-Crée src/controllers/staffLot.controller.js et src/routes/staff.routes.js (monté sur /api/v2/staff, protect +
+Crée src/controllers/staffLot.controller.js et src/routes/staff.routes.js (monté sur /api/staff, protect +
 requireCapability('STOCK_VALIDATION') pour les routes de ce prompt). Routes :
-- GET /api/v2/staff/lots?status=&supplierId=&productId= (paginé, DTO staff avec identité du fournisseur) ;
-  GET /api/v2/staff/lots/:id.
-- POST /api/v2/staff/lots : création au nom d'un fournisseur (mêmes champs que P2.2 + supplierUserId) ;
+- GET /api/staff/lots?status=&supplierId=&productId= (paginé, DTO staff avec identité du fournisseur) ;
+  GET /api/staff/lots/:id.
+- POST /api/staff/lots : création au nom d'un fournisseur (mêmes champs que P2.2 + supplierUserId) ;
   createdByAgentId = req.agent.id si l'acteur est un agent.
-- POST /api/v2/staff/lots/:id/validate : exige PENDING_VALIDATION et que le fournisseur ait
+- POST /api/staff/lots/:id/validate : exige PENDING_VALIDATION et que le fournisseur ait
   profileVerificationStatus VERIFIED (sinon 409, code NOT_VERIFIED) ; appelle receiveLot ; renseigne
   validatedAt et validatedByAgentId ; AuditLog LOT_VALIDATED.
-- POST /api/v2/staff/lots/:id/reject { reason } : PENDING_VALIDATION -> REJECTED ; reason obligatoire ; audit.
-- POST /api/v2/staff/lots/:id/return { reason } : AVAILABLE ou FULLY_RESERVED sans réservation -> RETURNED ; audit.
-- POST /api/v2/supplier/lots/:id/withdraw (côté fournisseur) : autorisé si quantityReserved = 0 et lot AVAILABLE ->
+- POST /api/staff/lots/:id/reject { reason } : PENDING_VALIDATION -> REJECTED ; reason obligatoire ; audit.
+- POST /api/staff/lots/:id/return { reason } : AVAILABLE ou FULLY_RESERVED sans réservation -> RETURNED ; audit.
+- POST /api/supplier/lots/:id/withdraw (côté fournisseur) : autorisé si quantityReserved = 0 et lot AVAILABLE ->
   WITHDRAWN via returnAvailable ; audit.
-- GET /api/v2/staff/stock-movements?lotId= (paginé).
-- POST /api/v2/staff/lots/:id/quality-checks { grade: 'A'|'B'|'C', notes? } : lot PENDING_VALIDATION, AVAILABLE ou
+- GET /api/staff/stock-movements?lotId= (paginé).
+- POST /api/staff/lots/:id/quality-checks { grade: 'A'|'B'|'C', notes? } : lot PENDING_VALIDATION, AVAILABLE ou
   FULLY_RESERVED ; crée un LotQualityCheck (inspecteur = utilisateur, + agent si présent), met StockLot.qualityGrade à
-  la dernière note ; audit LOT_QUALITY_CHECKED. GET /api/v2/staff/lots/:id/quality-checks : historique.
+  la dernière note ; audit LOT_QUALITY_CHECKED. GET /api/staff/lots/:id/quality-checks : historique.
 Table des transitions de lot dans src/services/lot.state.js ; toute transition interdite -> 409
 INVALID_STATE_TRANSITION.
 Tests : validation d'un lot ; refus si fournisseur non vérifié ; transitions invalides ; mouvement RECEIVED créé ;
@@ -694,7 +712,7 @@ ListingStatus, StockLot, Media.
 À CRÉER : src/services/listing.service.js, src/controllers/staffListing.controller.js,
 src/validators/listing.validator.js, src/utils/dto/listing.dto.js (listingToStaffDto) ; routes dans staff.routes.js
 (capability LISTING_MANAGEMENT ; ADMIN et ROOT toujours autorisés).
-- POST /api/v2/staff/listings (multipart facultatif, champ `images`, 5 maximum) { lotIds:[id], title, description?,
+- POST /api/staff/listings (multipart facultatif, champ `images`, 5 maximum) { lotIds:[id], title, description?,
   unitPrice?, zoneId? } :
   * AU MVP une annonce = EXACTEMENT UN lot (400 'Une annonce correspond à un seul lot' sinon) ; le lot doit être
     AVAILABLE avec quantityAvailable > 0 ; un lot déjà relié à une annonce (quel que soit son statut) -> 409
@@ -705,11 +723,11 @@ src/validators/listing.validator.js, src/utils/dto/listing.dto.js (listingToStaf
   * photos : celles envoyées ; sinon copie des photos du lot (nouvelles lignes Media ownerListingId reprenant url et
     publicId, isPrivate false) ;
   * crée la ligne ListingLot ; createdByUserId = utilisateur, createdByAgentId = req.agent?.id ; audit LISTING_CREATED.
-- PATCH /api/v2/staff/listings/:id { title, description, unitPrice, zoneId } : annonce DRAFT, ACTIVE ou INACTIVE ; tout
+- PATCH /api/staff/listings/:id { title, description, unitPrice, zoneId } : annonce DRAFT, ACTIVE ou INACTIVE ; tout
   changement de unitPrice est écrit dans l'audit avec ancienne et nouvelle valeur (metadata).
-- POST /api/v2/staff/listings/:id/publish : DRAFT ou INACTIVE -> ACTIVE si le lot est AVAILABLE avec stock > 0 ;
-  publishedAt ; audit LISTING_PUBLISHED. POST /api/v2/staff/listings/:id/unpublish : ACTIVE -> INACTIVE ; audit.
-- GET /api/v2/staff/listings?status=&productId=&supplierId= (paginé) ; GET /api/v2/staff/listings/:id : DTO staff avec le lot et
+- POST /api/staff/listings/:id/publish : DRAFT ou INACTIVE -> ACTIVE si le lot est AVAILABLE avec stock > 0 ;
+  publishedAt ; audit LISTING_PUBLISHED. POST /api/staff/listings/:id/unpublish : ACTIVE -> INACTIVE ; audit.
+- GET /api/staff/listings?status=&productId=&supplierId= (paginé) ; GET /api/staff/listings/:id : DTO staff avec le lot et
   le promoteur.
 - Statut automatique : listing.service exporte syncListingsForLot(tx, lotId) : annonce ACTIVE dont tous les lots sont
   SOLD_OUT -> SOLD ; dont tous les lots sont EXPIRED, RETURNED, WITHDRAWN ou REJECTED -> INACTIVE.
@@ -729,14 +747,14 @@ Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
 Objectif : l'acheteur ne voit que les annonces ACTIVE, sans aucune fuite d'identité ni de donnée interne.
 Lis d'abord : src/utils/dto/listing.dto.js, modèles Listing, ListingLot, StockLot, Product, Zone, Media.
 
-Crée src/controllers/catalog.controller.js, src/routes/catalog.routes.js (monté sur /api/v2/catalog, protect ;
+Crée src/controllers/catalog.controller.js, src/routes/catalog.routes.js (monté sur /api/catalog, protect ;
 rôles BUYER, AGENT, ADMIN, ROOT) et ajoute listingToBuyerDto dans listing.dto.js.
-- GET /api/v2/catalog/categories : catégories de produits actives.
-- GET /api/v2/catalog/listings?zoneId=&categoryId=&q=&sort=price|recent|expiry (paginé) : annonces ACTIVE dont la quantité
+- GET /api/catalog/categories : catégories de produits actives.
+- GET /api/catalog/listings?zoneId=&categoryId=&q=&sort=price|recent|expiry (paginé) : annonces ACTIVE dont la quantité
   disponible est > 0 (somme des quantityAvailable de leurs lots non expirés). Champs : id, reference, title, description,
   category, unit, unitPrice, quantityAvailable, expiresAt (la plus proche), zone:{id,name,city}, images:[url],
   qualityGrade (le plus bas de ses lots).
-- GET /api/v2/catalog/listings/:id : même DTO ; 404 si l'annonce n'est pas ACTIVE.
+- GET /api/catalog/listings/:id : même DTO ; 404 si l'annonce n'est pas ACTIVE.
 INTERDIT dans toute réponse de ce module : lotId, lotCode, supplierId, farmName, agreedUnitPrice, supplierUnitPrice,
 pickupAddress, pickupLatitude, pickupLongitude, firstname, lastname, phone, email, createdByUserId, createdByAgentId,
 validatedByAgentId.
@@ -750,7 +768,160 @@ Commit: feat(catalog): expose published listings to buyers without internal data
 
 ---
 
+## BLOC S — Stabilisation (à faire AVANT P3.1)
+
+Origine : revue du code P0 à P2.6 (voir l'analyse). Quatre correctifs courts, un commit chacun. **P3.x suppose ce bloc terminé.**
+
+### S0 — Synchroniser la documentation *(manuel, toi)*
+
+```
+# remplace dans docs/ : PLAN_IMPLEMENTATION_V2.md et schema.v2.target.prisma (version RÉCONCILIÉE)
+git add docs
+git commit -m "docs(v2): sync the plan and the reconciled target schema" \
+  -m "Pourquoi : la cible documentee etait en retard sur le schema reel (annonces, qualite) et le plan ignorait le prefixe /api/v2." \
+  -m "Changements : preambule durci (tests, schema, migrations), bloc de stabilisation S1-S4, schema cible reconcilie." \
+  -m "Impact : la cible est volontairement en avance sur prisma/schema.prisma jusqu'a S1."
+```
+
+### S1 — Réconcilier le schéma et contrôler la dérive
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : aligner prisma/schema.prisma sur docs/schema.v2.target.prisma (version réconciliée) avec UNE migration,
+et créer le contrôle de dérive des migrations.
+Lis d'abord : prisma/schema.prisma, docs/schema.v2.target.prisma, package.json, .env.example,
+tests/setup/integration.js, tests/helpers/factory.js, tests/integration/stock.service.test.js (il crée des OrderItem).
+
+Écarts ATTENDUS entre les deux fichiers (et SEULEMENT ceux-là) :
+ a) enum QualityGrade { A B C } ajouté ; LotQualityCheck.grade et StockLot.qualityGrade passent de String à QualityGrade ;
+ b) Conversation : productId / product remplacés par listingId / listing et lotId / lot (+ deux index) ;
+    Product perd la relation conversations ;
+ c) OrderItem : listingId obligatoire + relation + index ; Listing gagne orderItems et conversations ;
+    StockLot gagne conversations.
+1. Vérifie avec `git diff --no-index prisma/schema.prisma docs/schema.v2.target.prisma` que les écarts sont exactement
+   a, b, c. Tout autre écart : ARRÊTE-TOI.
+2. Sécurité des données (base de développement) : exécute
+   SELECT COUNT(*) FROM `OrderItem`;  SELECT DISTINCT `grade` FROM `LotQualityCheck`;
+   SELECT DISTINCT `qualityGrade` FROM `StockLot`;
+   Si OrderItem contient des lignes, ou si une valeur de grade n'est pas A, B ou C : ARRÊTE-TOI et demande (ne supprime rien).
+   (Perdre Conversation.productId est accepté : données de test, décision C4.)
+3. Copie docs/schema.v2.target.prisma sur prisma/schema.prisma.
+4. Migration `v2_reconcile` selon la règle 10 du préambule. SQL attendu : colonnes grade et qualityGrade en ENUM('A','B','C') ;
+   Conversation : ajout de listingId et lotId (index + clés étrangères), suppression de productId (clé étrangère + colonne) ;
+   OrderItem : ajout de listingId NOT NULL (+ clé étrangère + index). Ajoute EN TÊTE du SQL :
+   DELETE FROM `OrderItem`;
+   (nécessaire pour ajouter une colonne obligatoire ; la table doit être vide, vérifié à l'étape 2). Aucun autre DROP.
+5. Adapte le code et les tests : toute création d'OrderItem doit fournir listingId. Ajoute à tests/helpers/factory.js une
+   fonction createListingForLot(lot, overrides) qui crée une annonce ACTIVE reliée au lot (ListingLot) avec les valeurs minimales
+   valides, et utilise-la dans les tests qui créent des OrderItem. Les comparaisons de grade ('A', 'B', 'C') ne changent pas.
+6. Contrôle de dérive : crée scripts/check-drift.js (charge .env avec dotenv ; exige SHADOW_DATABASE_URL, sinon message d'aide
+   et code de sortie 2 ; exécute avec child_process.spawnSync, sans shell :
+   npx prisma migrate diff --from-migrations prisma/migrations --to-schema-datamodel prisma/schema.prisma
+   --shadow-database-url <url> --exit-code ; renvoie le code de sortie). Ajoute le script npm "db:drift". Documente
+   SHADOW_DATABASE_URL dans .env.example (base VIDE dédiée, utilisateur MySQL avec droits CREATE et DROP).
+   Lance `npm run db:drift` : code 0 attendu. Si l'écart ne concerne que la casse des noms de tables (Windows), dis-le et continue.
+Critères : npm test vert ; prisma validate OK ; migrate deploy sur base vierge OK ; diff vide entre prisma/schema.prisma et
+docs/schema.v2.target.prisma.
+Commit : refactor(db): reconcile the schema with the v2 target (listing links, quality grade enum, drift check)
+```
+
+### S2 — Fiabiliser les tests et corriger validate()
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : une suite de tests isolée et un validate() correct pour les requêtes (query).
+Lis d'abord : tests/helpers/db.js, tests/setup/*.js, tests/integration/referential.test.js, prisma/seed.js,
+src/middlewares/validate.middleware.js, src/validators/admin.validator.js, tests/unit/.
+
+1. prisma/seed-data/referentials.js : exporte PRODUCT_CATEGORIES et UNITS (les tableaux { code, label } actuellement écrits
+   dans seed.js) ; seed.js les importe à la place de ses listes en ligne. Même contenu, même comportement.
+2. tests/helpers/db.js : exporte BUSINESS_TABLES et REFERENCE_TABLES (Role, UserStatus, MediaType, MimeType, DeliveryMode,
+   ListingStatus, ProductCategory, Unit, AgentCapability, PlatformSetting, LegalDocument, LegalDocumentVersion,
+   LegalDocumentTranslation). Dans le nettoyage entre tests, après les DELETE des tables métier : supprimer les lignes de
+   ProductCategory et de Unit dont le code n'appartient pas aux listes seedées. Le nettoyage reste en DELETE (pas TRUNCATE).
+3. tests/static/test-tables.test.js : lit prisma/schema.prisma (modèles : lignes `model Nom {`), vérifie que CHAQUE modèle est dans
+   exactement UNE des deux listes, et qu'aucune table des listes n'est absente du schéma. Le message d'échec nomme le modèle fautif.
+4. tests/integration/referential.test.js : retire le contournement `limit=100` ajouté en P2.4 ; le test doit passer grâce au
+   nettoyage du point 2. Ne change aucune assertion.
+5. validate.middleware.js : sous Express 5, req.query est un accesseur sans setter. Pour property === 'query', écris la valeur
+   validée avec Object.defineProperty(req, 'query', { value, writable: true, configurable: true, enumerable: true }) ;
+   pour 'body' et 'params', garde l'affectation actuelle. Nouveau tests/unit/validate-middleware.test.js : mini-application
+   Express avec une route GET validée en query : '5' devient 5 ; un champ inconnu est supprimé ; une valeur invalide renvoie 400
+   { error: 'Données invalides', details }.
+6. admin.validator.js : remplace helpers.error('agency.unknown') et helpers.error('agency.inactive') (et équivalents dans le
+   même fichier) par helpers.message({ custom: '...' }) avec un texte français (ex. 'Agence introuvable', 'Agence inactive').
+   Ajoute un test : création d'un DRIVER avec un agencyId inconnu renvoie 400 avec un message en français.
+Ne modifie aucun contrôleur existant.
+Critères : npm test vert DEUX FOIS de suite (lance-le deux fois) ; le test statique échoue si on retire une table d'une liste
+(vérifie-le à la main, puis annule).
+Commit : test(infra): guarantee test isolation and fix query validation under Express 5
+```
+
+### S3 — Règles de péremption du stock
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : corriger la gestion de la péremption (P2.3) avant que les commandes ne s'appuient dessus.
+Lis d'abord : src/services/stock.service.js, src/services/listing.service.js, tests/unit/stock.service.test.js,
+tests/integration/stock.service.test.js, tests/integration/staff-listings.test.js.
+
+Problèmes (actuel -> attendu) :
+1. computeLotStatus donne la priorité à EXPIRED sur SOLD_OUT. Nouvel ordre ; les statuts REJECTED, RETURNED, WITHDRAWN et
+   PENDING_VALIDATION restent inchangés et ne sont jamais recalculés :
+   - plus rien (disponible = 0 ET réservé = 0) : EXPIRED si quantityLost > 0, sinon SOLD_OUT ;
+   - sinon, si la date d'expiration est passée : FULLY_RESERVED si réservé > 0, sinon EXPIRED ;
+   - sinon : FULLY_RESERVED si disponible = 0, sinon AVAILABLE.
+   Une réservation en cours n'est jamais « périmée » : elle va à son terme.
+2. expireAvailable déplace TOUT le disponible vers perdu (mouvement EXPIRED, comme avant) mais NE FORCE PLUS le statut : il
+   écrit computeLotStatus(lot, maintenant). Il renvoie toujours la quantité perdue (Decimal).
+3. reserve : la condition atomique du updateMany refuse un lot dont la date est passée (ajouter : expiresAt nul OU expiresAt > maintenant).
+   Si count vaut 0, relis le lot : date passée -> erreur 409 code LOT_EXPIRED ; sinon INSUFFICIENT_STOCK comme avant.
+4. releaseReservation et commitSale ne changent pas, mais leurs tests prouvent le comportement attendu.
+Ajoute en commentaire dans stock.service.js : « les tâches d'expiration (P6.3) sélectionnent les lots par quantityAvailable > 0 et
+expiresAt passé, QUEL QUE SOIT leur statut : une réservation libérée peut remettre du disponible dans un lot déjà EXPIRED ».
+Tests : computeLotStatus en tableau (au moins 12 cas, dont : vendu entièrement après la date -> SOLD_OUT ; 60 vendus + 40 perdus ->
+EXPIRED ; réservé + date passée -> FULLY_RESERVED ; disponible + date passée sans réservation -> EXPIRED ; sans date -> jamais EXPIRED) ;
+intégration : reserve sur un lot dont la date est passée mais dont le statut est encore AVAILABLE -> 409 LOT_EXPIRED ;
+expireAvailable avec réservation en cours -> réservé intact, perdu augmenté, statut FULLY_RESERVED ; puis releaseReservation ->
+disponible > 0 et statut EXPIRED ; puis expireAvailable -> tout en perdu ; annonce : lot entièrement vendu après sa date -> annonce SOLD
+(et non INACTIVE). Les 23 + 17 tests existants restent verts (corrige seulement ceux qui encodaient l'ancien comportement, en le disant
+dans le commit).
+Commit : fix(stock): handle expiry with pending reservations and let sold-out win over expired
+```
+
+### S4 — Profils manquants
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : plus aucun SUPPLIER ni BUYER bloqué faute de profil (comptes créés avant P1.2, anciens FARMER devenus SUPPLIER).
+Lis d'abord : src/controllers/user.controller.js (updateMyProfile), src/controllers/supplierLot.controller.js,
+src/controllers/auth.controller.js (register : création de profil), src/utils/userApi.js, package.json,
+tests/integration/user-profile.test.js, tests/integration/supplier-lots.test.js.
+
+1. src/utils/profile.js : ensureProfile(db, user) : SUPPLIER -> upsert de SupplierProfile (farmName = `${firstname} ${lastname}` à la
+   création) ; BUYER -> upsert de BuyerProfile (buyerType RETAILER) ; renvoie le profil. DRIVER : ne crée rien, lève 409 code
+   PROFILE_MISSING 'Livreur sans agence : contactez un administrateur'. ADMIN, AGENT, ROOT : lève 403.
+   (register garde sa propre création en transaction : ne le modifie pas.)
+2. updateMyProfile : au lieu de répondre 404 quand le profil manque, appelle ensureProfile puis applique la mise à jour.
+3. Création de lot (supplierLot.controller) : si le SupplierProfile manque, ensureProfile le crée au lieu d'échouer.
+4. scripts/backfill-profiles.js (script npm "backfill:profiles") : exporte backfillProfiles({ apply }). Sans --apply : mode simulation
+   (compte et affiche, n'écrit rien). Avec --apply : crée les profils manquants des SUPPLIER et BUYER. Les DRIVER sans DriverProfile
+   sont listés, jamais créés. Idempotent. Affiche un résumé chiffré.
+Tests : PATCH /me/profile d'un SUPPLIER sans profil -> 200 et profil créé ; création de lot par un SUPPLIER sans profil -> 201 ;
+BUYER idem ; DRIVER sans profil -> 409 PROFILE_MISSING ; backfillProfiles : simulation sans écriture, apply qui crée, second apply
+qui crée 0 ; compte déjà profilé inchangé.
+Commit : fix(profile): create missing role profiles on demand and add a backfill script
+```
+
+---
+
 ## PHASE 3 — Messagerie, devis, commandes
+
+*Prérequis : le bloc S est terminé (schéma réconcilié : `Conversation.listingId` / `lotId`, `OrderItem.listingId`).*
 
 ### P3.1 — Conversations (REST)
 
@@ -761,19 +932,19 @@ Objectif : conversations client ↔ équipe, jamais acheteur ↔ fournisseur.
 Lis d'abord : src/middlewares/capability.middleware.js, src/utils/audit.js, modèles Conversation, Message.
 
 Crée src/controllers/conversation.controller.js (client), src/controllers/staffConversation.controller.js,
-src/routes/conversation.routes.js (/api/v2/conversations, protect) et complète src/routes/staff.routes.js.
+src/routes/conversation.routes.js (/api/conversations, protect) et complète src/routes/staff.routes.js.
 Client :
-- POST /api/v2/conversations { listingId?, lotId?, content } : BUYER -> type BUYER_SUPPORT (listingId = annonce ACTIVE,
+- POST /api/conversations { listingId?, lotId?, content } : BUYER -> type BUYER_SUPPORT (listingId = annonce ACTIVE,
   facultatif), SUPPLIER -> SUPPLIER_SUPPORT (lotId = un de SES lots, facultatif ; 404 sinon) ;
   crée la conversation ET le premier message (SenderType CUSTOMER) dans une transaction.
-- GET /api/v2/conversations (les siennes, paginé) ; GET /api/v2/conversations/:id/messages (paginé, chronologique,
-  SANS les messages isInternal) ; POST /api/v2/conversations/:id/messages { content }.
+- GET /api/conversations (les siennes, paginé) ; GET /api/conversations/:id/messages (paginé, chronologique,
+  SANS les messages isInternal) ; POST /api/conversations/:id/messages { content }.
 Équipe (capability BUYER_SUPPORT pour type BUYER_SUPPORT, SUPPLIER_SUPPORT pour l'autre ; ADMIN toujours) :
-- GET /api/v2/staff/conversations?status=&unassigned=true&mine=true&escalated=true ;
-- POST /api/v2/staff/conversations/:id/assign (soi-même ; un ADMIN peut désigner un agentId) ;
-- POST /api/v2/staff/conversations/:id/escalate { reason } -> escalatedAt, escalationReason, désassigne ;
-- POST /api/v2/staff/conversations/:id/close ;
-- POST /api/v2/staff/conversations/:id/messages { content, isInternal? } : senderType AGENT, senderUserId = utilisateur,
+- GET /api/staff/conversations?status=&unassigned=true&mine=true&escalated=true ;
+- POST /api/staff/conversations/:id/assign (soi-même ; un ADMIN peut désigner un agentId) ;
+- POST /api/staff/conversations/:id/escalate { reason } -> escalatedAt, escalationReason, désassigne ;
+- POST /api/staff/conversations/:id/close ;
+- POST /api/staff/conversations/:id/messages { content, isInternal? } : senderType AGENT, senderUserId = utilisateur,
   senderAgentId = req.agent?.id.
 Chaque message met à jour lastMessageAt. DTO client : le champ `senderLabel` vaut "Vous" ou "Équipe AgriConnect" ;
 AUCUN identifiant d'agent ni d'utilisateur tiers n'est renvoyé au client. Lecture d'une conversation d'autrui -> 404.
@@ -847,7 +1018,7 @@ src/utils/audit.js, modèles Order, OrderItem, AgencyZone, Hub.
 
 Crée src/controllers/staffOrder.controller.js, src/validators/order.validator.js, src/utils/dto/order.dto.js
 (orderToStaffDto, orderToBuyerDto) et complète staff.routes.js (capability ORDER_PROCESSING).
-POST /api/v2/staff/orders { buyerId, conversationId?, items:[{ listingId, quantity, unitPrice? }], deliveryMode:
+POST /api/staff/orders { buyerId, conversationId?, items:[{ listingId, quantity, unitPrice? }], deliveryMode:
 'HUB_PICKUP'|'AGENCY_DELIVERY', pickupHubId (si HUB_PICKUP), delivery:{ zoneId, address, latitude, longitude }
 (si AGENCY_DELIVERY), notes? }.
 UNE transaction qui :
@@ -885,10 +1056,10 @@ QUOTED -> CONFIRMED | CANCELLED ; CONFIRMED -> PREPARING | CANCELLED ; PREPARING
 READY_FOR_PICKUP -> COMPLETED ; OUT_FOR_DELIVERY -> COMPLETED. Transition interdite -> 409 INVALID_STATE_TRANSITION.
 Crée src/services/order.service.js avec : confirmOrder, cancelOrder, completeOrder, changeStatus (toutes
 transactionnelles, avec AuditLog).
-Routes acheteur (/api/v2/orders, protect + BUYER) : GET /api/v2/orders ; GET /api/v2/orders/:id (404 si pas la sienne) ;
-POST /api/v2/orders/:id/confirm ; POST /api/v2/orders/:id/cancel (seulement QUOTED).
-Routes staff (ORDER_PROCESSING) : GET /api/v2/staff/orders ; GET /api/v2/staff/orders/:id ; PATCH
-/api/v2/staff/orders/:id/status { status, force? } ; POST /api/v2/staff/orders/:id/confirm ; POST /api/v2/staff/orders/:id/cancel.
+Routes acheteur (/api/orders, protect + BUYER) : GET /api/orders ; GET /api/orders/:id (404 si pas la sienne) ;
+POST /api/orders/:id/confirm ; POST /api/orders/:id/cancel (seulement QUOTED).
+Routes staff (ORDER_PROCESSING) : GET /api/staff/orders ; GET /api/staff/orders/:id ; PATCH
+/api/staff/orders/:id/status { status, force? } ; POST /api/staff/orders/:id/confirm ; POST /api/staff/orders/:id/cancel.
 Effets :
 - confirm : refusé si reservedUntil est dépassé (409 'Devis expiré', et libération des réservations) ; sinon
   confirmedAt, reservedUntil = null.
@@ -918,14 +1089,14 @@ modèle Payment.
 1. Crée src/middlewares/humanActor.middleware.js : requireHumanActor refuse (403) si req.agent?.kind === 'AI'.
    Toute route qui déplace de l'argent l'utilise.
 2. Crée src/services/payment.service.js et complète staff.routes.js (capability PAYMENT_FOLLOWUP, ADMIN toujours) :
-   POST /api/v2/staff/orders/:id/payments { amount, method, reference?, paidAt? } avec l'en-tête OBLIGATOIRE
+   POST /api/staff/orders/:id/payments { amount, method, reference?, paidAt? } avec l'en-tête OBLIGATOIRE
    Idempotency-Key (400 sinon). Même clé = même résultat : renvoie le paiement d'origine (HTTP 200) sans doublon,
    même en cas d'appels concurrents (s'appuie sur la contrainte unique ; capture l'erreur P2002 et relis).
    Le paiement est créé CONFIRMED. Refuser un montant <= 0 ou supérieur au solde dû (409 'Montant supérieur au solde').
    Recalcule Order.paymentStatus : somme des paiements CONFIRMED = 0 -> UNPAID, < total -> PARTIALLY_PAID,
    >= total -> PAID. Commande CANCELLED -> 409.
-   GET /api/v2/staff/orders/:id/payments.
-   POST /api/v2/staff/payments/:id/refund (ADMIN et plus) : CONFIRMED -> REFUNDED, recalcul du statut ; audit.
+   GET /api/staff/orders/:id/payments.
+   POST /api/staff/payments/:id/refund (ADMIN et plus) : CONFIRMED -> REFUNDED, recalcul du statut ; audit.
 3. AuditLog PAYMENT_RECORDED et PAYMENT_REFUNDED dans la même transaction.
 Tests : paiement partiel puis complet ; surpaiement 409 ; même clé deux fois -> un seul paiement ; deux requêtes
 simultanées avec la même clé -> un seul paiement ; clé absente 400 ; remboursement ; agent sans capacité 403.
@@ -950,9 +1121,9 @@ modèles SupplierPayout, PayoutAccount.
    - refreshPayoutReadiness(tx, orderId) : ON_HOLD -> READY quand la commande est COMPLETED ET PAID. Appelée
      depuis completeOrder et depuis l'enregistrement d'un paiement.
    - cancelPayoutsForOrder(tx, orderId) : ON_HOLD ou READY -> CANCELLED (annulation de commande, remboursement total).
-2. Fournisseur : GET /api/v2/supplier/payouts (paginé) : montants, statut, référence, dates ; AUCUNE donnée acheteur.
-3. Admin (ADMIN et plus, requireHumanActor) : GET /api/v2/admin/payouts?status= (vue complète avec numéro de compte
-   complet) ; PATCH /api/v2/admin/payouts/:id/pay { reference, payoutAccountId? } : seulement READY (409 sinon) ->
+2. Fournisseur : GET /api/supplier/payouts (paginé) : montants, statut, référence, dates ; AUCUNE donnée acheteur.
+3. Admin (ADMIN et plus, requireHumanActor) : GET /api/admin/payouts?status= (vue complète avec numéro de compte
+   complet) ; PATCH /api/admin/payouts/:id/pay { reference, payoutAccountId? } : seulement READY (409 sinon) ->
    PAID, paidAt, paidById ; audit PAYOUT_PAID.
 Tests : un fournisseur = un reversement ; deux fournisseurs dans une commande = deux reversements aux bons montants ;
 passage READY seulement quand COMPLETED et PAID (les deux ordres d'événements) ; paiement d'un reversement non READY 409 ;
@@ -974,10 +1145,10 @@ Objectif : administrer l'agence de transport, ses zones et ses tarifs.
 Lis d'abord : src/controllers/referential.controller.js, src/utils/audit.js, modèles TransportAgency, AgencyZone.
 
 Crée src/controllers/agency.controller.js, src/validators/agency.validator.js, src/services/agency.service.js et monte
-dans admin.routes.js (ADMIN et plus) : GET, POST, PATCH /:id sur /api/v2/admin/agencies (nom, contact, téléphone,
+dans admin.routes.js (ADMIN et plus) : GET, POST, PATCH /:id sur /api/admin/agencies (nom, contact, téléphone,
 assurance : fournisseur, numéro de police, date d'expiration, isActive) ;
-PUT /api/v2/admin/agencies/:id/zones/:zoneId { baseFee, perKmFee, isActive } ; DELETE du même chemin ;
-GET /api/v2/admin/agencies/:id/drivers.
+PUT /api/admin/agencies/:id/zones/:zoneId { baseFee, perKmFee, isActive } ; DELETE du même chemin ;
+GET /api/admin/agencies/:id/drivers.
 agency.service : findActiveAgencyForZone(zoneId) retourne l'agence active couvrant la zone (au MVP : la première par id) ;
 409 'Zone non couverte' sinon ; 409 'Assurance de l'agence expirée' si insuranceExpiresAt est passée.
 Audit sur chaque modification. Tarifs négatifs refusés.
@@ -995,13 +1166,13 @@ Lis d'abord : src/services/agency.service.js, src/services/pricing.service.js, s
 src/services/order.service.js, modèles Delivery, OrderItem.
 
 Complète staff.routes.js (capability DISPATCH_COORDINATION) :
-POST /api/v2/staff/orders/:id/deliveries : commande AGENCY_DELIVERY en statut PREPARING seulement.
+POST /api/staff/orders/:id/deliveries : commande AGENCY_DELIVERY en statut PREPARING seulement.
 Dans une transaction : regroupe les OrderItem par origine (clé `hub:{id}` si le lot est en hub, sinon `site:{supplierId}`) ;
 pour chaque groupe crée une Delivery : agencyId via findActiveAgencyForZone(order.deliveryZoneId), champs d'enlèvement
 (hub ou lot.pickup*), dropoff = adresse de la commande, distanceKm (Haversine), agencyCost et deliveryFee via
 computeDeliveryFee, insuredValue = somme des lineTotal du groupe, insurancePolicyNumber figé depuis l'agence ;
 renseigne OrderItem.deliveryId. Si des livraisons existent déjà -> 409 (idempotence). Audit DELIVERIES_CREATED.
-GET /api/v2/staff/deliveries?status=&orderId= (paginé).
+GET /api/staff/deliveries?status=&orderId= (paginé).
 Tests : un seul fournisseur -> une livraison dont deliveryFee égale celui du devis ; deux origines -> deux livraisons ;
 refus si la commande n'est pas PREPARING ; refus si déjà créées ; assurance expirée 409 ; insuredValue correcte.
 Commit: feat(delivery): create deliveries per pickup origin with insurance and fee snapshots
@@ -1016,16 +1187,16 @@ Objectif : le livreur choisit ses courses (modèle « pull »), acceptation atom
 Lis d'abord : src/sockets/chat.socket.js, src/services/order.service.js, src/services/payout.service.js,
 modèles Delivery, DriverProfile.
 
-Crée src/controllers/driverDelivery.controller.js, src/routes/driver.routes.js (/api/v2/driver, protect +
+Crée src/controllers/driverDelivery.controller.js, src/routes/driver.routes.js (/api/driver, protect +
 requireRole('DRIVER')) et src/services/delivery.state.js (PENDING -> ACCEPTED -> PICKED_UP -> IN_TRANSIT -> DELIVERED ;
 FAILED depuis PICKED_UP ou IN_TRANSIT ; CANCELLED seulement par le staff).
-- GET /api/v2/driver/deliveries/available : livraisons PENDING sans livreur, de l'agence du livreur, paginées.
+- GET /api/driver/deliveries/available : livraisons PENDING sans livreur, de l'agence du livreur, paginées.
   DTO : adresses, nom et téléphone du destinataire, distance, nature de la marchandise. JAMAIS de prix ni de montant.
-- GET /api/v2/driver/deliveries/mine?status=.
-- POST /api/v2/driver/deliveries/:id/accept : refuse (409) si le livreur a une livraison ACCEPTED, PICKED_UP ou IN_TRANSIT ;
+- GET /api/driver/deliveries/mine?status=.
+- POST /api/driver/deliveries/:id/accept : refuse (409) si le livreur a une livraison ACCEPTED, PICKED_UP ou IN_TRANSIT ;
   acceptation ATOMIQUE : tx.delivery.updateMany({ where:{ id, status:'PENDING', driverId:null, agencyId }, data:{ driverId,
   status:'ACCEPTED', acceptedAt } }) ; count 0 -> 409 'Course déjà prise'.
-- PATCH /api/v2/driver/deliveries/:id/status { status, failureReason? } (propriétaire seulement ; failureReason obligatoire pour
+- PATCH /api/driver/deliveries/:id/status { status, failureReason? } (propriétaire seulement ; failureReason obligatoire pour
   FAILED) ; pickedUpAt et deliveredAt renseignés.
 Synchronisation de la commande dans la même transaction : premier PICKED_UP -> commande OUT_FOR_DELIVERY ; toutes les livraisons
 DELIVERED -> completeOrder (vente validée, reversements prêts via refreshPayoutReadiness).
@@ -1054,10 +1225,10 @@ modèle Referral, PlatformSetting.
    dans la MÊME transaction. Pour le Referral PENDING du filleul : si le parrain est lui-même VERIFIED -> ELIGIBLE, rewardAmount =
    referralBuyerReward (kind BUYER) ou referralSupplierReward (kind SUPPLIER) lu dans PlatformSetting, eligibleAt = maintenant ;
    si le parrain n'est pas vérifié, reste PENDING. Quand un parrain DEVIENT vérifié, réévalue ses filleuls déjà vérifiés.
-2. Utilisateur : GET /api/v2/auth/me/referral -> { code, totals:{ pending, eligible, paid }, referrals:[{ status, kind,
+2. Utilisateur : GET /api/auth/me/referral -> { code, totals:{ pending, eligible, paid }, referrals:[{ status, kind,
    rewardAmount, createdAt, referredFirstname }] } (prénom seul du filleul, rien d'autre).
-3. Admin (ADMIN et plus, requireHumanActor) : GET /api/v2/admin/referrals?status= ; PATCH /api/v2/admin/referrals/:id/pay
-   { reference } (ELIGIBLE -> PAID, paidAt) ; PATCH /api/v2/admin/referrals/:id/reject { reason } (PENDING ou ELIGIBLE -> REJECTED).
+3. Admin (ADMIN et plus, requireHumanActor) : GET /api/admin/referrals?status= ; PATCH /api/admin/referrals/:id/pay
+   { reference } (ELIGIBLE -> PAID, paidAt) ; PATCH /api/admin/referrals/:id/reject { reason } (PENDING ou ELIGIBLE -> REJECTED).
    Transitions invalides 409. Audit.
 Tests : filleul vérifié + parrain vérifié -> ELIGIBLE avec le bon montant ; parrain non vérifié -> reste PENDING puis passe
 ELIGIBLE quand il est vérifié ; paiement unique (double paiement 409) ; rejet motivé ; montant figé même si PlatformSetting change ensuite.
@@ -1076,12 +1247,12 @@ modèle SupplierCompensation.
 1. Crée src/services/compensation.service.js :
    - createForLoss(tx, { lot, quantity, reason, deliveryId?, note? }) : amount = roundMoney(quantity x agreedUnitPrice x
      expiryCompensationRate) ; si le taux vaut 0, ne crée rien ; statut PENDING_APPROVAL ; rate figé.
-2. Staff : POST /api/v2/staff/compensations { lotId, reason, quantity, deliveryId?, note } (capability DISPUTE_HANDLING ; ADMIN
+2. Staff : POST /api/staff/compensations { lotId, reason, quantity, deliveryId?, note } (capability DISPUTE_HANDLING ; ADMIN
    toujours) ; quantité > quantité du lot -> 400.
-3. Admin (ADMIN et plus, requireHumanActor) : GET /api/v2/admin/compensations?status= ; PATCH /:id/approve ; PATCH /:id/reject
+3. Admin (ADMIN et plus, requireHumanActor) : GET /api/admin/compensations?status= ; PATCH /:id/approve ; PATCH /:id/reject
    { note } ; PATCH /:id/pay { reference } ; transitions PENDING_APPROVAL -> APPROVED | REJECTED, APPROVED -> PAID ; invalide ->
    409 ; audit.
-4. Fournisseur : GET /api/v2/supplier/compensations (paginé) : motif, quantité, montant, statut.
+4. Fournisseur : GET /api/supplier/compensations (paginé) : motif, quantité, montant, statut.
 Tests : montant (arrondi XAF) ; taux 0 -> aucune indemnisation ; cycle complet ; paiement d'une indemnisation non approuvée 409 ;
 un AGENT sans capacité 403 ; fournisseur ne voit que les siennes.
 Commit: feat(compensation): compensate suppliers for expired or lost goods with an approval flow
@@ -1100,9 +1271,9 @@ src/services/compensation.service.js, src/utils/audit.js.
 Crée src/jobs/ avec trois fonctions asynchrones exportées, chacune prenant `now` en paramètre (testables) :
 - releaseExpiredReservations(now) : commandes QUOTED avec reservedUntil < now -> annulées (raison 'Devis expiré'), réservations
   libérées, audit avec acteur système.
-- expireLots(now) : lots AVAILABLE ou FULLY_RESERVED dont expiresAt < now et quantityAvailable > 0 -> expireAvailable, puis
-  createForLoss (raison EXPIRED_UNSOLD). Statut EXPIRED seulement si plus rien n'est réservé ; sinon le lot sera retraité à la
-  prochaine exécution quand la réservation aura été résolue.
+- expireLots(now) : lots dont expiresAt < now et quantityAvailable > 0, QUEL QUE SOIT LEUR STATUT (un lot déjà EXPIRED peut avoir
+  récupéré du disponible après l'annulation d'une commande) -> expireAvailable, puis createForLoss (raison EXPIRED_UNSOLD).
+  Le statut est calculé par computeLotStatus (S3), jamais forcé ici.
 - expiryAlerts(now) : lots expirant sous 48 h et assurances d'agence expirant sous 30 jours -> événement socket `alert:expiring`
   vers `staff` (aucune écriture en base).
 src/jobs/index.js : planifie avec node-cron (réservations toutes les 5 minutes, lots toutes les heures, alertes chaque jour à
@@ -1121,12 +1292,12 @@ Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
 Objectif : indicateurs d'exploitation et consultation du journal d'audit.
 Lis d'abord : src/routes/admin.routes.js, modèles Order, StockLot, SupplierPayout, Referral, SupplierCompensation, AuditLog.
 
-1. GET /api/v2/admin/stats?from=&to= (ADMIN et plus) -> { usersByRole, lotsByStatus, ordersByStatus, deliveriesByStatus,
+1. GET /api/admin/stats?from=&to= (ADMIN et plus) -> { usersByRole, lotsByStatus, ordersByStatus, deliveriesByStatus,
    stock:{ available, reserved, sold, lost }, receivables (montant total des commandes CONFIRMED non PAID), pendingPayouts
    (somme netAmount READY et ON_HOLD), pendingCompensations (nombre et montant), eligibleReferrals (nombre et montant),
    grossRevenue } avec grossRevenue = somme(commissionTotal + buyerFee + (deliveryFee - agencyCost)) des commandes COMPLETED
    sur la période. Calculs côté Prisma.Decimal.
-2. GET /api/v2/admin/audit-logs?entityType=&entityId=&actorUserId=&actorAgentId=&from=&to= (paginé, ordre antichronologique).
+2. GET /api/admin/audit-logs?entityType=&entityId=&actorUserId=&actorAgentId=&from=&to= (paginé, ordre antichronologique).
 Tests : jeu de données connu -> chiffres exacts (y compris grossRevenue) ; filtres d'audit ; accès refusé à un AGENT sans rôle admin.
 Commit: feat(admin): add the operations dashboard and audit log browsing
 ```
@@ -1204,7 +1375,7 @@ Les cahiers publiés plus tôt contiennent des hypothèses que le dépôt contre
 | PostgreSQL | **MySQL** |
 | UUID | **Int** autoincrement |
 | express-validator | **Joi** |
-| `/api/v2/v1/...`, `/auth/*`, `/me/*` | `/api/v2/...`, `/api/v2/auth/*`, `/api/v2/auth/me/*` |
+| `/api/v1/...`, `/auth/*`, `/me/*` | `/api/v2/...`, `/api/v2/auth/*`, `/api/v2/auth/me/*` |
 | Login par téléphone | Login par **email** |
 | Réponses `{ data, meta }` | Objet brut ; listes `{ items, page, limit, total }` |
 | Erreurs `{ error:{ code, message } }` | `{ error, code? }` (+ `details` pour la validation Joi) |

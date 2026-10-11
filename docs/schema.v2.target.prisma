@@ -186,6 +186,12 @@ enum SenderType {
   SYSTEM
 }
 
+enum QualityGrade {
+  A
+  B
+  C
+}
+
 enum LegalVersionStatus {
   DRAFT
   PUBLISHED
@@ -394,6 +400,7 @@ model User {
   compensationsApproved SupplierCompensation[]
   stockMovements        StockMovement[]
   auditLogs             AuditLog[]
+  lotQualityChecks      LotQualityCheck[]
   listingsCreated      Listing[]          @relation("ListingCreatedBy")
 
   @@index([roleId])
@@ -629,6 +636,7 @@ model Agent {
   lotsValidated  StockLot[]            @relation("LotValidatedByAgent")
   stockMovements StockMovement[]
   auditLogs      AuditLog[]
+  lotQualityChecks LotQualityCheck[]
   listingsCreated Listing[] @relation("ListingCreatedByAgent")
 
   @@index([kind, isActive])
@@ -732,9 +740,8 @@ model Product {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  lots          StockLot[]
-  conversations Conversation[]
-  listings      Listing[]
+  lots     StockLot[]
+  listings Listing[]
 
   @@unique([categoryId, name])
   @@index([unitId])
@@ -769,6 +776,7 @@ model StockLot {
 
   packagingNote      String?
   qualityNote        String?
+  qualityGrade       QualityGrade?
   harvestedAt        DateTime?
   expiresAt          DateTime?
   status             LotStatus       @default(PENDING_VALIDATION)
@@ -786,11 +794,31 @@ model StockLot {
   movements     StockMovement[]
   orderItems    OrderItem[]
   compensations SupplierCompensation[]
+  qualityChecks LotQualityCheck[]
   listingLots   ListingLot[]
+  conversations Conversation[]
 
   @@index([status, productId, zoneId])
   @@index([supplierId])
   @@index([expiresAt])
+}
+
+// Contrôle qualité d'un lot. Chaque inspection est tracée avec son inspecteur
+// (utilisateur et/ou agent) et la note attribuée. La dnote la plus récente
+// est aussi copiée sur StockLot.qualityGrade pour un accès rapide.
+model LotQualityCheck {
+  id                Int       @id @default(autoincrement())
+  lotId             Int
+  lot               StockLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  grade             QualityGrade
+  notes             String?   @db.Text
+  inspectedByUserId Int?
+  inspectedByUser   User?     @relation(fields: [inspectedByUserId], references: [id])
+  inspectedByAgentId Int?
+  inspectedByAgent  Agent?    @relation(fields: [inspectedByAgentId], references: [id])
+  createdAt         DateTime  @default(now())
+
+  @@index([lotId, createdAt])
 }
 
 // Journal de stock : chaque variation de quantité est tracée.
@@ -840,8 +868,10 @@ model Listing {
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
-  lots ListingLot[]
-  media Media[]
+  lots          ListingLot[]
+  media         Media[]
+  conversations Conversation[]
+  orderItems    OrderItem[]
 
   @@index([statusId])
   @@index([productId])
@@ -870,8 +900,10 @@ model Conversation {
   customer         User               @relation(fields: [customerId], references: [id])
   assignedAgentId  Int?
   assignedAgent    Agent?             @relation(fields: [assignedAgentId], references: [id])
-  productId        Int?
-  product          Product?           @relation(fields: [productId], references: [id])
+  listingId        Int?
+  listing          Listing?           @relation(fields: [listingId], references: [id])
+  lotId            Int?
+  lot              StockLot?          @relation(fields: [lotId], references: [id])
   status           ConversationStatus @default(OPEN)
   subject          String?
   escalatedAt      DateTime?
@@ -883,6 +915,8 @@ model Conversation {
   orders   Order[]
 
   @@index([customerId])
+  @@index([listingId])
+  @@index([lotId])
   @@index([status, lastMessageAt])
   @@index([assignedAgentId, status])
 }
@@ -961,6 +995,8 @@ model OrderItem {
   id                Int        @id @default(autoincrement())
   orderId           Int
   order             Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  listingId         Int
+  listing           Listing    @relation(fields: [listingId], references: [id])
   lotId             Int
   lot               StockLot   @relation(fields: [lotId], references: [id])
   deliveryId        Int?
@@ -976,6 +1012,7 @@ model OrderItem {
   movements StockMovement[]
 
   @@index([orderId])
+  @@index([listingId])
   @@index([lotId])
 }
 
