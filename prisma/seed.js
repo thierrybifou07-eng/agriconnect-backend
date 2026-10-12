@@ -1,4 +1,6 @@
 import pkg from '@prisma/client';
+import { PRODUCT_CATEGORIES, UNITS } from './seed-data/referentials.js';
+
 const { PrismaClient } = pkg;
 const prisma = new PrismaClient();
 
@@ -31,24 +33,8 @@ async function main() {
     { code: 'INACTIVE', label: 'Masquée' },
   ]);
 
-  await upsertByCode('productCategory', [
-    { code: 'CEREALES', label: 'Céréales' },
-    { code: 'LEGUMES', label: 'Légumes' },
-    { code: 'FRUITS', label: 'Fruits' },
-    { code: 'TUBERCULES', label: 'Tubercules' },
-    { code: 'ELEVAGE', label: 'Élevage' },
-    { code: 'AUTRE', label: 'Autre' },
-  ]);
-
-  await upsertByCode('unit', [
-    { code: 'KG', label: 'Kilogramme' },
-    { code: 'TON', label: 'Tonne' },
-    { code: 'BAG', label: 'Sac' },
-    { code: 'CRATE', label: 'Caisse' },
-    { code: 'PIECE', label: 'Pièce' },
-    { code: 'LITER', label: 'Litre' },
-    { code: 'BUNCH', label: 'Botte' },
-  ]);
+  await upsertByCode('productCategory', PRODUCT_CATEGORIES);
+  await upsertByCode('unit', UNITS);
 
   await upsertByCode('agentCapability', [
     { code: 'BUYER_SUPPORT', label: 'Support acheteur' },

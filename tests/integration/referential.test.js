@@ -198,7 +198,7 @@ describe('Catégories', () => {
     expect(actives.body.items.some((c) => c.id === desactivee.body.id)).toBe(false);
     expect(actives.body.items.every((c) => c.isActive === true)).toBe(true);
 
-    const inactives = await client.get('/api/v2/admin/categories?active=false&limit=100').set(authHeader(tokenFor(admin, 'ADMIN')));
+    const inactives = await client.get('/api/v2/admin/categories?active=false').set(authHeader(tokenFor(admin, 'ADMIN')));
     expect(inactives.status, inactives.text).toBe(200);
     expect(inactives.body.items.some((c) => c.id === desactivee.body.id)).toBe(true);
     expect(inactives.body.items.every((c) => c.isActive === false)).toBe(true);

@@ -1,11 +1,13 @@
 import prisma from '../../src/config/prisma.js';
+import { PRODUCT_CATEGORIES, UNITS } from '../../prisma/seed-data/referentials.js';
 
-// Tables métier vidées entre chaque test. Les tables de référence (Role,
-// UserStatus, MediaType, MimeType, DeliveryMode, ProductCategory, Unit,
-// AgentCapability) et la configuration (PlatformSetting, LegalDocument,
-// LegalDocumentVersion, LegalDocumentTranslation) sont volontairement
+// Tables métier vidées entre chaque test. Les tables de référence
+// (REFERENCE_TABLES : Role, UserStatus, ..., LegalDocumentTranslation) et la
+// configuration (PlatformSetting, LegalDocument*) sont volontairement
 // conservées : le seed les remplit et chaque test en a besoin.
-const BUSINESS_TABLES = [
+//
+// Une table métier doit atterrir ici dès qu'elle porte des données de test.
+export const BUSINESS_TABLES = [
   // auth
   'Session',
   'RefreshToken',
@@ -51,6 +53,26 @@ const BUSINESS_TABLES = [
   'AuditLog',
 ];
 
+// Tables de référence et de configuration : préservées entre deux tests, car
+// le seed les remplit une seule fois au démarrage de la suite.
+export const REFERENCE_TABLES = [
+  // référentiels seedés
+  'Role',
+  'UserStatus',
+  'MediaType',
+  'MimeType',
+  'DeliveryMode',
+  'ListingStatus',
+  'ProductCategory',
+  'Unit',
+  'AgentCapability',
+  // configuration et documents juridiques
+  'PlatformSetting',
+  'LegalDocument',
+  'LegalDocumentVersion',
+  'LegalDocumentTranslation',
+];
+
 // DELETE, et non TRUNCATE.
 //
 // TRUNCATE est plus rapide, mais MySQL le refuse sur une table référencée par
@@ -70,6 +92,18 @@ export async function resetDatabase() {
     for (const table of BUSINESS_TABLES) {
       await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\``);
     }
+
+    // Les référentiels ne sont pas vidés, mais les lignes que les tests
+    // ajoutent directement sur ProductCategory et Unit ne doivent pas
+    // survivre au test suivant : elles s'accumuleraient et contamineraient
+    // les listes paginées des routes admin. On ne garde que les codes du
+    // seed (prisma/seed-data/referentials.js).
+    await prisma.productCategory.deleteMany({
+      where: { code: { notIn: PRODUCT_CATEGORIES.map((c) => c.code) } },
+    });
+    await prisma.unit.deleteMany({
+      where: { code: { notIn: UNITS.map((u) => u.code) } },
+    });
   } finally {
     await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
   }

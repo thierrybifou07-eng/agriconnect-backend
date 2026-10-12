@@ -42,7 +42,13 @@ export const createStaffUserSchema = Joi.object({
             select: { code: true },
           });
           const inconnues = codes.filter((code) => !rows.some((r) => r.code === code));
-          if (inconnues.length > 0) return helpers.error('capabilities.unknown', { codes: inconnues });
+          // helpers.message avec texte français : dans un .external(), Joi
+          // force le type d'erreur à 'external' et les messages du bloc
+          // .messages() ci-dessous ne sont PAS hérités par ce champ — le
+          // template du même nom est donc passé en premier argument, le
+          // contexte en second.
+          if (inconnues.length > 0)
+            return helpers.message({ external: 'Capacites inconnues : {{#codes}}' }, { codes: inconnues });
           return codes;
         }),
     }),
@@ -59,8 +65,13 @@ export const createStaffUserSchema = Joi.object({
         .required()
         .external(async (value, helpers) => {
           const agency = await prisma.transportAgency.findUnique({ where: { id: value } });
-          if (!agency) return helpers.error('agency.unknown');
-          if (!agency.isActive) return helpers.error('agency.inactive');
+          // helpers.message avec texte français : dans un .external(), Joi
+          // force le type d'erreur à 'external' et les messages du bloc
+          // .messages() ci-dessous ne sont PAS hérités par ce champ — le
+          // template du même nom est donc passé en premier argument, le
+          // texte en second (voir capabilities plus haut).
+          if (!agency) return helpers.message({ external: '{{#custom}}' }, { custom: 'Agence introuvable' });
+          if (!agency.isActive) return helpers.message({ external: '{{#custom}}' }, { custom: 'Agence inactive' });
           return value;
         }),
       vehicleType: Joi.string().trim().max(50).allow(null).empty(''),
@@ -72,10 +83,7 @@ export const createStaffUserSchema = Joi.object({
   // Joi.forbidden() emet une erreur de type object.unknown : c est ici que son
   // message est traduit, au niveau racine pour couvrir les deux branches.
   'object.unknown': "Champ refuse pour ce role",
-  'capabilities.unknown': 'Capacites inconnues : {{#codes}}',
   'array.unique': 'Une capacite est repete',
-  'agency.unknown': 'Agence introuvable',
-  'agency.inactive': 'Agence inactive',
 });
 
 // POST /api/v2/admin/legal/:code/versions — création d'une version brouillon.

@@ -346,6 +346,48 @@ describe('POST /api/v2/admin/users - creation de comptes staff (ADMIN, AGENT, DR
 
     expect(res.status, res.text).toBe(400);
   });
+
+  // Le refus d agence explique le motif en français dans details : le code
+  // de reponse 400 seul ne dit rien à l équipe sur la cause (agence inexistante
+  // ou désactivée).
+  it('explique en francais le refus d un agencyId inconnu ou inactif', async () => {
+    const { token } = await rootToken();
+
+    const inconnue = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Agence',
+      lastname: 'Inconnue',
+      phone: '+33612345694',
+      email: 'agence-inconnue@example.com',
+      password: 'MotDePasse1!',
+      role: 'DRIVER',
+      driver: { agencyId: 999999 },
+    });
+
+    expect(inconnue.status, inconnue.text).toBe(400);
+    expect(inconnue.body.error).toBe('Données invalides');
+    expect(inconnue.body.details?.some((d) => d.field === 'driver.agencyId' && d.message === 'Agence introuvable')).toBe(
+      true
+    );
+
+    const agence = await prisma.transportAgency.create({
+      data: { name: 'Agence inactive', phone: '+33699999997', isActive: false },
+    });
+
+    const inactive = await client.post('/api/v2/admin/users').set(authHeader(token)).send({
+      firstname: 'Agence',
+      lastname: 'Inactive',
+      phone: '+33612345685',
+      email: 'agence-inactive@example.com',
+      password: 'MotDePasse1!',
+      role: 'DRIVER',
+      driver: { agencyId: agence.id },
+    });
+
+    expect(inactive.status, inactive.text).toBe(400);
+    expect(inactive.body.details?.some((d) => d.field === 'driver.agencyId' && d.message === 'Agence inactive')).toBe(
+      true
+    );
+  });
 });
 
 describe('GET /api/v2/admin/users - filtre profileVerificationStatus', () => {
