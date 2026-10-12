@@ -5,6 +5,7 @@ import legalRoutes from './legal.routes.js';
 import supplierRoutes from './supplier.routes.js';
 import staffRoutes from './staff.routes.js';
 import catalogRoutes from './catalog.routes.js';
+import conversationRoutes from './conversation.routes.js';
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use('/legal', legalRoutes);
 router.use('/supplier', supplierRoutes);
 router.use('/staff', staffRoutes);
 router.use('/catalog', catalogRoutes);
+router.use('/conversations', conversationRoutes);
 
 export default router;

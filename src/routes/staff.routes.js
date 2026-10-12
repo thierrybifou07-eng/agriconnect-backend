@@ -18,6 +18,13 @@ import {
   publishListing,
   unpublishListing,
 } from '../controllers/staffListing.controller.js';
+import {
+  listConversations,
+  assignConversation,
+  escalateConversation,
+  closeConversation,
+  sendStaffMessage,
+} from '../controllers/staffConversation.controller.js';
 import { protect } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
@@ -25,6 +32,11 @@ import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
+import {
+  assignSchema,
+  escalateSchema,
+  staffMessageSchema,
+} from '../validators/conversation.validator.js';
 import Joi from 'joi';
 
 const router = Router();
@@ -38,6 +50,11 @@ const STAFF = [protect, requireCapability('STOCK_VALIDATION')];
 
 // Les routes d'annonces exigent LISTING_MANAGEMENT (AGENT) ou ADMIN/ROOT.
 const STAFF_LISTING = [protect, requireCapability('LISTING_MANAGEMENT')];
+
+// Les conversations exigent AU MOINS UN des deux supports (AGENT) ou ADMIN/ROOT :
+// un agent n'agit ensuite que sur les conversations de son type, ce second
+// contrôle se fait dans le contrôleur (le type est une donnée, pas une route).
+const STAFF_CONVERSATIONS = [protect, requireCapability('BUYER_SUPPORT', 'SUPPLIER_SUPPORT')];
 
 // Sans ce callback, un sixième fichier arrêterait multer avec
 // LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
@@ -103,5 +120,13 @@ router.get('/listings/:id', STAFF_LISTING, getListing);
 router.patch('/listings/:id', STAFF_LISTING, validate(listingUpdateSchema), updateListing);
 router.post('/listings/:id/publish', STAFF_LISTING, publishListing);
 router.post('/listings/:id/unpublish', STAFF_LISTING, unpublishListing);
+
+// Conversations client <-> équipe (P3.1) : un agent n'agit que sur les
+// conversations de son type (vérifié dans le contrôleur).
+router.get('/conversations', STAFF_CONVERSATIONS, listConversations);
+router.post('/conversations/:id/assign', STAFF_CONVERSATIONS, validate(assignSchema), assignConversation);
+router.post('/conversations/:id/escalate', STAFF_CONVERSATIONS, validate(escalateSchema), escalateConversation);
+router.post('/conversations/:id/close', STAFF_CONVERSATIONS, closeConversation);
+router.post('/conversations/:id/messages', STAFF_CONVERSATIONS, validate(staffMessageSchema), sendStaffMessage);
 
 export default router;
