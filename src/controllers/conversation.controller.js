@@ -1,5 +1,6 @@
 import prisma from '../config/prisma.js';
 import { conversationToClientDto, messageToClientDto } from '../utils/dto/conversation.dto.js';
+import { createMessage, createMessageTx, emitNewMessage } from '../services/message.service.js';
 
 // Messagerie client <-> équipe (plan v2, P3.1).
 //
@@ -73,8 +74,13 @@ export const createConversation = async (req, res) => {
     }
   }
 
-  const conversation = await prisma.$transaction(async (tx) => {
-    const cree = await tx.conversation.create({
+  // Le premier message est écrit dans la MÊME transaction que la
+  // conversation (createMessageTx) : un fil sans premier message est un état
+  // intermédiaire que personne ne doit pouvoir observer. L'événement
+  // temps réel part après le commit : émettre dans la transaction enverrait
+  // message:new avant que l'écriture ne soit garantie.
+  const { conversation, message } = await prisma.$transaction(async (tx) => {
+    const conversation = await tx.conversation.create({
       data: {
         type: estAcheteur ? 'BUYER_SUPPORT' : 'SUPPLIER_SUPPORT',
         customerId: req.user.id,
@@ -82,16 +88,15 @@ export const createConversation = async (req, res) => {
         lotId: estAcheteur ? null : lotId,
       },
     });
-    await tx.message.create({
-      data: {
-        conversationId: cree.id,
-        senderType: 'CUSTOMER',
-        senderUserId: req.user.id,
-        content,
-      },
+    const message = await createMessageTx(tx, {
+      conversationId: conversation.id,
+      senderType: 'CUSTOMER',
+      senderUserId: req.user.id,
+      content,
     });
-    return cree;
+    return { conversation, message };
   });
+  emitNewMessage(req.app.get('io'), message);
 
   // Relecture pour renvoyer le DTO complet (lastMessageAt est posé par défaut
   // à l'insertion, le DTO client le reprend tel quel).
@@ -145,25 +150,17 @@ export const listMessages = async (req, res) => {
 
 // POST /api/v2/conversations/:id/messages — répondre dans sa propre
 // conversation. Chaque message (client ou staff) rafraîchit lastMessageAt :
-// c'est lui qui pilote le tri de la liste.
+// c'est lui qui pilote le tri de la liste. L'écriture et l'émission de
+// message:new sont déléguées au service de messagerie.
 export const sendMessage = async (req, res) => {
   const conversation = await conversationDuClient(req, res);
   if (!conversation) return;
 
-  const message = await prisma.$transaction(async (tx) => {
-    const cree = await tx.message.create({
-      data: {
-        conversationId: conversation.id,
-        senderType: 'CUSTOMER',
-        senderUserId: req.user.id,
-        content: req.body.content,
-      },
-    });
-    await tx.conversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: new Date() },
-    });
-    return cree;
+  const message = await createMessage(req.app.get('io'), {
+    conversationId: conversation.id,
+    senderType: 'CUSTOMER',
+    senderUserId: req.user.id,
+    content: req.body.content,
   });
 
   res.status(201).json(messageToClientDto(message));

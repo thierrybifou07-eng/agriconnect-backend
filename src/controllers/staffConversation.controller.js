@@ -1,5 +1,6 @@
 import prisma from '../config/prisma.js';
 import { conversationToStaffDto, messageToStaffDto } from '../utils/dto/conversation.dto.js';
+import { createMessage, emitConversationAssigned, emitConversationEscalated } from '../services/message.service.js';
 
 // Partie staff de la messagerie (plan v2, P3.1).
 //
@@ -123,6 +124,10 @@ export const assignConversation = async (req, res) => {
       assignedAgent: { select: { id: true, displayName: true } },
     },
   });
+  // L'équipe est notifiée en temps réel : la prise en charge déplace la
+  // conversation dans la file de l'agent, et ceux qui regardaient la file
+  // commune doivent le savoir sans rafraîchir.
+  emitConversationAssigned(req.app.get('io'), maj);
   res.json(conversationToStaffDto(maj));
 };
 
@@ -146,6 +151,9 @@ export const escalateConversation = async (req, res) => {
       assignedAgent: { select: { id: true, displayName: true } },
     },
   });
+  // L'escalade remet la conversation dans la file commune : toute l'équipe
+  // doit le savoir, y compris les agents pas encore assignés.
+  emitConversationEscalated(req.app.get('io'), maj);
   res.json(conversationToStaffDto(maj));
 };
 
@@ -169,26 +177,19 @@ export const closeConversation = async (req, res) => {
 // répondre dans une conversation de son type. Le message porte l'identité
 // complète de l'auteur (agent ou utilisateur) pour la traçabilité ; une note
 // interne n'est jamais renvoyée au client (côté client, le filtre isInternal).
+// L'écriture et la diffusion (salle de conversation ou salle staff si note
+// interne) sont déléguées au service de messagerie.
 export const sendStaffMessage = async (req, res) => {
   const conversation = await conversationPourStaff(req, res);
   if (!conversation) return;
 
-  const message = await prisma.$transaction(async (tx) => {
-    const cree = await tx.message.create({
-      data: {
-        conversationId: conversation.id,
-        senderType: 'AGENT',
-        senderUserId: req.user.id,
-        senderAgentId: req.agent?.id ?? null,
-        content: req.body.content,
-        isInternal: req.body.isInternal,
-      },
-    });
-    await tx.conversation.update({
-      where: { id: conversation.id },
-      data: { lastMessageAt: new Date() },
-    });
-    return cree;
+  const message = await createMessage(req.app.get('io'), {
+    conversationId: conversation.id,
+    senderType: 'AGENT',
+    senderUserId: req.user.id,
+    senderAgentId: req.agent?.id ?? null,
+    content: req.body.content,
+    isInternal: req.body.isInternal,
   });
 
   res.status(201).json(messageToStaffDto(message));
