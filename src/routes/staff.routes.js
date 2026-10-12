@@ -18,6 +18,7 @@ import {
   publishListing,
   unpublishListing,
 } from '../controllers/staffListing.controller.js';
+import { createOrder } from '../controllers/staffOrder.controller.js';
 import {
   listConversations,
   assignConversation,
@@ -32,6 +33,7 @@ import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
+import { orderCreateSchema } from '../validators/order.validator.js';
 import {
   assignSchema,
   escalateSchema,
@@ -55,6 +57,9 @@ const STAFF_LISTING = [protect, requireCapability('LISTING_MANAGEMENT')];
 // un agent n'agit ensuite que sur les conversations de son type, ce second
 // contrôle se fait dans le contrôleur (le type est une donnée, pas une route).
 const STAFF_CONVERSATIONS = [protect, requireCapability('BUYER_SUPPORT', 'SUPPLIER_SUPPORT')];
+
+// Les commandes exigent ORDER_PROCESSING (AGENT) ou ADMIN/ROOT.
+const STAFF_ORDERS = [protect, requireCapability('ORDER_PROCESSING')];
 
 // Sans ce callback, un sixième fichier arrêterait multer avec
 // LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
@@ -128,5 +133,8 @@ router.post('/conversations/:id/assign', STAFF_CONVERSATIONS, validate(assignSch
 router.post('/conversations/:id/escalate', STAFF_CONVERSATIONS, validate(escalateSchema), escalateConversation);
 router.post('/conversations/:id/close', STAFF_CONVERSATIONS, closeConversation);
 router.post('/conversations/:id/messages', STAFF_CONVERSATIONS, validate(staffMessageSchema), sendStaffMessage);
+
+// Devis (P3.4) : l'équipe émet un devis qui réserve le stock et fige les prix.
+router.post('/orders', STAFF_ORDERS, validate(orderCreateSchema), createOrder);
 
 export default router;
