@@ -806,6 +806,69 @@ describe('PATCH /api/v2/auth/me/profile', () => {
 
     expect(res.status, res.text).toBe(200);
   });
+
+  // Comptes crees avant P1.2 (inscription v2) : aucun profil n'existe. Plutot
+  // que de repondre 404, on le cree a la vollee avec les valeurs par defaut.
+  it('repond 200 et cree le profil d un fournisseur sans profil (compte pre-P1.2)', async () => {
+    const supplier = await createUser({ role: 'SUPPLIER', firstname: 'Karim', lastname: 'Haddad' });
+    const token = generateToken({ id: supplier.id, role: 'SUPPLIER' });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ farmName: 'Ferme creee a la volee' });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ farmName: 'Ferme creee a la volee' });
+
+    const enBase = await prisma.supplierProfile.findUnique({ where: { userId: supplier.id } });
+    expect(enBase).toBeTruthy();
+    expect(enBase.farmName).toBe('Ferme creee a la volee');
+  });
+
+  it('cree le profil avec farmName par defaut quand aucun farmName est envoye', async () => {
+    const supplier = await createUser({ role: 'SUPPLIER', firstname: 'Karim', lastname: 'Haddad' });
+    const token = generateToken({ id: supplier.id, role: 'SUPPLIER' });
+
+    const res = await client.patch('/api/v2/auth/me/profile').set(authHeader(token)).send({});
+
+    expect(res.status, res.text).toBe(200);
+    const enBase = await prisma.supplierProfile.findUnique({ where: { userId: supplier.id } });
+    expect(enBase.farmName).toBe('Karim Haddad');
+  });
+
+  it('repond 200 et cree le profil d un acheteur sans profil (compte pre-P1.2)', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const token = generateToken({ id: buyer.id, role: 'BUYER' });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ buyerType: 'WHOLESALER' });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ buyerType: 'WHOLESALER' });
+
+    const enBase = await prisma.buyerProfile.findUnique({ where: { userId: buyer.id } });
+    expect(enBase).toBeTruthy();
+    expect(enBase.buyerType).toBe('WHOLESALER');
+  });
+
+  it('repond 409 PROFILE_MISSING pour un livreur sans profil', async () => {
+    // Le profil de livreur exige une agence : il ne peut pas etre cree sans
+    // elle. Le client doit contacter un administrateur.
+    const driver = await createUser({ role: 'DRIVER' });
+    const token = generateToken({ id: driver.id, role: 'DRIVER' });
+
+    const res = await client
+      .patch('/api/v2/auth/me/profile')
+      .set(authHeader(token))
+      .send({ vehicleType: 'Moto' });
+
+    expect(res.status, res.text).toBe(409);
+    expect(res.body.code).toBe('PROFILE_MISSING');
+    expect(res.body.error).toBe('Livreur sans agence : contactez un administrateur');
+  });
 });
 
 describe('Comptes de paiement - /api/v2/auth/me/payout-accounts', () => {

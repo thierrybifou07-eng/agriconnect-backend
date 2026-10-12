@@ -400,6 +400,24 @@ describe('POST /api/v2/supplier/lots — déclaration', () => {
 
     expect(res.status, res.text).toBe(403);
   });
+
+  // Compte SUPPLIER sans profil : cree avant P1.2 (ancien FARMER devenu
+  // SUPPLIER). Le profil est cree a la vollee plutot que de echouer.
+  it('cree le profil a la vollee pour un fournisseur sans profil : 201', async () => {
+    const user = await createUser({ role: 'SUPPLIER', firstname: 'Karim', lastname: 'Haddad' });
+    const prod = await produit();
+    const z = await zone();
+
+    const res = await declarerLot(tokenPour(user, 'SUPPLIER'), champsBase(prod, z));
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.lotCode).toMatch(/^LOT-\d{6}$/);
+
+    // Le profil a bien ete cree avec farmName par defaut (prenom + nom).
+    const profil = await prisma.supplierProfile.findUnique({ where: { userId: user.id } });
+    expect(profil).toBeTruthy();
+    expect(profil.farmName).toBe('Karim Haddad');
+  });
 });
 
 describe('GET /api/v2/supplier/lots — lecture', () => {

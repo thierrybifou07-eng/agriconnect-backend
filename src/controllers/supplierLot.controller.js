@@ -8,6 +8,7 @@ import { LOT_STATUSES } from '../validators/lot.validator.js';
 import { returnAvailable } from '../services/stock.service.js';
 import { assertTransition } from '../services/lot.state.js';
 import { recordAudit } from '../utils/audit.js';
+import { ensureProfile } from '../utils/profile.js';
 
 // Un lot ne peut être modifié ou supprimé que tant qu'il n'a pas été validé :
 // une fois l'équipe passée, les quantités sont pilotées par les mouvements de
@@ -29,20 +30,15 @@ const LOT_INCLUDE = {
 
 // Le lot appartient à un SupplierProfile, pas directement à un User : le
 // profil est la clé de tout ce que le fournisseur peut déclarer. Un compte
-// SUPPLIER sans profil est un compte malformé (l'inscription le crée, P1.2) :
-// on refuse avant toute requête plutôt que de laisser une contrainte de base
-// répondre 500.
-async function profilFournisseur(userId) {
-  const profile = await prisma.supplierProfile.findUnique({ where: { userId } });
-  if (!profile) {
-    throw Object.assign(new Error('Profil fournisseur introuvable'), { statusCode: 400 });
-  }
-  return profile;
+// SUPPLIER sans profil est un compte créé avant P1.2 (ancien FARMER) : on le
+// crée à la volée plutôt que de bloquer l'utilisateur.
+async function profilFournisseur(user) {
+  return ensureProfile(prisma, user);
 }
 
 // POST /api/v2/supplier/lots
 export const createLot = async (req, res) => {
-  const profile = await profilFournisseur(req.user.id);
+  const profile = await profilFournisseur(req.user);
   const {
     productId,
     zoneId,
@@ -176,7 +172,7 @@ export const createLot = async (req, res) => {
 
 // GET /api/v2/supplier/lots?status=&page=&limit=
 export const listLots = async (req, res) => {
-  const profile = await profilFournisseur(req.user.id);
+  const profile = await profilFournisseur(req.user);
   const { status } = req.query;
   if (status && !LOT_STATUSES.includes(status)) {
     return res.status(400).json({ error: 'Statut invalide' });
@@ -203,7 +199,7 @@ export const listLots = async (req, res) => {
 
 // GET /api/v2/supplier/lots/:id
 export const getLot = async (req, res) => {
-  const profile = await profilFournisseur(req.user.id);
+  const profile = await profilFournisseur(req.user);
 
   const lot = await prisma.stockLot.findFirst({
     where: { id: req.params.id, supplierId: profile.id },
@@ -221,7 +217,7 @@ export const getLot = async (req, res) => {
 
 // PATCH /api/v2/supplier/lots/:id
 export const updateLot = async (req, res) => {
-  const profile = await profilFournisseur(req.user.id);
+  const profile = await profilFournisseur(req.user);
 
   const lot = await prisma.stockLot.findFirst({
     where: { id: req.params.id, supplierId: profile.id },
@@ -275,7 +271,7 @@ export const updateLot = async (req, res) => {
 // suppression du lot emporte ses photos Media (ON DELETE CASCADE) : c'est une
 // suppression définitive, sans aucun mouvement de stock.
 export const deleteLot = async (req, res) => {
-  const profile = await profilFournisseur(req.user.id);
+  const profile = await profilFournisseur(req.user);
 
   const lot = await prisma.stockLot.findFirst({
     where: { id: req.params.id, supplierId: profile.id },
@@ -301,7 +297,7 @@ export const deleteLot = async (req, res) => {
 // un lot réservé obligerait à annuler des commandes, ce qui n'est pas le
 // périmètre de cette action.
 export const withdrawLot = async (req, res) => {
-  const profile = await profilFournisseur(req.user.id);
+  const profile = await profilFournisseur(req.user);
   const { reason } = req.body;
 
   const lot = await prisma.stockLot.findFirst({

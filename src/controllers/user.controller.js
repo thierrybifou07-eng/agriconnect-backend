@@ -3,6 +3,7 @@ import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { userToApi, payoutAccountToApi } from '../utils/userApi.js';
 import { resetVerificationForNewEmail } from '../utils/emailVerification.js';
+import { ensureProfile } from '../utils/profile.js';
 
 // Ces quatre routes vivaient sous /api/users et	y ont ete deplacees : un
 // utilisateur qui gere son propre profil est, du point de vue de l'API, dans le
@@ -96,10 +97,10 @@ export const uploadAvatar = async (req, res) => {
 export const updateMyProfile = async (req, res) => {
   const modele = profileModel(req.user.role.code);
 
-  const profil = await prisma[modele].findUnique({ where: { userId: req.user.id } });
-  if (!profil) {
-    return res.status(404).json({ error: 'Profil introuvable' });
-  }
+  // Un compte créé avant P1.2 n'a pas de profil : on le crée à la volée
+  // plutôt que de répondre 404. Lève 403 pour les comptes d'équipe et
+  // 409 PROFILE_MISSING pour un livreur sans agence.
+  await ensureProfile(prisma, req.user);
 
   // Une zone inconnue vaut une requete mal formee : on la refuse avant
   // ecriture plutot que de laisser la contrainte de cle etrangerre lever une
