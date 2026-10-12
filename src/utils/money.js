@@ -50,3 +50,13 @@ export function asQuantity(value) {
   if (decimal === null || decimal === undefined) return decimal;
   return decimal.toDecimalPlaces(QUANTITY_DECIMALS, Decimal.ROUND_HALF_UP);
 }
+
+// Arrondi monetaire adapte a la devise : le XAF n'a pas de centime (0 decimale),
+// les autres devises en ont 2. L'arrondi est toujours "half up" pour eviter les
+// biais systematiques vers le bas.
+export function roundMoney(value, currency) {
+  const decimal = toDecimal(value);
+  if (decimal === null || decimal === undefined) return decimal;
+  const places = currency === 'XAF' ? 0 : MONEY_DECIMALS;
+  return decimal.toDecimalPlaces(places, Decimal.ROUND_HALF_UP);
+}
