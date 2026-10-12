@@ -286,7 +286,9 @@ describe('Service de stock — péremption et retour', () => {
     expect(courant.quantityAvailable.toNumber()).toBe(0);
     expect(courant.quantityLost.toNumber()).toBe(70);
     expect(courant.quantityReserved.toNumber()).toBe(30);
-    expect(courant.status).toBe('EXPIRED');
+    // La réservation en cours va à son terme : le statut est FULLY_RESERVED,
+    // pas EXPIRED. expireAvailable ne force plus le statut.
+    expect(courant.status).toBe('FULLY_RESERVED');
 
     // Le journal équilibre les compteurs : EXPIRED = 70, réservé = 30.
     await verifierJournal(lot.id);
@@ -301,10 +303,68 @@ describe('Service de stock — péremption et retour', () => {
     expect(perdue.toNumber()).toBe(0);
 
     const courant = await prisma.stockLot.findUnique({ where: { id: lot.id } });
-    expect(courant.status).toBe('EXPIRED');
+    // Réservation intacte, date non passée : FULLY_RESERVED, pas EXPIRED.
+    expect(courant.status).toBe('FULLY_RESERVED');
     expect(courant.quantityAvailable.toNumber()).toBe(0);
     expect(courant.quantityReserved.toNumber()).toBe(100);
     expect(courant.quantityLost.toNumber()).toBe(0);
+
+    // Rien à expirer : aucun mouvement EXPIRED n'a été écrit (le titre du test
+    // le promet ; l'ancien isPositive() de decimal.js, vrai pour 0, en écrasait
+    // un de quantité zéro).
+    const mouvements = await prisma.stockMovement.findMany({ where: { lotId: lot.id } });
+    expect(mouvements.filter((m) => m.type === 'EXPIRED')).toHaveLength(0);
+  });
+
+  it('reserve refuse un lot dont la date est passée (409 LOT_EXPIRED)', async () => {
+    // Lot validé alors que sa date était déjà passée : son statut est encore
+    // AVAILABLE, mais il n'est plus vendable.
+    const lot = await lotDe100({ expiresAt: HIER });
+    await prisma.$transaction((tx) => receiveLot(tx, lot.id, {}));
+    const courant = await prisma.stockLot.findUnique({ where: { id: lot.id } });
+    expect(courant.status).toBe('AVAILABLE');
+
+    await expect(
+      prisma.$transaction((tx) => reserve(tx, lot.id, 10, {}))
+    ).rejects.toMatchObject({ statusCode: 409, code: 'LOT_EXPIRED' });
+
+    // Le lot est resté intact : la transaction refusée n'a rien écrit.
+    const final = await prisma.stockLot.findUnique({ where: { id: lot.id } });
+    expect(final.quantityAvailable.toNumber()).toBe(100);
+    expect(final.quantityReserved.toNumber()).toBe(0);
+  });
+
+  it('expireAvailable avec réservation en cours, puis libération, puis nouvelle expiration', async () => {
+    // La date passe pendant une réservation : expireAvailable indemnise le
+    // disponible mais laisse la réservation à son terme (FULLY_RESERVED) ; sa
+    // libération remet du disponible dans un lot à date passée (EXPIRED) ;
+    // une seconde expireAvailable déplace alors tout le disponible vers perdu.
+    const lot = await lotDe100();
+    await prisma.$transaction((tx) => receiveLot(tx, lot.id, {}));
+    await prisma.$transaction((tx) => reserve(tx, lot.id, 30, {}));
+    await prisma.stockLot.update({ where: { id: lot.id }, data: { expiresAt: HIER } });
+
+    const perdue = await prisma.$transaction((tx) => expireAvailable(tx, lot.id, {}));
+    expect(perdue.toNumber()).toBe(70);
+    let courant = await prisma.stockLot.findUnique({ where: { id: lot.id } });
+    expect(courant.quantityReserved.toNumber()).toBe(30);
+    expect(courant.quantityLost.toNumber()).toBe(70);
+    expect(courant.status).toBe('FULLY_RESERVED');
+
+    await prisma.$transaction((tx) => releaseReservation(tx, lot.id, 30, {}));
+    courant = await prisma.stockLot.findUnique({ where: { id: lot.id } });
+    expect(courant.quantityAvailable.toNumber()).toBe(30);
+    expect(courant.status).toBe('EXPIRED');
+
+    const nouvellePerte = await prisma.$transaction((tx) => expireAvailable(tx, lot.id, {}));
+    expect(nouvellePerte.toNumber()).toBe(30);
+    courant = await prisma.stockLot.findUnique({ where: { id: lot.id } });
+    expect(courant.quantityAvailable.toNumber()).toBe(0);
+    expect(courant.quantityLost.toNumber()).toBe(100);
+    expect(courant.status).toBe('EXPIRED');
+
+    // Le journal équilibre les compteurs : EXPIRED = 100, réservé = 0.
+    await verifierJournal(lot.id);
   });
 
   it('returnAvailable (RETURNED) déplace le disponible vers perdu et clôt le lot', async () => {

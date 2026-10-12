@@ -10,10 +10,10 @@ import { syncListingsForLot } from './listing.service.js';
 // Il est vérifié après chaque écriture (assertInvariant) : une rupture
 // signale un bug de logique, jamais une donnée à « réparer » en silence.
 
-// Statuts terminaux : le lot a quitté le cycle de vie (rejeté par l'équipe,
-// retourné au fournisseur, retiré par le fournisseur). Son statut n'est
-// jamais recalculé depuis les quantités, même si celles-ci changent.
-const STATUTS_TERMINAUX = new Set(['REJECTED', 'RETURNED', 'WITHDRAWN']);
+// Statuts jamais recalculés depuis les quantités : le statut est alors un fait
+// métier (décision de l'équipe ou attente de validation), pas une conséquence
+// des compteurs. Un lot dans l'un de ces statuts le reste, quoi qu'il arrive.
+const STATUTS_NON_RECALCULES = new Set(['REJECTED', 'RETURNED', 'WITHDRAWN', 'PENDING_VALIDATION']);
 
 // Erreur métier : le format { statusCode, code } est celui qu'errorHandler
 // renvoie au client (réponse { error, code }).
@@ -81,24 +81,33 @@ export function assertInvariant(lot) {
   }
 }
 
-// Statut dérivé d'un lot à un instant donné. Un lot REJECTED, RETURNED ou
-// WITHDRAWN n'est jamais recalculé : son statut est un fait métier, pas une
-// conséquence des quantités. Sinon : EXPIRED si la date est passée, puis
-// SOLD_OUT (plus rien à vendre ni réserver), FULLY_RESERVED (tout est
-// réservé), AVAILABLE sinon.
+// Statut dérivé d'un lot à un instant donné. Un lot REJECTED, RETURNED,
+// WITHDRAWN ou PENDING_VALIDATION n'est jamais recalculé : son statut est un
+// fait métier, pas une conséquence des quantités. Sinon, dans l'ordre :
+//  - plus rien (disponible = 0 et réservé = 0) : EXPIRED si du stock a été
+//    perdu (quantityLost > 0), sinon SOLD_OUT. Un lot vendu entièrement reste
+//    SOLD_OUT même après sa date : la vente a eu lieu, l'annonce est vendue,
+//    pas inactive ;
+//  - date d'expiration passée : FULLY_RESERVED si une réservation est en cours
+//    (elle va à son terme, une réservation n'est jamais « périmée »), EXPIRED
+//    sinon ;
+//  - date future ou absente : FULLY_RESERVED si le disponible est épuisé,
+//    AVAILABLE sinon.
 export function computeLotStatus(lot, now = new Date()) {
-  if (STATUTS_TERMINAUX.has(lot.status)) {
+  if (STATUTS_NON_RECALCULES.has(lot.status)) {
     return lot.status;
+  }
+  const disponible = toDecimal(lot.quantityAvailable);
+  const reserves = toDecimal(lot.quantityReserved);
+  if (disponible.isZero() && reserves.isZero()) {
+    return toDecimal(lot.quantityLost).greaterThan(0) ? 'EXPIRED' : 'SOLD_OUT';
   }
   // null <= now vaut true en JavaScript (null devient 0) : le garde-fou sur
   // expiresAt est indispensable, un lot sans date n'est jamais expiré.
   if (lot.expiresAt && lot.expiresAt <= now) {
-    return 'EXPIRED';
+    return reserves.greaterThan(0) ? 'FULLY_RESERVED' : 'EXPIRED';
   }
-  if (toDecimal(lot.quantityAvailable).isZero()) {
-    return toDecimal(lot.quantityReserved).isZero() ? 'SOLD_OUT' : 'FULLY_RESERVED';
-  }
-  return 'AVAILABLE';
+  return disponible.isZero() ? 'FULLY_RESERVED' : 'AVAILABLE';
 }
 
 // ---------------------------------------------------------------------------
@@ -130,19 +139,34 @@ export async function receiveLot(tx, lotId, actor = {}) {
 }
 
 // Réserve du stock disponible. L'updateMany porte la condition anti-survente
-// (statut AVAILABLE et quantité suffisante) : si une transaction concurrente
-// a déjà pris le stock, count vaut 0 et on refuse avec INSUFFICIENT_STOCK
-// plutôt que de débiter à découvert.
+// (statut AVAILABLE, quantité suffisante, date non passée) : si une
+// transaction concurrente a déjà pris le stock, count vaut 0 et on refuse
+// plutôt que de débiter à découvert. Un lot périmé n'est plus vendable, même
+// si son statut est encore AVAILABLE : on relit le lot pour distinguer la
+// cause (LOT_EXPIRED) du simple stock insuffisant (INSUFFICIENT_STOCK).
 export async function reserve(tx, lotId, qty, ctx = {}) {
   const quantite = quantitePositive(qty, 'Quantité à réserver');
+  const maintenant = new Date();
   const { count } = await tx.stockLot.updateMany({
-    where: { id: lotId, status: 'AVAILABLE', quantityAvailable: { gte: quantite } },
+    where: {
+      id: lotId,
+      status: 'AVAILABLE',
+      quantityAvailable: { gte: quantite },
+      OR: [{ expiresAt: null }, { expiresAt: { gt: maintenant } }],
+    },
     data: {
       quantityAvailable: { decrement: quantite },
       quantityReserved: { increment: quantite },
     },
   });
   if (count === 0) {
+    const lot = await tx.stockLot.findUnique({ where: { id: lotId } });
+    if (!lot) {
+      throw erreurStock(`Lot ${lotId} introuvable`, 404, 'LOT_NOT_FOUND');
+    }
+    if (lot.expiresAt && lot.expiresAt <= maintenant) {
+      throw erreurStock(`Lot ${lotId} : date d'expiration dépassée`, 409, 'LOT_EXPIRED');
+    }
     throw erreurStock(
       `Lot ${lotId} : stock insuffisant pour réserver ${quantite}`,
       409,
@@ -219,13 +243,17 @@ export async function commitSale(tx, lotId, qty, ctx = {}) {
 
 // Péremption : tout le disponible restant devient perdu. Renvoie la quantité
 // perdue (Decimal), seule information utile à l'indemnisation du fournisseur.
+// Le statut n'est plus forcé à EXPIRED : il est dérivé (computeLotStatus).
+// Les tâches d'expiration (P6.3) sélectionnent les lots par quantityAvailable
+// > 0 et expiresAt passé, QUEL QUE SOIT leur statut : une réservation libérée
+// peut remettre du disponible dans un lot déjà EXPIRED.
 export async function expireAvailable(tx, lotId, ctx = {}) {
   const lot = await tx.stockLot.findUnique({ where: { id: lotId } });
   if (!lot) {
     throw erreurStock(`Lot ${lotId} introuvable`, 404, 'LOT_NOT_FOUND');
   }
   const perdue = toDecimal(lot.quantityAvailable);
-  if (perdue.isPositive()) {
+  if (perdue.greaterThan(0)) {
     await tx.stockLot.update({
       where: { id: lotId },
       data: {
@@ -235,14 +263,11 @@ export async function expireAvailable(tx, lotId, ctx = {}) {
     });
     await ecrireMouvement(tx, { lotId, type: 'EXPIRED', quantite: perdue, ctx });
   }
-  // Le statut EXPIRED est un fait métier (la date est passée), pas un simple
-  // calcul sur les quantités : on l'écrit plutôt que de le dériver, sinon un
-  // lot sans date d'expiration resterait AVAILABLE avec un disponible à zéro.
+  const aJour = await relireEtVerifier(tx, lotId);
   await tx.stockLot.update({
     where: { id: lotId },
-    data: { status: 'EXPIRED' },
+    data: { status: computeLotStatus(aJour, new Date()) },
   });
-  await relireEtVerifier(tx, lotId);
   await syncListingsForLot(tx, lotId);
   return perdue;
 }

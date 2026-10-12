@@ -42,6 +42,7 @@ function tokenPour(user, role) {
 
 const FAKE_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 const DANS_7_JOURS = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+const HIER = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
 
 // --- Fixtures ---
 
@@ -540,6 +541,26 @@ describe('Statut automatique — syncListingsForLot', () => {
       include: { status: true },
     });
     expect(annonce.status.code).toBe('INACTIVE');
+  });
+
+  it('annonce SOLD (et non INACTIVE) quand le lot est entièrement vendu après sa date', async () => {
+    const { agentUser, lot } = await setupAgentEtLot();
+    const cree = await creerAnnonce(agentUser, lot.id);
+    await client
+      .post(`/api/v2/staff/listings/${cree.body.id}/publish`)
+      .set(authHeader(tokenPour(agentUser, 'AGENT')));
+
+    // La réservation est prise avant la date ; la date passe ; la vente est
+    // concrétisée après. SOLD_OUT prime sur EXPIRED : l'annonce est SOLD.
+    await prisma.$transaction((tx) => reserve(tx, lot.id, 1500, {}));
+    await prisma.stockLot.update({ where: { id: lot.id }, data: { expiresAt: HIER } });
+    await prisma.$transaction((tx) => commitSale(tx, lot.id, 1500, {}));
+
+    const annonce = await prisma.listing.findUnique({
+      where: { id: cree.body.id },
+      include: { status: true },
+    });
+    expect(annonce.status.code).toBe('SOLD');
   });
 
   it('ne touche pas une annonce DRAFT quand le lot expire', async () => {
