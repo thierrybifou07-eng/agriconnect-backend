@@ -35,14 +35,21 @@ import {
   closeConversation,
   sendStaffMessage,
 } from '../controllers/staffConversation.controller.js';
-import { protect } from '../middlewares/auth.middleware.js';
+import {
+  recordPaymentHandler,
+  listPaymentsHandler,
+  refundPaymentHandler,
+} from '../controllers/staffPayment.controller.js';
+import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
+import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
 import { orderCreateSchema, orderStatusSchema, orderCancelSchema } from '../validators/order.validator.js';
+import { paymentCreateSchema } from '../validators/payment.validator.js';
 import {
   assignSchema,
   escalateSchema,
@@ -69,6 +76,13 @@ const STAFF_CONVERSATIONS = [protect, requireCapability('BUYER_SUPPORT', 'SUPPLI
 
 // Les commandes exigent ORDER_PROCESSING (AGENT) ou ADMIN/ROOT.
 const STAFF_ORDERS = [protect, requireCapability('ORDER_PROCESSING')];
+
+// Les routes de paiement exigent PAYMENT_FOLLOWUP (AGENT) ou ADMIN/ROOT.
+// requireHumanActor refuse les agents IA : l'argent ne se déplace pas tout seul.
+const STAFF_PAYMENTS = [protect, requireCapability('PAYMENT_FOLLOWUP'), requireHumanActor];
+
+// Le remboursement est un pouvoir de direction (ADMIN et plus).
+const STAFF_REFUND = [protect, requireMinLevel(50), requireHumanActor];
 
 // Sans ce callback, un sixième fichier arrêterait multer avec
 // LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
@@ -155,5 +169,11 @@ router.get('/orders/:id', STAFF_ORDERS, getOrder);
 router.patch('/orders/:id/status', STAFF_ORDERS, validate(orderStatusSchema), changeOrderStatus);
 router.post('/orders/:id/confirm', STAFF_ORDERS, confirmOrderByStaff);
 router.post('/orders/:id/cancel', STAFF_ORDERS, validate(orderCancelSchema), cancelOrderByStaff);
+
+// Paiements manuels (P4.1) : enregistrement idempotente, consultation et
+// remboursement. L'en-tête Idempotency-Key est obligatoire à l'enregistrement.
+router.post('/orders/:id/payments', STAFF_PAYMENTS, validate(paymentCreateSchema), recordPaymentHandler);
+router.get('/orders/:id/payments', STAFF_PAYMENTS, listPaymentsHandler);
+router.post('/payments/:id/refund', STAFF_REFUND, refundPaymentHandler);
 
 export default router;
