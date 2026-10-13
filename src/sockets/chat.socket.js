@@ -193,6 +193,18 @@ export default function initChatSocket(io) {
     // ait a connaitre leurs identifiants de socket.
     joinUserRoom(socket, socket.userId);
 
+    // Room d'agence : un livreur rejoint celle de son agence pour recevoir
+    // les notifications de courses disponibles (delivery:available). Le
+    // rejoint se fait en tache de fond : aucun evenement n est emis vers
+    // la room avant la fin de la requete.
+    prisma.driverProfile
+      .findUnique({ where: { userId: socket.userId }, select: { agencyId: true } })
+      .then((driver) => {
+        if (driver) {
+          socket.join(`agency:${driver.agencyId}`);
+        }
+      });
+
     // La room staff rassemble les connexions de l equipe (ADMIN, ROOT, AGENT
     // actif) : notes internes et notifications assigned / escalated n y sont
     // emises, et un client, lui, n en fait jamais partie. Le rejoint se fait

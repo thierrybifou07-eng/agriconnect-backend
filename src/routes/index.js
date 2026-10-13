@@ -7,6 +7,7 @@ import staffRoutes from './staff.routes.js';
 import catalogRoutes from './catalog.routes.js';
 import conversationRoutes from './conversation.routes.js';
 import orderRoutes from './order.routes.js';
+import driverRoutes from './driver.routes.js';
 
 const router = Router();
 
@@ -18,5 +19,6 @@ router.use('/staff', staffRoutes);
 router.use('/catalog', catalogRoutes);
 router.use('/conversations', conversationRoutes);
 router.use('/orders', orderRoutes);
+router.use('/driver', driverRoutes);
 
 export default router;

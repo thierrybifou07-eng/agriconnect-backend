@@ -186,6 +186,19 @@ export const createDeliveries = async (req, res) => {
     return livraisons;
   });
 
+  // Notifier les livreurs de l agence : une course est disponible.
+  // L instance Socket.io est attachee a l app Express (server.js). En
+  // environnement de test, elle est absente : l emission est silencieuse.
+  const io = req.app.get('io');
+  if (io) {
+    for (const livraison of result) {
+      io.to(`agency:${livraison.agencyId}`).emit('delivery:available', {
+        deliveryId: livraison.id,
+        agencyId: livraison.agencyId,
+      });
+    }
+  }
+
   res.status(201).json(result.map(deliveryToStaffDto));
 };
 
