@@ -8,6 +8,7 @@ import {
   deleteLot,
   withdrawLot,
 } from '../controllers/supplierLot.controller.js';
+import { listPayouts } from '../controllers/supplierPayout.controller.js';
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
@@ -46,6 +47,8 @@ router.post('/lots', protect, requireRole('SUPPLIER'), uploadImages, validate(lo
 // req.query est un getter sans setter, et le middleware ne peut pas l'écraser.
 // listLots les lit directement et les borne lui-même (status inconnu -> 400).
 router.get('/lots', protect, requireRole('SUPPLIER'), listLots);
+// Reversements du fournisseur connecte (P4.2).
+router.get('/payouts', protect, requireRole('SUPPLIER'), listPayouts);
 router.get('/lots/:id', protect, requireRole('SUPPLIER'), getLot);
 router.patch('/lots/:id', protect, requireRole('SUPPLIER'), validate(lotUpdateSchema), updateLot);
 router.delete('/lots/:id', protect, requireRole('SUPPLIER'), deleteLot);

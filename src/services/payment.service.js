@@ -1,5 +1,6 @@
 import { asMoney, toDecimal, toNumber } from '../utils/money.js';
 import { recordAudit } from '../utils/audit.js';
+import { refreshPayoutReadiness } from './payout.service.js';
 
 // Paiements manuels idempotents (plan v2, P4.1).
 //
@@ -93,6 +94,10 @@ export async function recordPayment(db, orderId, { amount, method, reference, pa
       });
 
       await recalculerStatut(tx, orderId);
+      // Le paiement a peut-etre fait passer la commande en PAID : si elle est
+      // deja COMPLETED, les reversements passent a READY. Sinon, c'est la
+      // completion qui declenchera le passage (P4.2).
+      await refreshPayoutReadiness(tx, orderId);
       await recordAudit(tx, {
         ...acteur,
         action: 'PAYMENT_RECORDED',

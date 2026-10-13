@@ -2,6 +2,7 @@ import { toDecimal } from '../utils/money.js';
 import { recordAudit } from '../utils/audit.js';
 import { assertTransition } from './order.state.js';
 import { releaseReservation, commitSale } from './stock.service.js';
+import { createPayoutsForOrder, refreshPayoutReadiness, cancelPayoutsForOrder } from './payout.service.js';
 
 // Cycle de vie de la commande (plan v2, P3.5) : confirmation, annulation,
 // completion et changement de statut manuel par l'equipe.
@@ -87,6 +88,11 @@ export async function confirmOrder(tx, orderId, acteur = {}) {
     entityType: 'Order',
     entityId: orderId,
   });
+  // Generation des reversements fournisseurs dans la meme transaction :
+  // un echec annule la confirmation, et inversement. Les reversements sont
+  // crees en ON_HOLD : ils ne sont prets qu'une fois la commande COMPLETED
+  // et PAID (P4.2).
+  await createPayoutsForOrder(tx, orderId);
   return order;
 }
 
@@ -138,6 +144,10 @@ export async function cancelOrder(tx, orderId, acteur = {}, raison = null) {
     entityId: orderId,
     ...(raison ? { metadata: { reason: raison } } : {}),
   });
+  // Annulation des reversements : une commande annulee ne doit jamais debiter
+  // un fournisseur. Les reversements PAID ne sont pas touches (l'argent est
+  // deja parti).
+  await cancelPayoutsForOrder(tx, orderId);
   return order;
 }
 
@@ -167,6 +177,10 @@ export async function completeOrder(tx, orderId, acteur = {}) {
     entityType: 'Order',
     entityId: orderId,
   });
+  // La commande est terminee : si elle est deja payee, les reversements
+  // passent a READY. Sinon, c'est le paiement qui declenchera le passage
+  // (P4.2).
+  await refreshPayoutReadiness(tx, orderId);
   return order;
 }
 

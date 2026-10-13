@@ -27,13 +27,16 @@ import {
   createHub,
   updateHub,
 } from '../controllers/referential.controller.js';
+import { listPayouts, payPayoutController } from '../controllers/adminPayout.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
+import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import { createStaffUserSchema, createLegalVersionSchema } from '../validators/admin.validator.js';
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 import { reviewVerificationSchema } from '../validators/verification.validator.js';
+import { payPayoutSchema } from '../validators/payout.validator.js';
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -74,6 +77,11 @@ router.post('/users', validate(createStaffUserSchema), createStaffUser);
 // Gestion des CGU : création de versions brouillons et publication.
 router.post('/legal/:code/versions', validate(createLegalVersionSchema), createLegalVersion);
 router.patch('/legal/versions/:id/publish', publishLegalVersion);
+
+// Reversements fournisseurs (P4.2) : ADMIN et plus, uniquement agents humains.
+// requireHumanActor bloque les agents IA : un IA ne peut pas déplacer de l'argent.
+router.get('/payouts', requireHumanActor, listPayouts);
+router.patch('/payouts/:id/pay', requireHumanActor, validate(payPayoutSchema), payPayoutController);
 
 // Administration des fiches d'agents (ADMIN et plus) : lecture, modification
 // (dont les capacités) et création d'agents IA sans compte utilisateur.
