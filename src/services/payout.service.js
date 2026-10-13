@@ -89,14 +89,19 @@ export async function createPayoutsForOrder(tx, orderId) {
   return parFournisseur.size;
 }
 
-// Passage ON_HOLD -> READY quand la commande est COMPLETED et PAID.
+// Readiness BIDIRECTIONNELLE des reversements d'une commande.
 //
-// Les deux conditions sont necessaires : la commande doit d'abord etre
-// terminee (livraison effectuee) ET integralement payee. Appelee depuis
-// completeOrder ET depuis recordPayment : selon l'ordre des evenements,
-// c'est l'un ou l'autre qui declenche le passage.
+// La commande est « débitable » seulement quand elle est COMPLETED et PAID :
+// les reversements ON_HOLD passent a READY. Dès qu'elle ne l'est plus
+// (remboursement partiel qui repasse le statut sous PAID, annulation,
+// changement de statut), les reversements READY repassent a ON_HOLD : un
+// fournisseur n'est payé que sur une commande intégralement payée.
 //
-// Idempotent : un reversement deja READY/PAID/CANCELLED n'est pas touche.
+// Les reversements PAID ne sont jamais modifies : l'argent est deja parti
+// (gestion de litige separee, hors perimetre P4.2). Les CANCELLED non plus.
+//
+// Appelee depuis completeOrder, recordPayment et refundPayment : selon
+// l'ordre des evenements, c'est l'un ou l'autre qui declenche la mise a jour.
 export async function refreshPayoutReadiness(tx, orderId) {
   const order = await tx.order.findUnique({
     where: { id: orderId },
@@ -108,6 +113,11 @@ export async function refreshPayoutReadiness(tx, orderId) {
     await tx.supplierPayout.updateMany({
       where: { orderId, status: 'ON_HOLD' },
       data: { status: 'READY' },
+    });
+  } else {
+    await tx.supplierPayout.updateMany({
+      where: { orderId, status: 'READY' },
+      data: { status: 'ON_HOLD' },
     });
   }
 }

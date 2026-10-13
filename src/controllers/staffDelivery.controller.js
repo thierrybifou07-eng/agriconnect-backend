@@ -2,9 +2,14 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma.js';
 import { toDecimal, toNumber } from '../utils/money.js';
 import { recordAudit } from '../utils/audit.js';
-import { haversineDistanceKm } from '../utils/distance.js';
 import { findActiveAgencyForZone } from '../services/agency.service.js';
-import { computeDeliveryFee, getSettings } from '../services/pricing.service.js';
+import { getSettings } from '../services/pricing.service.js';
+import {
+  cleOrigine,
+  pointEnlevement,
+  distanceOrigine,
+  tarifOrigine,
+} from '../services/delivery.pricing.js';
 import { deliveryToStaffDto } from '../utils/dto/delivery.dto.js';
 
 // Résout l'identité de l'acteur pour l'audit (recordAudit attend des objets).
@@ -70,9 +75,7 @@ export const createDeliveries = async (req, res) => {
     //    est en hub, sinon site:{supplierId}.
     const groupes = new Map();
     for (const item of order.items) {
-      const cle = item.lot.storageType === 'HUB' && item.lot.hubId
-        ? `hub:${item.lot.hubId}`
-        : `site:${item.lot.supplierId}`;
+      const cle = cleOrigine(item.lot);
       if (!groupes.has(cle)) groupes.set(cle, []);
       groupes.get(cle).push(item);
     }
@@ -84,56 +87,22 @@ export const createDeliveries = async (req, res) => {
     const markupRate = settings.transportMarkupRate;
 
     const livraisons = [];
-    for (const [cle, items] of groupes) {
+    for (const items of groupes.values()) {
       const lot = items[0].lot;
 
-      // Point d'enlèvement : hub ou site fournisseur.
-      let pickupHubId = null;
-      let pickupAddress;
-      let pickupLatitude;
-      let pickupLongitude;
-      if (cle.startsWith('hub:') && lot.hub) {
-        pickupHubId = lot.hub.id;
-        pickupAddress = lot.hub.address;
-        pickupLatitude = lot.hub.latitude;
-        pickupLongitude = lot.hub.longitude;
-      } else {
-        pickupAddress = lot.pickupAddress;
-        pickupLatitude = lot.pickupLatitude;
-        pickupLongitude = lot.pickupLongitude;
-      }
-
-      if (pickupLatitude === null || pickupLatitude === undefined ||
-          pickupLongitude === null || pickupLongitude === undefined) {
-        throw Object.assign(
-          new Error(`Coordonnées d'enlèvement manquantes pour le lot ${lot.id}`),
-          { statusCode: 409, code: 'ORIGIN_COORDINATES_MISSING' }
-        );
-      }
-
-      // Distance et tarification.
-      const distanceKm = haversineDistanceKm(
-        pickupLatitude,
-        pickupLongitude,
-        order.deliveryLatitude,
-        order.deliveryLongitude
-      );
-      if (distanceKm === null) {
-        throw Object.assign(
-          new Error('Coordonnées de livraison manquantes'),
-          { statusCode: 409, code: 'DELIVERY_COORDINATES_MISSING' }
-        );
-      }
-
+      // Point d'enlèvement, distance et tarification : delivery.pricing.js,
+      // la même logique que le devis (staffOrder.controller.js). Le point de
+      // livraison vit sur la commande (deliveryLatitude/Longitude), pas sur
+      // le corps de requête comme au devis.
+      const point = pointEnlevement(lot);
+      const distanceKm = distanceOrigine(lot, {
+        latitude: order.deliveryLatitude,
+        longitude: order.deliveryLongitude,
+      });
       const agencyZone = await tx.agencyZone.findFirst({
         where: { zoneId: order.deliveryZoneId, isActive: true },
       });
-      const { agencyCost, deliveryFee } = computeDeliveryFee({
-        baseFee: agencyZone.baseFee,
-        perKmFee: agencyZone.perKmFee,
-        distanceKm,
-        markupRate,
-      }, currency);
+      const { agencyCost, deliveryFee } = tarifOrigine({ agencyZone, distanceKm, markupRate, currency });
 
       // Valeur assurée : somme des lineTotal du groupe.
       const insuredValue = items.reduce((acc, item) => acc.add(item.lineTotal), toDecimal(0));
@@ -143,10 +112,10 @@ export const createDeliveries = async (req, res) => {
         data: {
           orderId: order.id,
           agencyId: agency.id,
-          pickupHubId,
-          pickupAddress,
-          pickupLatitude,
-          pickupLongitude,
+          pickupHubId: point.hubId,
+          pickupAddress: point.address,
+          pickupLatitude: point.latitude,
+          pickupLongitude: point.longitude,
           dropoffAddress: order.deliveryAddress,
           dropoffLatitude: order.deliveryLatitude,
           dropoffLongitude: order.deliveryLongitude,

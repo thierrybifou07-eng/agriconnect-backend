@@ -53,7 +53,7 @@ import { validate } from '../middlewares/validate.middleware.js';
 import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
 import { orderCreateSchema, orderStatusSchema, orderCancelSchema } from '../validators/order.validator.js';
-import { paymentCreateSchema } from '../validators/payment.validator.js';
+import { paymentCreateSchema, paymentRefundSchema } from '../validators/payment.validator.js';
 import {
   assignSchema,
   escalateSchema,
@@ -181,7 +181,7 @@ router.post('/orders/:id/cancel', STAFF_ORDERS, validate(orderCancelSchema), can
 // remboursement. L'en-tête Idempotency-Key est obligatoire à l'enregistrement.
 router.post('/orders/:id/payments', STAFF_PAYMENTS, validate(paymentCreateSchema), recordPaymentHandler);
 router.get('/orders/:id/payments', STAFF_PAYMENTS, listPaymentsHandler);
-router.post('/payments/:id/refund', STAFF_REFUND, refundPaymentHandler);
+router.post('/payments/:id/refund', STAFF_REFUND, validate(paymentRefundSchema), refundPaymentHandler);
 
 // Livraisons (P5.2) : création par point d'enlèvement et consultation paginée.
 router.post('/orders/:id/deliveries', STAFF_DISPATCH, createDeliveries);

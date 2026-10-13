@@ -277,6 +277,60 @@ describe('POST /api/v2/staff/orders/:id/deliveries', () => {
     expect(insuredValues).toEqual([2400, 5000]); // 3x800 et 5x1000
   });
 
+  it('deux origines : la somme des deliveryFee des livraisons égale le deliveryFee du devis', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const lotA = await creerLot({ quantity: '50', agreedUnitPrice: '800.00' });
+    const annonceA = await createListingForLot(lotA);
+    await prisma.listing.update({ where: { id: annonceA.id }, data: { unitPrice: '1000.00' } });
+
+    const lotB = await creerLot({ quantity: '50', agreedUnitPrice: '600.00' });
+    const annonceB = await createListingForLot(lotB);
+    await prisma.listing.update({ where: { id: annonceB.id }, data: { unitPrice: '800.00' } });
+
+    const zoneLivraison = await zone();
+    await creerAgenceAvecZone(zoneLivraison.id);
+
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'DISPATCH_COORDINATION']);
+
+    // Le devis fige le deliveryFee : somme des frais par origine.
+    const devisRes = await api()
+      .post('/api/v2/staff/orders')
+      .set(authHeader(tokenPour(agentUser)))
+      .send({
+        buyerId: buyer.id,
+        items: [
+          { listingId: annonceA.id, quantity: 5 },
+          { listingId: annonceB.id, quantity: 3 },
+        ],
+        deliveryMode: 'AGENCY_DELIVERY',
+        delivery: {
+          zoneId: zoneLivraison.id,
+          address: '10 avenue de la Gare',
+          latitude: 48.85,
+          longitude: 2.35,
+        },
+      });
+    expect(devisRes.status, devisRes.text).toBe(201);
+    const deliveryFeeDevis = devisRes.body.deliveryFee;
+
+    await prisma.order.update({
+      where: { id: devisRes.body.id },
+      data: { status: 'PREPARING', paymentStatus: 'PAID' },
+    });
+
+    const res = await api()
+      .post(`/api/v2/staff/orders/${devisRes.body.id}/deliveries`)
+      .set(authHeader(tokenPour(agentUser)))
+      .send({});
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body).toHaveLength(2);
+
+    // Chaque origine a son propre tarif ; leur somme est le total facturé.
+    const sommeLivraisons = res.body.reduce((acc, d) => acc + d.deliveryFee, 0);
+    expect(sommeLivraisons).toBeCloseTo(deliveryFeeDevis, 2);
+  });
+
   it('refus si la commande n\'est pas PREPARING : 409 INVALID_ORDER_STATUS', async () => {
     const buyer = await createUser({ role: 'BUYER' });
     const lot = await creerLot({ quantity: '50' });

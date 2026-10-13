@@ -1,6 +1,6 @@
 import { asMoney, toDecimal, toNumber } from '../utils/money.js';
 import { recordAudit } from '../utils/audit.js';
-import { refreshPayoutReadiness } from './payout.service.js';
+import { refreshPayoutReadiness, cancelPayoutsForOrder } from './payout.service.js';
 
 // Paiements manuels idempotents (plan v2, P4.1).
 //
@@ -26,7 +26,10 @@ async function soldeDu(tx, order) {
 }
 
 // Recalcule Order.paymentStatus : somme des paiements CONFIRMED = 0 -> UNPAID,
-// < total -> PARTIALLY_PAID, >= total -> PAID.
+// < total -> PARTIALLY_PAID, >= total -> PAID. Quand tous les paiements sont
+// REFUNDED (somme nulle, mais au moins un paiement existe), la commande est
+// REFUNDED : l'argent est reparti, elle n'est plus « à payer » mais soldée
+// à rebours. Renvoie le statut calculé.
 async function recalculerStatut(tx, orderId) {
   const order = await tx.order.findUnique({
     where: { id: orderId },
@@ -40,8 +43,26 @@ async function recalculerStatut(tx, orderId) {
     // Prisma.Decimal n'expose pas greaterThanOrEqual : « >= total » se lit
     // « non < total ».
     statut = somme.lessThan(toDecimal(order.total)) ? 'PARTIALLY_PAID' : 'PAID';
+  } else if (
+    order.payments.length > 0 &&
+    order.payments.every((p) => p.status === 'REFUNDED')
+  ) {
+    statut = 'REFUNDED';
   }
   await tx.order.update({ where: { id: orderId }, data: { paymentStatus: statut } });
+  return statut;
+}
+
+// Une clé d'idempotence est liée à sa requête : rejouer la même clé n'a de
+// sens que si la commande, le montant et la méthode sont identiques. Sinon,
+// la clé a déjà servi pour une autre opération — renvoyer le premier paiement
+// satisferait faussement le client et masquerait la confusion.
+function memeRequete(paiement, orderId, montant, method) {
+  return (
+    paiement.orderId === orderId &&
+    toDecimal(paiement.amount).equals(montant) &&
+    paiement.method === method
+  );
 }
 
 // Enregistre un paiement manuel de façon idempotente.
@@ -52,16 +73,30 @@ async function recalculerStatut(tx, orderId) {
 // relit alors le paiement d'origine (déjà commité) et on le retourne sans
 // doublon, sans audit ni recalcul (déjà faits par l'appel gagnant).
 //
+// Rejeu séquentiel ou après P2002 : la clé n'est rendue que si la requête est
+// identique (même commande, même montant, même méthode) ; sinon 409
+// IDEMPOTENCY_KEY_CONFLICT.
+//
 // Retourne { payment, rejoue } : rejoue = true quand la clé avait déjà été
 // utilisée (séquentiellement ou en concurrence).
 export async function recordPayment(db, orderId, { amount, method, reference, paidAt }, idempotencyKey, acteur) {
+  const montant = asMoney(amount);
   try {
     return await db.$transaction(async (tx) => {
       // Rejeu séquentiel : la clé a déjà été utilisée. On retourne le
       // paiement d'origine SANS refaire les validations de montant : la
       // sémantique idempotente est « même clé = même résultat ».
       const existant = await tx.payment.findUnique({ where: { idempotencyKey } });
-      if (existant) return { payment: existant, rejoue: true };
+      if (existant) {
+        if (!memeRequete(existant, orderId, montant, method)) {
+          throw erreurPaiement(
+            "Clé d'idempotence déjà utilisée pour une autre opération",
+            409,
+            'IDEMPOTENCY_KEY_CONFLICT'
+          );
+        }
+        return { payment: existant, rejoue: true };
+      }
 
       const order = await tx.order.findUnique({ where: { id: orderId } });
       if (!order) {
@@ -71,7 +106,6 @@ export async function recordPayment(db, orderId, { amount, method, reference, pa
         throw erreurPaiement('Commande annulée', 409, 'ORDER_CANCELLED');
       }
 
-      const montant = asMoney(amount);
       if (!montant.greaterThan(0)) {
         throw erreurPaiement('Montant invalide', 409, 'INVALID_AMOUNT');
       }
@@ -114,6 +148,13 @@ export async function recordPayment(db, orderId, { amount, method, reference, pa
     // relecture se fait hors transaction, sur le paiement déjà commité.
     if (err.code === 'P2002') {
       const payment = await db.payment.findUnique({ where: { idempotencyKey } });
+      if (payment && !memeRequete(payment, orderId, montant, method)) {
+        throw erreurPaiement(
+          "Clé d'idempotence déjà utilisée pour une autre opération",
+          409,
+          'IDEMPOTENCY_KEY_CONFLICT'
+        );
+      }
       return { payment, rejoue: true };
     }
     throw err;
@@ -121,8 +162,18 @@ export async function recordPayment(db, orderId, { amount, method, reference, pa
 }
 
 // Rembourse un paiement CONFIRMED : CONFIRMED -> REFUNDED, recalcul du statut
-// de la commande et audit dans la même transaction.
-export async function refundPayment(db, paymentId, acteur) {
+// de la commande, audit dans la même transaction.
+//
+// Trois gardes-fous autour du reversement fournisseur :
+//   - un reversement déjà PAID ne peut pas être annulé par un remboursement
+//     (l'argent est parti) : 409 PAYOUT_ALREADY_PAID, SAUF dérogation d'un
+//     administrateur (ADMIN ou ROOT) avec force: true — la dérogation est
+//     tracée dans l'audit (forcedAfterPayout) ;
+//   - le recalcul du statut rafraîchit la readiness des reversements : un
+//     remboursement partiel repasse les reversements READY en ON_HOLD ;
+//   - un remboursement total (paymentStatus REFUNDED) annule les reversements
+//     encore vivants : la commande ne doit jamais débiter un fournisseur.
+export async function refundPayment(db, paymentId, acteur, force = false) {
   return db.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({ where: { id: paymentId } });
     if (!payment) {
@@ -131,17 +182,42 @@ export async function refundPayment(db, paymentId, acteur) {
     if (payment.status !== 'CONFIRMED') {
       throw erreurPaiement(`Paiement ${payment.status} non remboursable`, 409, 'PAYMENT_NOT_CONFIRMED');
     }
+
+    const reversementPaye = await tx.supplierPayout.findFirst({
+      where: { orderId: payment.orderId, status: 'PAID' },
+      select: { id: true },
+    });
+    // force n'est un pouvoir de direction qu'avec un compte de niveau 50 ou
+    // plus (ADMIN ou ROOT) : un AGENT qui force est ignoré, comme partout
+    // ailleurs dans l'application.
+    const forceAutorise = (acteur.actorUser?.role?.level ?? 0) >= 50;
+    if (reversementPaye && !(force && forceAutorise)) {
+      throw erreurPaiement(
+        'Reversement déjà payé : à traiter manuellement',
+        409,
+        'PAYOUT_ALREADY_PAID'
+      );
+    }
+
     const maj = await tx.payment.update({
       where: { id: paymentId },
       data: { status: 'REFUNDED' },
     });
-    await recalculerStatut(tx, payment.orderId);
+    const statut = await recalculerStatut(tx, payment.orderId);
+    await refreshPayoutReadiness(tx, payment.orderId);
+    if (statut === 'REFUNDED') {
+      await cancelPayoutsForOrder(tx, payment.orderId);
+    }
     await recordAudit(tx, {
       ...acteur,
       action: 'PAYMENT_REFUNDED',
       entityType: 'Payment',
       entityId: paymentId,
-      metadata: { orderId: payment.orderId, amount: toNumber(payment.amount) },
+      metadata: {
+        orderId: payment.orderId,
+        amount: toNumber(payment.amount),
+        ...(reversementPaye ? { forcedAfterPayout: true } : {}),
+      },
     });
     return maj;
   });

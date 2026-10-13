@@ -5,6 +5,7 @@ import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
 import { createUser, createListingForLot } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
+import { refundPayment } from '../../src/services/payment.service.js';
 
 const Decimal = Prisma.Decimal;
 
@@ -408,9 +409,11 @@ describe('POST /api/v2/staff/payments/:id/refund', () => {
     expect(res.status, res.text).toBe(200);
     expect(res.body.status).toBe('REFUNDED');
 
-    // Le statut de la commande est recalculé : plus aucun paiement CONFIRMED
+    // Le statut de la commande est recalculé : tous les paiements sont
+    // REFUNDED, la commande est soldée à rebours (et non plus « à payer »).
+    // C'est ce statut qui déclenche l'annulation des reversements.
     order = await prisma.order.findUnique({ where: { id: commande.id } });
-    expect(order.paymentStatus).toBe('UNPAID');
+    expect(order.paymentStatus).toBe('REFUNDED');
 
     // Audit PAYMENT_REFUNDED
     const audit = await prisma.auditLog.findFirst({
@@ -502,5 +505,268 @@ describe('POST /api/v2/staff/payments/:id/refund', () => {
 
     expect(res.status, res.text).toBe(404);
     expect(res.body.code).toBe('PAYMENT_NOT_FOUND');
+  });
+});
+
+describe('Idempotence liée à la requête', () => {
+  it('même clé sur une autre commande -> 409 IDEMPOTENCY_KEY_CONFLICT', async () => {
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'PAYMENT_FOLLOWUP']);
+    const commande1 = await creerCommande(agentUser);
+    const commande2 = await creerCommande(agentUser);
+    const cle = identifiant('PAY');
+
+    const res1 = await api()
+      .post(`/api/v2/staff/orders/${commande1.id}/payments`)
+      .set(authHeader(tokenPour(agentUser)))
+      .set('Idempotency-Key', cle)
+      .send({ amount: 3000, method: 'CASH' });
+    expect(res1.status, res1.text).toBe(201);
+
+    // Même clé, autre commande : la clé a déjà servi, on ne rejoue pas le
+    // paiement de la première commande.
+    const res2 = await api()
+      .post(`/api/v2/staff/orders/${commande2.id}/payments`)
+      .set(authHeader(tokenPour(agentUser)))
+      .set('Idempotency-Key', cle)
+      .send({ amount: 3000, method: 'CASH' });
+
+    expect(res2.status, res2.text).toBe(409);
+    expect(res2.body.code).toBe('IDEMPOTENCY_KEY_CONFLICT');
+    expect(res2.body.error).toBe("Clé d'idempotence déjà utilisée pour une autre opération");
+
+    // Aucun paiement sur la seconde commande.
+    const paiements = await prisma.payment.findMany({ where: { orderId: commande2.id } });
+    expect(paiements).toHaveLength(0);
+  });
+
+  it('même clé, même commande, montant différent -> 409 IDEMPOTENCY_KEY_CONFLICT', async () => {
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'PAYMENT_FOLLOWUP']);
+    const commande = await creerCommande(agentUser);
+    const cle = identifiant('PAY');
+
+    const res1 = await api()
+      .post(`/api/v2/staff/orders/${commande.id}/payments`)
+      .set(authHeader(tokenPour(agentUser)))
+      .set('Idempotency-Key', cle)
+      .send({ amount: 3000, method: 'CASH' });
+    expect(res1.status, res1.text).toBe(201);
+
+    const res2 = await api()
+      .post(`/api/v2/staff/orders/${commande.id}/payments`)
+      .set(authHeader(tokenPour(agentUser)))
+      .set('Idempotency-Key', cle)
+      .send({ amount: 2000, method: 'CASH' });
+
+    expect(res2.status, res2.text).toBe(409);
+    expect(res2.body.code).toBe('IDEMPOTENCY_KEY_CONFLICT');
+
+    // Un seul paiement, celui de la première requête.
+    const paiements = await prisma.payment.findMany({ where: { orderId: commande.id } });
+    expect(paiements).toHaveLength(1);
+    expect(paiements[0].amount.toString()).toBe('3000');
+  });
+
+  it('même clé, même commande, méthode différente -> 409 IDEMPOTENCY_KEY_CONFLICT', async () => {
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'PAYMENT_FOLLOWUP']);
+    const commande = await creerCommande(agentUser);
+    const cle = identifiant('PAY');
+
+    const res1 = await api()
+      .post(`/api/v2/staff/orders/${commande.id}/payments`)
+      .set(authHeader(tokenPour(agentUser)))
+      .set('Idempotency-Key', cle)
+      .send({ amount: 3000, method: 'CASH' });
+    expect(res1.status, res1.text).toBe(201);
+
+    const res2 = await api()
+      .post(`/api/v2/staff/orders/${commande.id}/payments`)
+      .set(authHeader(tokenPour(agentUser)))
+      .set('Idempotency-Key', cle)
+      .send({ amount: 3000, method: 'MOBILE_MONEY' });
+
+    expect(res2.status, res2.text).toBe(409);
+    expect(res2.body.code).toBe('IDEMPOTENCY_KEY_CONFLICT');
+  });
+});
+
+describe('Remboursement et cohérence des reversements', () => {
+  // Devis HUB_PICKUP (5 x 1200 = 6000) avec un lot, confirmé, payé en deux
+  // fois (3000 + 3000), passé COMPLETED : reversement READY. Retourne les
+  // deux paiements pour les rembourser.
+  async function commandeCompleteePayee() {
+    const buyer = await createUser({ role: 'BUYER' });
+    const lot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
+    const annonce = await createListingForLot(lot);
+    await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
+    const hub = await creerHub();
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'PAYMENT_FOLLOWUP']);
+
+    const res = await api()
+      .post('/api/v2/staff/orders')
+      .set(authHeader(tokenPour(agentUser)))
+      .send({
+        buyerId: buyer.id,
+        items: [{ listingId: annonce.id, quantity: 5 }],
+        deliveryMode: 'HUB_PICKUP',
+        pickupHubId: hub.id,
+      });
+    expect(res.status).toBe(201);
+    const orderId = res.body.id;
+
+    const tokenAcheteur = generateToken({ id: buyer.id, role: { code: 'BUYER', level: 10 } });
+    const conf = await api()
+      .post(`/api/v2/orders/${orderId}/confirm`)
+      .set(authHeader(tokenAcheteur));
+    expect(conf.status, conf.text).toBe(200);
+
+    const paiements = [];
+    for (let i = 0; i < 2; i++) {
+      const resPay = await api()
+        .post(`/api/v2/staff/orders/${orderId}/payments`)
+        .set(authHeader(tokenPour(agentUser)))
+        .set('Idempotency-Key', identifiant('PAY'))
+        .send({ amount: 3000, method: 'CASH' });
+      expect(resPay.status, resPay.text).toBe(201);
+      paiements.push(resPay.body);
+    }
+
+    // PREPARING exige PAID : ok. Puis READY_FOR_PICKUP et COMPLETED.
+    for (const status of ['PREPARING', 'READY_FOR_PICKUP', 'COMPLETED']) {
+      const resStatus = await api()
+        .patch(`/api/v2/staff/orders/${orderId}/status`)
+        .set(authHeader(tokenPour(agentUser)))
+        .send({ status });
+      expect(resStatus.status, resStatus.text).toBe(200);
+    }
+
+    return { orderId, paiements, agentUser };
+  }
+
+  it('remboursement partiel d\'une commande COMPLETED+PAID : reversement READY -> ON_HOLD, puis nouveau paiement -> READY', async () => {
+    const { orderId, paiements, agentUser } = await commandeCompleteePayee();
+
+    let payout = await prisma.supplierPayout.findFirst({ where: { orderId } });
+    expect(payout.status).toBe('READY');
+
+    const admin = await createUser({ role: 'ADMIN' });
+    const res = await api()
+      .post(`/api/v2/staff/payments/${paiements[0].id}/refund`)
+      .set(authHeader(tokenAdminPour(admin)));
+    expect(res.status, res.text).toBe(200);
+
+    // La commande n'est plus intégralement payée : le reversement repart en
+    // ON_HOLD (jamais un reversement PAID n'est touché).
+    payout = await prisma.supplierPayout.findFirst({ where: { orderId } });
+    expect(payout.status).toBe('ON_HOLD');
+
+    // Nouveau paiement : la commande redevient PAID, le reversement revient
+    // en READY.
+    const resPay = await api()
+      .post(`/api/v2/staff/orders/${orderId}/payments`)
+      .set(authHeader(tokenPour(agentUser)))
+      .set('Idempotency-Key', identifiant('PAY'))
+      .send({ amount: 3000, method: 'CASH' });
+    expect(resPay.status, resPay.text).toBe(201);
+
+    payout = await prisma.supplierPayout.findFirst({ where: { orderId } });
+    expect(payout.status).toBe('READY');
+  });
+
+  it('remboursement total : reversements CANCELLED', async () => {
+    const { orderId, paiements } = await commandeCompleteePayee();
+
+    const admin = await createUser({ role: 'ADMIN' });
+
+    // Rembourser les deux paiements : il ne reste rien de confirmé.
+    for (const paiement of paiements) {
+      const res = await api()
+        .post(`/api/v2/staff/payments/${paiement.id}/refund`)
+        .set(authHeader(tokenAdminPour(admin)));
+      expect(res.status, res.text).toBe(200);
+    }
+
+    // Tout est remboursé : la commande est REFUNDED et les reversements
+    // encore vivants sont annulés.
+    const order = await prisma.order.findUnique({ where: { id: orderId } });
+    expect(order.paymentStatus).toBe('REFUNDED');
+
+    const payouts = await prisma.supplierPayout.findMany({ where: { orderId } });
+    expect(payouts.length).toBeGreaterThan(0);
+    expect(payouts.every((p) => p.status === 'CANCELLED')).toBe(true);
+  });
+
+  it('remboursement avec reversement PAID -> 409 PAYOUT_ALREADY_PAID', async () => {
+    const { orderId, paiements } = await commandeCompleteePayee();
+    const admin = await createUser({ role: 'ADMIN' });
+
+    // Paie le reversement : l'argent est parti.
+    const payout = await prisma.supplierPayout.findFirst({ where: { orderId } });
+    const resPay = await api()
+      .patch(`/api/v2/admin/payouts/${payout.id}/pay`)
+      .set(authHeader(tokenAdminPour(admin)))
+      .send({ reference: identifiant('VIR') });
+    expect(resPay.status, resPay.text).toBe(200);
+
+    // Le remboursement ne peut pas annuler un reversement déjà payé.
+    const res = await api()
+      .post(`/api/v2/staff/payments/${paiements[0].id}/refund`)
+      .set(authHeader(tokenAdminPour(admin)));
+
+    expect(res.status, res.text).toBe(409);
+    expect(res.body.code).toBe('PAYOUT_ALREADY_PAID');
+    expect(res.body.error).toBe('Reversement déjà payé : à traiter manuellement');
+  });
+
+  it('ADMIN avec force : 200 et audit forcedAfterPayout', async () => {
+    const { orderId, paiements } = await commandeCompleteePayee();
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const payout = await prisma.supplierPayout.findFirst({ where: { orderId } });
+    await api()
+      .patch(`/api/v2/admin/payouts/${payout.id}/pay`)
+      .set(authHeader(tokenAdminPour(admin)))
+      .send({ reference: identifiant('VIR') });
+
+    // force: true passe outre le reversement PAID ; la dérogation est tracée.
+    const res = await api()
+      .post(`/api/v2/staff/payments/${paiements[0].id}/refund`)
+      .set(authHeader(tokenAdminPour(admin)))
+      .send({ force: true });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.status).toBe('REFUNDED');
+
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'PAYMENT_REFUNDED', entityType: 'Payment', entityId: paiements[0].id },
+    });
+    expect(audit).toBeTruthy();
+    expect(audit.metadata.forcedAfterPayout).toBe(true);
+  });
+
+  it('AGENT avec force : force ignoré, 409 PAYOUT_ALREADY_PAID', async () => {
+    const { orderId, paiements, agentUser } = await commandeCompleteePayee();
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const payout = await prisma.supplierPayout.findFirst({ where: { orderId } });
+    await api()
+      .patch(`/api/v2/admin/payouts/${payout.id}/pay`)
+      .set(authHeader(tokenAdminPour(admin)))
+      .send({ reference: identifiant('VIR') });
+
+    // Un AGENT (niveau 30) qui force est ignoré : force n'est un pouvoir de
+    // direction qu'avec un compte de niveau 50 ou plus. Le service est appelé
+    // directement : la route refuse déjà un AGENT en 403.
+    const agent = await prisma.agent.findFirst({ where: { userId: agentUser.id } });
+    const acteur = {
+      actorUser: await prisma.user.findUnique({
+        where: { id: agentUser.id },
+        include: { role: true },
+      }),
+      actorAgent: agent,
+    };
+    await expect(refundPayment(prisma, paiements[0].id, acteur, true)).rejects.toMatchObject({
+      statusCode: 409,
+      code: 'PAYOUT_ALREADY_PAID',
+    });
   });
 });

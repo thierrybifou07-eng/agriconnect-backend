@@ -39,8 +39,11 @@ export const listPaymentsHandler = async (req, res) => {
 
 // POST /api/v2/staff/payments/:id/refund — rembourse un paiement CONFIRMED.
 // Pouvoir de direction (ADMIN et plus) : l'argent repart, la décision est
-// tracée dans l'audit.
+// tracée dans l'audit. force: true (schéma paymentRefundSchema) autorise un
+// administrateur à rembourser malgré un reversement déjà payé.
 export const refundPaymentHandler = async (req, res) => {
-  const payment = await refundPayment(prisma, req.params.id, acteur(req));
+  // req.body est undefined quand le client n'envoie aucun corps : le schéma
+  // n'a que des champs optionnels et laisse passer. force vaut alors false.
+  const payment = await refundPayment(prisma, req.params.id, acteur(req), req.body?.force === true);
   res.json(paymentToApi(payment));
 };

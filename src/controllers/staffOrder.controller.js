@@ -8,11 +8,15 @@ import { reserve } from '../services/stock.service.js';
 import {
   computeLine,
   computeBuyerFee,
-  computeDeliveryFee,
   computeOrderTotals,
   getSettings,
 } from '../services/pricing.service.js';
-import { haversineDistanceKm } from '../utils/distance.js';
+import {
+  grouperParOrigine,
+  pointEnlevement,
+  distanceOrigine,
+  tarifOrigine,
+} from '../services/delivery.pricing.js';
 import { orderToStaffDto } from '../utils/dto/order.dto.js';
 import { confirmerAvecExpiration, cancelOrder, changeStatus } from '../services/order.service.js';
 
@@ -183,67 +187,28 @@ export const createOrder = async (req, res) => {
         throw Object.assign(new Error('Zone non couverte'), { statusCode: 409, code: 'ZONE_NOT_COVERED' });
       }
 
-      // Origines d'enlèvement DISTINCTES : hub ou site fournisseur.
-      const originesMap = new Map();
-      for (const { lot } of lignesCalculees) {
-        const cle = lot.storageType === 'HUB' && lot.hubId ? `hub:${lot.hubId}` : `site:${lot.supplierId}`;
-        if (!originesMap.has(cle)) {
-          originesMap.set(cle, { lot });
-        }
-      }
-
-      for (const { lot } of originesMap.values()) {
-        let originLat, originLon, originAddress, hubId = null, hubName = null, type;
-        if (lot.storageType === 'HUB' && lot.hubId) {
-          const hub = lot.hub;
-          originLat = hub.latitude;
-          originLon = hub.longitude;
-          originAddress = hub.address;
-          hubId = hub.id;
-          hubName = hub.name;
-          type = 'HUB';
-        } else {
-          originLat = lot.pickupLatitude;
-          originLon = lot.pickupLongitude;
-          originAddress = lot.pickupAddress;
-          type = 'SUPPLIER_SITE';
-        }
-
-        if (originLat === null || originLat === undefined || originLon === null || originLon === undefined) {
-          throw Object.assign(
-            new Error(`Coordonnées d'enlèvement manquantes pour le lot ${lot.id}`),
-            { statusCode: 409, code: 'ORIGIN_COORDINATES_MISSING' }
-          );
-        }
-
-        const distanceKm = haversineDistanceKm(
-          originLat,
-          originLon,
-          deliveryInfo.latitude,
-          deliveryInfo.longitude
-        );
-        if (distanceKm === null) {
-          throw Object.assign(
-            new Error('Coordonnées de livraison manquantes'),
-            { statusCode: 409, code: 'DELIVERY_COORDINATES_MISSING' }
-          );
-        }
-
-        const { agencyCost, deliveryFee } = computeDeliveryFee({
-          baseFee: agencyZone.baseFee,
-          perKmFee: agencyZone.perKmFee,
+      // Origines d'enlèvement DISTINCTES, distance et tarif : la logique vit
+      // dans delivery.pricing.js, partagée avec la création des livraisons
+      // (staffDelivery.controller.js) — devis et livraison ne peuvent pas
+      // diverger.
+      for (const lot of grouperParOrigine(lignesCalculees.map((l) => l.lot)).values()) {
+        const point = pointEnlevement(lot);
+        const distanceKm = distanceOrigine(lot, deliveryInfo);
+        const { agencyCost, deliveryFee } = tarifOrigine({
+          agencyZone,
           distanceKm,
           markupRate: settings.transportMarkupRate,
-        }, currency);
+          currency,
+        });
 
         deliveryFeeTotal = deliveryFeeTotal.add(deliveryFee);
         origins.push({
-          type,
-          hubId,
-          hubName,
-          address: originAddress,
-          latitude: originLat,
-          longitude: originLon,
+          type: point.type,
+          hubId: point.hubId,
+          hubName: point.hubName,
+          address: point.address,
+          latitude: point.latitude,
+          longitude: point.longitude,
           distanceKm,
           agencyCost,
           deliveryFee,

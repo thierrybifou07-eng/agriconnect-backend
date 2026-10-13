@@ -138,20 +138,28 @@ describe('Le endpoint ne revele pas l existence d un compte', () => {
   // Ce test verifie que le chemin inconnu ne fait pas de travail inutile
   // notable — il ne peut pas garantir l'absence de toute fuite temporelle, mais
   // il interdit le cas evident ou la reponse est livree beaucoup plus tot.
+  //
+  // Sous charge, une seule mesure est bruitée : chaque cas est mesure 5 fois
+  // et les MEDIANES sont comparees. Le rapport exige reste identique.
   it('ne livre pas la reponse beaucoup plus tot quand aucun envoi n a lieu', async () => {
     const { payload } = await inscrit();
 
-    const mesurer = async (email) => {
-      const debut = process.hrtime.bigint();
-      await client.post('/api/v2/auth/forgot-password').send({ email });
-      return Number(process.hrtime.bigint() - debut) / 1e6;
+    const mesurerMediane = async (email, repetitions = 5) => {
+      const mesures = [];
+      for (let i = 0; i < repetitions; i++) {
+        const debut = process.hrtime.bigint();
+        await client.post('/api/v2/auth/forgot-password').send({ email });
+        mesures.push(Number(process.hrtime.bigint() - debut) / 1e6);
+      }
+      mesures.sort((a, b) => a - b);
+      return mesures[Math.floor(mesures.length / 2)];
     };
 
     // Un echantillon dans chaque sens : l'ordre des appels ne doit pas
     // determiner la mesure.
-    const inconnu1 = await mesurer('personne@example.com');
-    const connu = await mesurer(payload.email);
-    const inconnu2 = await mesurer('absent@example.com');
+    const inconnu1 = await mesurerMediane('personne@example.com');
+    const connu = await mesurerMediane(payload.email);
+    const inconnu2 = await mesurerMediane('absent@example.com');
 
     // Marge large : on ne cherche pas a mesurer une fuite subtile, mais a
     // attraper le cas ou la reponse est servie sans aucun traitement.

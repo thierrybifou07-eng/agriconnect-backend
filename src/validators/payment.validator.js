@@ -18,3 +18,12 @@ export const paymentCreateSchema = Joi.object({
     'date.format': 'paidAt doit être une date ISO 8601',
   }),
 });
+
+// Schéma de remboursement d'un paiement (P4.1). force est une dérogation de
+// direction : elle permet à un administrateur (ADMIN ou ROOT) de rembourser
+// même si un reversement fournisseur a déjà été payé — le reversement PAID
+// n'est pas annulé, le règlement fournisseur devient un traitement manuel.
+// Un non-administrateur qui envoie force: true est ignoré (409).
+export const paymentRefundSchema = Joi.object({
+  force: Joi.boolean().optional(),
+});

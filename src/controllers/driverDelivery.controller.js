@@ -143,6 +143,16 @@ export const acceptDelivery = async (req, res) => {
     return tx.delivery.findUnique({ where: { id: livraisonId }, include: INCLUDE_POUR_LIVREUR });
   });
 
+  // Socket delivery:status vers staff et acheteur (payload sans prix) :
+  // l'acceptation est un changement de statut comme les autres, le staff et
+  // l'acheteur suivent la course sans voir les montants.
+  const io = req.app.get('io');
+  if (io) {
+    const payload = { deliveryId: livraison.id, status: livraison.status };
+    io.to('staff').emit('delivery:status', payload);
+    io.to(`user:${livraison.order.buyerId}`).emit('delivery:status', payload);
+  }
+
   res.status(200).json(deliveryToDriverDto(livraison));
 };
 
