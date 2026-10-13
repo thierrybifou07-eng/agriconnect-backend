@@ -27,6 +27,14 @@ import {
   createHub,
   updateHub,
 } from '../controllers/referential.controller.js';
+import {
+  listAgencies,
+  createAgency,
+  updateAgency,
+  upsertAgencyZone,
+  removeAgencyZone,
+  listAgencyDrivers,
+} from '../controllers/agency.controller.js';
 import { listPayouts, payPayoutController } from '../controllers/adminPayout.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
@@ -49,6 +57,11 @@ import {
   createHubSchema,
   updateHubSchema,
 } from '../validators/referential.validator.js';
+import {
+  createAgencySchema,
+  updateAgencySchema,
+  upsertAgencyZoneSchema,
+} from '../validators/agency.validator.js';
 
 const router = Router();
 
@@ -112,5 +125,20 @@ router.patch('/zones/:id', validate(updateZoneSchema), updateZone);
 router.get('/hubs', listHubs);
 router.post('/hubs', validate(createHubSchema), createHub);
 router.patch('/hubs/:id', validate(updateHubSchema), updateHub);
+
+// Agences de transport (ADMIN et plus) : fiches des agences, couverture
+// des zones avec tarifs, et liste des livreurs rattachés. Pas de
+// suppression d'agence : une agence se désactive (isActive=false via PATCH).
+router.get('/agencies', listAgencies);
+router.post('/agencies', validate(createAgencySchema), createAgency);
+router.patch('/agencies/:id', validate(updateAgencySchema), updateAgency);
+
+// Couverture d'une zone par une agence : PUT crée ou met à jour les
+// tarifs, DELETE retire la couverture. :zoneId n'a pas de crochet
+// coerceIdParam (réservé à :id) : le contrôleur le convertit lui-même.
+router.put('/agencies/:id/zones/:zoneId', validate(upsertAgencyZoneSchema), upsertAgencyZone);
+router.delete('/agencies/:id/zones/:zoneId', removeAgencyZone);
+
+router.get('/agencies/:id/drivers', listAgencyDrivers);
 
 export default router;
