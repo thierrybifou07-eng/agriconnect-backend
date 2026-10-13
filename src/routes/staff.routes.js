@@ -44,6 +44,7 @@ import {
   createDeliveries,
   listDeliveries,
 } from '../controllers/staffDelivery.controller.js';
+import { createCompensation } from '../controllers/staffCompensation.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
@@ -54,6 +55,7 @@ import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
 import { orderCreateSchema, orderStatusSchema, orderCancelSchema } from '../validators/order.validator.js';
 import { paymentCreateSchema } from '../validators/payment.validator.js';
+import { compensationCreateSchema } from '../validators/compensation.validator.js';
 import {
   assignSchema,
   escalateSchema,
@@ -90,6 +92,9 @@ const STAFF_REFUND = [protect, requireMinLevel(50), requireHumanActor];
 
 // Les livraisons exigent DISPATCH_COORDINATION (AGENT) ou ADMIN/ROOT.
 const STAFF_DISPATCH = [protect, requireCapability('DISPATCH_COORDINATION')];
+
+// Les indemnisations exigent DISPUTE_HANDLING (AGENT) ou ADMIN/ROOT.
+const STAFF_COMPENSATIONS = [protect, requireCapability('DISPUTE_HANDLING')];
 
 // Sans ce callback, un sixième fichier arrêterait multer avec
 // LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
@@ -186,5 +191,10 @@ router.post('/payments/:id/refund', STAFF_REFUND, refundPaymentHandler);
 // Livraisons (P5.2) : création par point d'enlèvement et consultation paginée.
 router.post('/orders/:id/deliveries', STAFF_DISPATCH, createDeliveries);
 router.get('/deliveries', STAFF_DISPATCH, listDeliveries);
+
+// Indemnisation des invendus et pertes (P6.2) : l'équipe déclare une perte
+// indemnisable sur un lot. Le montant est figé à la creation (taux de la
+// plateforme) et soumis à validation d'un administrateur.
+router.post('/compensations', STAFF_COMPENSATIONS, validate(compensationCreateSchema), createCompensation);
 
 export default router;

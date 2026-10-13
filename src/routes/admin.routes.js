@@ -36,6 +36,12 @@ import {
   listAgencyDrivers,
 } from '../controllers/agency.controller.js';
 import { listPayouts, payPayoutController } from '../controllers/adminPayout.controller.js';
+import {
+  listCompensations,
+  approveCompensationController,
+  rejectCompensationController,
+  payCompensationController,
+} from '../controllers/adminCompensation.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
@@ -45,6 +51,10 @@ import { createStaffUserSchema, createLegalVersionSchema } from '../validators/a
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 import { reviewVerificationSchema } from '../validators/verification.validator.js';
 import { payPayoutSchema } from '../validators/payout.validator.js';
+import {
+  compensationRejectSchema,
+  compensationPaySchema,
+} from '../validators/compensation.validator.js';
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -95,6 +105,14 @@ router.patch('/legal/versions/:id/publish', publishLegalVersion);
 // requireHumanActor bloque les agents IA : un IA ne peut pas déplacer de l'argent.
 router.get('/payouts', requireHumanActor, listPayouts);
 router.patch('/payouts/:id/pay', requireHumanActor, validate(payPayoutSchema), payPayoutController);
+
+// Indemnisations fournisseurs (P6.2) : cycle de vie complet, ADMIN et plus,
+// uniquement agents humains (requireHumanActor) : approuver, rejeter ou payer
+// une indemnisation sont des décisions d'argent, jamais automatisées.
+router.get('/compensations', requireHumanActor, listCompensations);
+router.patch('/compensations/:id/approve', requireHumanActor, approveCompensationController);
+router.patch('/compensations/:id/reject', requireHumanActor, validate(compensationRejectSchema), rejectCompensationController);
+router.patch('/compensations/:id/pay', requireHumanActor, validate(compensationPaySchema), payCompensationController);
 
 // Administration des fiches d'agents (ADMIN et plus) : lecture, modification
 // (dont les capacités) et création d'agents IA sans compte utilisateur.
