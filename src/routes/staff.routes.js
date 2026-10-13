@@ -40,6 +40,10 @@ import {
   listPaymentsHandler,
   refundPaymentHandler,
 } from '../controllers/staffPayment.controller.js';
+import {
+  createDeliveries,
+  listDeliveries,
+} from '../controllers/staffDelivery.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
@@ -83,6 +87,9 @@ const STAFF_PAYMENTS = [protect, requireCapability('PAYMENT_FOLLOWUP'), requireH
 
 // Le remboursement est un pouvoir de direction (ADMIN et plus).
 const STAFF_REFUND = [protect, requireMinLevel(50), requireHumanActor];
+
+// Les livraisons exigent DISPATCH_COORDINATION (AGENT) ou ADMIN/ROOT.
+const STAFF_DISPATCH = [protect, requireCapability('DISPATCH_COORDINATION')];
 
 // Sans ce callback, un sixième fichier arrêterait multer avec
 // LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
@@ -175,5 +182,9 @@ router.post('/orders/:id/cancel', STAFF_ORDERS, validate(orderCancelSchema), can
 router.post('/orders/:id/payments', STAFF_PAYMENTS, validate(paymentCreateSchema), recordPaymentHandler);
 router.get('/orders/:id/payments', STAFF_PAYMENTS, listPaymentsHandler);
 router.post('/payments/:id/refund', STAFF_REFUND, refundPaymentHandler);
+
+// Livraisons (P5.2) : création par point d'enlèvement et consultation paginée.
+router.post('/orders/:id/deliveries', STAFF_DISPATCH, createDeliveries);
+router.get('/deliveries', STAFF_DISPATCH, listDeliveries);
 
 export default router;
