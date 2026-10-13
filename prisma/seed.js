@@ -1,4 +1,6 @@
 import pkg from '@prisma/client';
+import { PRODUCT_CATEGORIES, UNITS } from './seed-data/referentials.js';
+
 const { PrismaClient } = pkg;
 const prisma = new PrismaClient();
 
@@ -10,11 +12,12 @@ async function upsertByCode(model, rows) {
 
 async function main() {
   await upsertByCode('role', [
-    { code: 'FARMER', label: 'Agriculteur', level: 10 },
+    { code: 'ROOT', label: 'Super-administrateur', level: 100 },
+    { code: 'ADMIN', label: 'Administrateur', level: 50 },
+    { code: 'AGENT', label: 'Agent AgriConnect', level: 30 },
+    { code: 'SUPPLIER', label: 'Fournisseur', level: 10 },
     { code: 'BUYER', label: 'Acheteur', level: 10 },
     { code: 'DRIVER', label: 'Livreur', level: 10 },
-    { code: 'ADMIN', label: 'Administrateur', level: 50 },
-    { code: 'ROOT', label: 'Super-administrateur', level: 100 },
   ]);
 
   await upsertByCode('userStatus', [
@@ -22,24 +25,34 @@ async function main() {
     { code: 'SUSPENDED', label: 'Suspendu' },
   ]);
 
+  // Statuts d'annonce (lookup conservée de la v1, codes DRAFT, ACTIVE, SOLD, INACTIVE).
   await upsertByCode('listingStatus', [
-    { code: 'ACTIVE', label: 'Active' },
+    { code: 'DRAFT', label: 'Brouillon' },
+    { code: 'ACTIVE', label: 'Visible' },
     { code: 'SOLD', label: 'Vendue' },
-    { code: 'INACTIVE', label: 'Inactive' },
+    { code: 'INACTIVE', label: 'Masquée' },
   ]);
 
-  await upsertByCode('listingCategory', [
-    { code: 'CEREALES', label: 'Céréales' },
-    { code: 'LEGUMES', label: 'Légumes' },
-    { code: 'FRUITS', label: 'Fruits' },
-    { code: 'TUBERCULES', label: 'Tubercules' },
-    { code: 'ELEVAGE', label: 'Élevage' },
-    { code: 'AUTRE', label: 'Autre' },
+  await upsertByCode('productCategory', PRODUCT_CATEGORIES);
+  await upsertByCode('unit', UNITS);
+
+  await upsertByCode('agentCapability', [
+    { code: 'BUYER_SUPPORT', label: 'Support acheteur' },
+    { code: 'SUPPLIER_SUPPORT', label: 'Support fournisseur' },
+    { code: 'LISTING_MANAGEMENT', label: 'Gestion des annonces' },
+    { code: 'ORDER_PROCESSING', label: 'Traitement des commandes' },
+    { code: 'STOCK_VALIDATION', label: 'Validation des stocks' },
+    { code: 'PAYMENT_FOLLOWUP', label: 'Suivi des paiements' },
+    { code: 'DISPATCH_COORDINATION', label: 'Coordination des expéditions' },
+    { code: 'USER_VERIFICATION', label: 'Vérification des utilisateurs' },
+    { code: 'DISPUTE_HANDLING', label: 'Gestion des litiges' },
   ]);
 
+  // Les lignes PICKUP/DELIVERY ont été renommées HUB_PICKUP/AGENCY_DELIVERY
+  // par la migration v2_domain (mêmes ids).
   await upsertByCode('deliveryMode', [
-    { code: 'PICKUP', label: 'Retrait sur place' },
-    { code: 'DELIVERY', label: 'Livraison' },
+    { code: 'HUB_PICKUP', label: 'Retrait en point de dépôt' },
+    { code: 'AGENCY_DELIVERY', label: "Livraison par l'agence" },
   ]);
 
   await upsertByCode('mediaType', [
@@ -60,7 +73,31 @@ async function main() {
     { code: 'application/pdf', extension: '.pdf', mediaTypeId: documentType.id },
   ]);
 
-  console.log('Seed terminé : rôles, statuts, catégories et types de médias créés.');
+  // Réglages plateforme : ligne unique (id = 1), valeurs par défaut du schéma.
+  // Les taux sont figés sur chaque OrderItem à la commande : ne pas les
+  // modifier à la légère.
+  await prisma.platformSetting.upsert({
+    where: { id: 1 },
+    update: {},
+    create: {
+      id: 1,
+      currency: 'XAF',
+      supplierCommissionRate: 0,
+      buyerFeeType: 'NONE',
+      buyerFeeValue: 0,
+      transportMarkupRate: 0,
+      referralBuyerReward: 5000,
+      referralSupplierReward: 10000,
+      reservationHours: 24,
+      expiryCompensationRate: 1,
+    },
+  });
+
+  // CGU versionnées FR/EN (P1.1) : voir prisma/seed-data/legal.js
+  const { seedLegalDocuments } = await import('./seed-data/legal.js');
+  await seedLegalDocuments();
+
+  console.log('Seed terminé : rôles, statuts, catégories, unités, capacités, modes de livraison, réglages et CGU créés.');
 }
 
 main()

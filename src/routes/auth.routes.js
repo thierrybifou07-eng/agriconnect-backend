@@ -18,7 +18,13 @@ import {
   getMe,
   updateMe,
   uploadAvatar,
-  updateAvailability,
+  updateMyProfile,
+  listPayoutAccounts,
+  createPayoutAccount,
+  updatePayoutAccount,
+  deletePayoutAccount,
+  submitDocument,
+  listMyDocuments,
 } from '../controllers/user.controller.js';
 import {
   authLimiter,
@@ -36,7 +42,14 @@ import {
   oneTimeTokenSchema,
   forgotPasswordSchema,
   resetPasswordSchema,
+  supplierProfileSchema,
+  buyerProfileSchema,
+  driverProfileSchema,
+  payoutAccountCreateSchema,
+  payoutAccountUpdateSchema,
 } from '../validators/auth.validator.js';
+import { submitDocumentSchema } from '../validators/verification.validator.js';
+import uploadDocument from '../middlewares/uploadDocument.middleware.js';
 
 const router = Router();
 
@@ -85,7 +98,7 @@ router.get('/sessions', protect, listSessions);
 router.delete('/sessions/:id', protect, closeSessionById);
 router.post('/logout-all', protect, logoutAll);
 
-// Profil de l'utilisateur connecte. Ces quatre routes etaient sous /api/users :
+// Profil de l'utilisateur connecte. Ces trois routes etaient sous /api/users :
 // elles y ont ete deplacees pour que tout ce que fait un utilisateur sur son
 // propre compte soit dans le meme registre que son authentification. /api/users
 // reste libre pour les endpoints d'administration.
@@ -93,6 +106,35 @@ router.post('/logout-all', protect, logoutAll);
 router.get('/me', protect, getMe);
 router.patch('/me', protect, updateMe);
 router.post('/me/avatar', protect, upload.single('avatar'), uploadAvatar);
-router.patch('/me/availability', protect, requireRole('DRIVER'), updateAvailability);
+
+// Profil du role. GET /me expose deja le profil (voir getMe) ; cette route le
+// modifie. Le schema Joi depend du role — un SUPPLIER n a pas a connaitre les
+// champs d un BUYER : requireRole ci-dessous garantit que le role a un profil,
+// donc la cle existe toujours dans cette table.
+const profileSchemas = {
+  SUPPLIER: supplierProfileSchema,
+  BUYER: buyerProfileSchema,
+  DRIVER: driverProfileSchema,
+};
+const validateProfile = (req, res, next) =>
+  validate(profileSchemas[req.user.role.code])(req, res, next);
+
+// ADMIN, AGENT et ROOT n ont pas de profil : 403 avant toute lecture du corps.
+router.patch('/me/profile', protect, requireRole('SUPPLIER', 'BUYER', 'DRIVER'), validateProfile, updateMyProfile);
+
+// Comptes de paiement : SUPPLIER et BUYER uniquement — seuls ces roles
+// recoivent de l argent de la plateforme. Le numero n est jamais renvoye par
+// l API : voir payoutAccountToApi dans utils/userApi.js.
+router.get('/me/payout-accounts', protect, requireRole('SUPPLIER', 'BUYER'), listPayoutAccounts);
+router.post('/me/payout-accounts', protect, requireRole('SUPPLIER', 'BUYER'), validate(payoutAccountCreateSchema), createPayoutAccount);
+router.patch('/me/payout-accounts/:id', protect, requireRole('SUPPLIER', 'BUYER'), validate(payoutAccountUpdateSchema), updatePayoutAccount);
+router.delete('/me/payout-accounts/:id', protect, requireRole('SUPPLIER', 'BUYER'), deletePayoutAccount);
+
+// Documents de vérification du profil : SUPPLIER et BUYER uniquement — ce sont
+// les deux rôles dont le profil est vérifié par l'équipe (plan v2, P1.6).
+// multer parse d'abord le multipart (champ fichier + champ texte "type"),
+// puis validate controle le corps : l'ordre des middlewares est important.
+router.post('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), uploadDocument.single('file'), validate(submitDocumentSchema), submitDocument);
+router.get('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), listMyDocuments);
 
 export default router;

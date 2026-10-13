@@ -1,50 +1,75 @@
 import Joi from 'joi';
-import prisma from '../config/prisma.js';
+import { Prisma } from '@prisma/client';
 
-// Meme correction que dans order.validator.js : helpers.error leve une vraie
-// erreur Joi, donc un 400 detaille, la ou un throw renvoyait un 500. Le message
-// reste celui de Joi, .messages() n'ayant pas d'effet sur une regle .external().
-const categoryRule = Joi.string()
-  .trim()
-  .external(async (code, helpers) => {
-    if (code === undefined) return code;
-    const exists = await prisma.listingCategory.findUnique({ where: { code } });
-    if (!exists) return helpers.error('any.invalid');
-    return code;
-  });
+const Decimal = Prisma.Decimal;
 
-const statusRule = Joi.string()
-  .trim()
-  .external(async (code, helpers) => {
-    if (code === undefined) return code;
-    const exists = await prisma.listingStatus.findUnique({ where: { code } });
-    if (!exists) return helpers.error('any.invalid');
-    return code;
-  });
+// Joi 18 ne rejette plus number().precision() : il arrondit silencieusement.
+// La précision des montants est donc vérifiée ici, avec le même Decimal que
+// money.js, avant tout arrondi d'écriture.
+function precisionDecimale(max) {
+  return (value, helpers) => {
+    if (new Decimal(value).decimalPlaces() > max) {
+      return helpers.error('number.precision');
+    }
+    return value;
+  };
+}
 
-export const createListingSchema = Joi.object({
-  title: Joi.string().trim().min(3).required().messages({
-    'string.min': 'Le titre doit contenir au moins 3 caractères',
+// Statuts d'annonce (lookup ListingStatus). Partagés avec le contrôleur, qui
+// rejette un ?status= inconnu plutôt que de renvoyer une liste vide qui
+// passerait pour une équipe sans annonce.
+export const LISTING_STATUSES = ['DRAFT', 'ACTIVE', 'SOLD', 'INACTIVE'];
+
+// POST /api/v2/staff/listings.
+//
+// lotIds est un tableau : au MVP une annonce = exactement un lot (C7), la règle
+// est appliquée dans le service (400 si plusieurs). productId n'est pas accepté
+// ici : il est repris du lot, jamais du client.
+export const listingCreateSchema = Joi.object({
+  lotIds: Joi.array()
+    .items(Joi.number().integer().positive())
+    .required()
+    .messages({
+      'any.required': 'lotIds est requis',
+      'array.base': 'lotIds doit être un tableau',
+    }),
+  title: Joi.string().trim().min(3).max(140).required().messages({
+    'any.required': 'title est requis',
+    'string.min': 'title doit contenir au moins 3 caractères',
+    'string.max': 'title ne peut pas dépasser 140 caractères',
   }),
-  category: categoryRule.required(),
-  price: Joi.number().greater(0).required(),
-  quantity: Joi.number().greater(0).required(),
-  unit: Joi.string().trim().required(),
-  location: Joi.string().trim().required(),
-  description: Joi.string().optional().allow(null, ''),
-  latitude: Joi.number().min(-90).max(90).optional(),
-  longitude: Joi.number().min(-180).max(180).optional(),
+  description: Joi.string().trim().max(2000).allow(null).optional().messages({
+    'string.max': 'description ne peut pas dépasser 2000 caractères',
+  }),
+  // Prix public : si absent, le prix convenu du lot fait foi (C7).
+  unitPrice: Joi.number().positive().custom(precisionDecimale(2)).optional().messages({
+    'number.positive': 'Le prix unitaire doit être positif',
+    'number.precision': 'Le prix unitaire ne peut pas dépasser 2 décimales',
+  }),
+  // Zone d'affichage : si absente, la zone du lot fait foi.
+  zoneId: Joi.number().integer().positive().optional().messages({
+    'number.base': 'zoneId doit être un entier',
+  }),
 });
 
-export const updateListingSchema = Joi.object({
-  title: Joi.string().trim().min(3).optional(),
-  category: categoryRule.optional(),
-  price: Joi.number().greater(0).optional(),
-  quantity: Joi.number().greater(0).optional(),
-  unit: Joi.string().trim().optional(),
-  location: Joi.string().trim().optional(),
-  description: Joi.string().optional().allow(null, ''),
-  status: statusRule.optional(),
-  latitude: Joi.number().min(-90).max(90).optional(),
-  longitude: Joi.number().min(-180).max(180).optional(),
+// PATCH /api/v2/staff/listings/:id — tous les champs sont facultatifs mais au
+// moins un doit être présent : un PATCH vide ne ferait rien passer pour une
+// mise à jour réussie.
+export const listingUpdateSchema = Joi.object({
+  title: Joi.string().trim().min(3).max(140).messages({
+    'string.min': 'title doit contenir au moins 3 caractères',
+    'string.max': 'title ne peut pas dépasser 140 caractères',
+  }),
+  description: Joi.string().trim().max(2000).allow(null).messages({
+    'string.max': 'description ne peut pas dépasser 2000 caractères',
+  }),
+  unitPrice: Joi.number().positive().custom(precisionDecimale(2)).messages({
+    'number.positive': 'Le prix unitaire doit être positif',
+    'number.precision': 'Le prix unitaire ne peut pas dépasser 2 décimales',
+  }),
+  zoneId: Joi.number().integer().positive().messages({
+    'number.base': 'zoneId doit être un entier',
+  }),
+}).min(1).messages({
+  'object.min': 'Aucun champ à modifier',
 });

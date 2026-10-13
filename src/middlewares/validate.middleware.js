@@ -4,7 +4,16 @@
 export const validate = (schema, property = 'body') => async (req, res, next) => {
   try {
     const value = await schema.validateAsync(req[property], { abortEarly: false, stripUnknown: true });
-    req[property] = value;
+    if (property === 'query') {
+      // Express 5 définit req.query par defineGetter (request.js) : un
+      // accesseur sans setter. L'affectation req.query = value lèverait en
+      // mode strict (ESM). On redéfinit la propriété sur l'instance, avec
+      // les attributs d'une propriété de données : le getter d'origine est
+      // masqué pour le reste du traitement de la requête.
+      Object.defineProperty(req, 'query', { value, writable: true, configurable: true, enumerable: true });
+    } else {
+      req[property] = value;
+    }
     next();
   } catch (error) {
     if (error.isJoi) {

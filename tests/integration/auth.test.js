@@ -11,17 +11,17 @@ const client = api();
 const claims = (token) => verifyToken(token);
 const utilisateur = (email) => prisma.user.findUnique({ where: { email } });
 
-describe('POST /api/auth/register', () => {
+describe('POST /api/v2/auth/register', () => {
   it('cree un compte et renvoie les jetons', async () => {
-    const { user, accessToken, refreshToken } = await registerViaApi(client, { role: 'FARMER' });
+    const { user, accessToken, refreshToken } = await registerViaApi(client, { role: 'SUPPLIER' });
 
     // role et userStatus sont exposes en { code, label } : le libelle pour
     // l'affichage, le code pour la logique du client. C'est la forme unique,
-    // celle que renvoie aussi GET /api/auth/me — voir utils/userApi.js.
+    // celle que renvoie aussi GET /api/v2/auth/me — voir utils/userApi.js.
     expect(user).toMatchObject({
       firstname: 'Amina',
       lastname: 'Benali',
-      role: { code: 'FARMER', label: 'Agriculteur' },
+      role: { code: 'SUPPLIER', label: 'Fournisseur' },
       userStatus: { code: 'ACTIVE', label: 'Actif' },
       emailVerified: false,
     });
@@ -37,13 +37,33 @@ describe('POST /api/auth/register', () => {
 
   it('refuse un role hors liste blanche, meme envoye', async () => {
     for (const role of ['ADMIN', 'ROOT']) {
-      const res = await client.post('/api/auth/register').send({
+      const res = await client.post('/api/v2/auth/register').send({
         firstname: 'Malin',
         lastname: 'Intention',
         phone: '+33611110000',
         email: `${role.toLowerCase()}@example.com`,
         password: 'MotDePasse1!',
         role,
+        acceptTerms: true,
+      });
+      expect(res.status, `role ${role} doit etre refuse`).toBe(400);
+    }
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  // DRIVER n'est plus un role public (compte d'équipe, cree par un
+  // administrateur) et FARMER n'existe plus (renomme SUPPLIER) : les deux
+  // doivent etre refuses a l'inscription, comme ADMIN et ROOT.
+  it('refuse les roles DRIVER et FARMER', async () => {
+    for (const role of ['DRIVER', 'FARMER']) {
+      const res = await client.post('/api/v2/auth/register').send({
+        firstname: 'Malin',
+        lastname: 'Intention',
+        phone: '+33644440000',
+        email: `${role.toLowerCase()}-refuse@example.com`,
+        password: 'MotDePasse1!',
+        role,
+        acceptTerms: true,
       });
       expect(res.status, `role ${role} doit etre refuse`).toBe(400);
     }
@@ -52,37 +72,125 @@ describe('POST /api/auth/register', () => {
 
   it('refuse un email deja utilise', async () => {
     await registerViaApi(client, { email: 'doublon@example.com' });
-    const res = await client.post('/api/auth/register').send({
+    const res = await client.post('/api/v2/auth/register').send({
       firstname: 'Autre',
       lastname: 'Personne',
       phone: '+33622220000',
       email: 'doublon@example.com',
       password: 'MotDePasse1!',
       role: 'BUYER',
+      acceptTerms: true,
     });
     expect(res.status).toBe(409);
   });
 
   it('refuse un mot de passe trop faible', async () => {
-    const res = await client.post('/api/auth/register').send({
+    const res = await client.post('/api/v2/auth/register').send({
       firstname: 'Faible',
       lastname: 'MotDePasse',
       phone: '+33633330000',
       email: 'faible@example.com',
       password: 'tropcourt',
       role: 'BUYER',
+      acceptTerms: true,
     });
     expect(res.status).toBe(400);
     expect(res.body.details.some((d) => d.field === 'password')).toBe(true);
   });
+
+  // Profil, acceptations et code de parrainage sont crees dans la meme
+  // transaction que le compte : voir register dans auth.controller.js.
+  it('cree le profil acheteur, enregistre les acceptations et renvoie le code de parrainage', async () => {
+    const { user, accessToken } = await registerViaApi(client, { role: 'BUYER' });
+
+    const profil = await prisma.buyerProfile.findUnique({ where: { userId: user.id } });
+    expect(profil).not.toBeNull();
+    expect(profil.buyerType).toBe('RETAILER');
+
+    // Deux documents requis pour un acheteur (CGU + BUYER_TERMS), chacun dans
+    // sa version PUBLISHED, avec l IP de la requete.
+    const acceptations = await prisma.termsAcceptance.findMany({
+      where: { userId: user.id },
+      include: { version: { select: { status: true } } },
+    });
+    expect(acceptations).toHaveLength(2);
+    expect(acceptations.every((a) => a.version.status === 'PUBLISHED')).toBe(true);
+    expect(acceptations.every((a) => a.ipAddress)).toBe(true);
+
+    const me = await client.get('/api/v2/auth/me').set('Authorization', `Bearer ${accessToken}`);
+    expect(me.status).toBe(200);
+    expect(me.body.referralCode).toMatch(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8}$/);
+  });
+
+  it('cree le profil fournisseur avec le nom de ferme fourni', async () => {
+    const { user } = await registerViaApi(client, { role: 'SUPPLIER', farmName: 'Ferme des Hauts' });
+
+    const profil = await prisma.supplierProfile.findUnique({ where: { userId: user.id } });
+    expect(profil).not.toBeNull();
+    expect(profil.farmName).toBe('Ferme des Hauts');
+  });
+
+  // Sans nom fourni, le profil porte le nom complet : le compte est
+  // immediatement identifiable par l equipe et par les acheteurs.
+  it('prend le nom complet comme nom de ferme par defaut', async () => {
+    const { user } = await registerViaApi(client, { role: 'SUPPLIER' });
+
+    const profil = await prisma.supplierProfile.findUnique({ where: { userId: user.id } });
+    expect(profil.farmName).toBe('Amina Benali');
+  });
+
+  it('refuse sans acceptation des conditions', async () => {
+    const res = await client.post('/api/v2/auth/register').send({
+      firstname: 'Sans',
+      lastname: 'Conditions',
+      phone: '+33655550000',
+      email: 'sans-conditions@example.com',
+      password: 'MotDePasse1!',
+      role: 'BUYER',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.details.some((d) => d.field === 'acceptTerms')).toBe(true);
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  it('annule toute la creation si le code de parrainage est inconnu', async () => {
+    const res = await client.post('/api/v2/auth/register').send({
+      firstname: 'Filleul',
+      lastname: 'Inconnu',
+      phone: '+33666660000',
+      email: 'filleul-inconnu@example.com',
+      password: 'MotDePasse1!',
+      role: 'BUYER',
+      acceptTerms: true,
+      referralCode: 'ZZZZZZZZ',
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('Code de parrainage invalide');
+    expect(await prisma.user.count()).toBe(0);
+  });
+
+  it('cree un parrainage PENDING quand le code est valide', async () => {
+    const parrain = await registerViaApi(client, { role: 'SUPPLIER' });
+    const codeParrain = (await prisma.user.findUnique({ where: { email: parrain.payload.email } })).referralCode;
+
+    const filleul = await registerViaApi(client, { role: 'BUYER', referralCode: codeParrain });
+
+    const parrainage = await prisma.referral.findFirst({ where: { referredId: filleul.user.id } });
+    expect(parrainage).not.toBeNull();
+    expect(parrainage.referrerId).toBe(parrain.user.id);
+    expect(parrainage.kind).toBe('BUYER');
+    expect(parrainage.status).toBe('PENDING');
+  });
 });
 
-describe('POST /api/auth/login', () => {
+describe('POST /api/v2/auth/login', () => {
   it('accepte les identifiants valides', async () => {
     const { payload } = await registerViaApi(client, { email: 'login@example.com' });
 
     const res = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
 
     expect(res.status).toBe(200);
@@ -92,9 +200,9 @@ describe('POST /api/auth/login', () => {
   it('renvoie le meme message pour email inconnu et mot de passe faux', async () => {
     const { payload } = await registerViaApi(client, { email: 'connu@example.com' });
 
-    const inconnu = await client.post('/api/auth/login').send({ email: 'inconnu@example.com', password: 'x' });
+    const inconnu = await client.post('/api/v2/auth/login').send({ email: 'inconnu@example.com', password: 'x' });
     const faux = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: 'MauvaisMotDePasse1!' });
 
     // Distinguer les deux cas permettrait d enumerer les comptes existants.
@@ -110,7 +218,7 @@ describe('POST /api/auth/login', () => {
     await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
 
     const res = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
 
     expect(res.status).toBe(403);
@@ -121,7 +229,7 @@ describe('Rotation du refresh token', () => {
   it('delivre un nouvel access token', async () => {
     const { refreshToken } = await registerViaApi(client);
 
-    const res = await client.post('/api/auth/refresh').send({ refreshToken });
+    const res = await client.post('/api/v2/auth/refresh').send({ refreshToken });
 
     expect(res.status).toBe(200);
     expect(res.body.accessToken).toBeTruthy();
@@ -130,9 +238,9 @@ describe('Rotation du refresh token', () => {
   // Le logout revoque le jeton : le rejouer ne doit plus rien donner.
   it('ne reutilise pas un jeton revoque', async () => {
     const { refreshToken } = await registerViaApi(client);
-    await client.post('/api/auth/logout').send({ refreshToken });
+    await client.post('/api/v2/auth/logout').send({ refreshToken });
 
-    const res = await client.post('/api/auth/refresh').send({ refreshToken });
+    const res = await client.post('/api/v2/auth/refresh').send({ refreshToken });
     expect(res.status).toBe(401);
   });
 
@@ -148,7 +256,7 @@ describe('Rotation du refresh token', () => {
     const { refreshToken } = await registerViaApi(client);
     await prisma.refreshToken.updateMany({ data: { expiresAt: new Date(Date.now() - 1000) } });
 
-    const res = await client.post('/api/auth/refresh').send({ refreshToken });
+    const res = await client.post('/api/v2/auth/refresh').send({ refreshToken });
     expect(res.status).toBe(401);
   });
 });
@@ -175,8 +283,8 @@ describe('Sessions', () => {
 
     const apresInscription = (await sessionsDe(user.id)).length;
 
-    await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
-    await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    await client.post('/api/v2/auth/login').send({ email: payload.email, password: payload.password });
+    await client.post('/api/v2/auth/login').send({ email: payload.email, password: payload.password });
 
     // L'inscription ouvre deja une session ; deux connexions de plus en ouvrent
     // deux autres. Deux appareils, deux sessions : c'est tout l'objet du modele,
@@ -202,7 +310,7 @@ describe('Sessions', () => {
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
 
     await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .set('User-Agent', 'AgriConnect-Jest/1.0')
       .send({ email: payload.email, password: payload.password });
 
@@ -226,7 +334,7 @@ describe('Sessions', () => {
   it('ferme la session au logout, pas seulement le jeton', async () => {
     const { user, refreshToken } = await registerViaApi(client);
 
-    const res = await client.post('/api/auth/logout').send({ refreshToken });
+    const res = await client.post('/api/v2/auth/logout').send({ refreshToken });
     expect(res.status).toBe(204);
 
     const sessions = await sessionsDe(user.id);
@@ -240,8 +348,8 @@ describe('Sessions', () => {
   it('rend le logout idempotent', async () => {
     const { refreshToken } = await registerViaApi(client);
 
-    expect((await client.post('/api/auth/logout').send({ refreshToken })).status).toBe(204);
-    expect((await client.post('/api/auth/logout').send({ refreshToken })).status).toBe(204);
+    expect((await client.post('/api/v2/auth/logout').send({ refreshToken })).status).toBe(204);
+    expect((await client.post('/api/v2/auth/logout').send({ refreshToken })).status).toBe(204);
   });
 
   it('ne coupe que la session de l appareil qui se deconnecte', async () => {
@@ -249,17 +357,17 @@ describe('Sessions', () => {
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
 
     const telephone = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
     const ordinateur = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
 
-    await client.post('/api/auth/logout').send({ refreshToken: telephone.body.refreshToken });
+    await client.post('/api/v2/auth/logout').send({ refreshToken: telephone.body.refreshToken });
 
     // L'appareil qui s'est deconnecte ne peut plus rafraichir ; l'autre si.
-    const coupe = await client.post('/api/auth/refresh').send({ refreshToken: telephone.body.refreshToken });
-    const intact = await client.post('/api/auth/refresh').send({ refreshToken: ordinateur.body.refreshToken });
+    const coupe = await client.post('/api/v2/auth/refresh').send({ refreshToken: telephone.body.refreshToken });
+    const intact = await client.post('/api/v2/auth/refresh').send({ refreshToken: ordinateur.body.refreshToken });
 
     expect(coupe.status).toBe(401);
     expect(intact.status).toBe(200);
@@ -277,7 +385,7 @@ describe('Sessions', () => {
 
     await prisma.session.updateMany({ where: { userId: user.id }, data: { revokedAt: new Date() } });
 
-    const res = await client.post('/api/auth/refresh').send({ refreshToken });
+    const res = await client.post('/api/v2/auth/refresh').send({ refreshToken });
     expect(res.status).toBe(401);
   });
 });
@@ -286,7 +394,7 @@ describe('Sessions', () => {
 // la session qui est l'unite de vie, pas le jeton. Un rafraichissement ne doit
 // donc jamais faire grossir la liste des sessions d'un compte.
 describe('Rotation du jeton dans la session', () => {
-  const rafraichir = (refreshToken) => client.post('/api/auth/refresh').send({ refreshToken });
+  const rafraichir = (refreshToken) => client.post('/api/v2/auth/refresh').send({ refreshToken });
 
   it('renvoie un nouveau jeton, different du presente', async () => {
     const { refreshToken } = await registerViaApi(client);
@@ -421,7 +529,7 @@ describe('Plafond de sessions', () => {
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
 
     for (let i = 0; i < 5; i += 1) {
-      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+      await client.post('/api/v2/auth/login').send({ email: payload.email, password: payload.password });
     }
 
     // 6 sessions ouvertes au total (inscription + 5 connexions), plafond a 5.
@@ -445,7 +553,7 @@ describe('Plafond de sessions', () => {
     // Le jeton de l'inscription, identifie avant de declencher les connexions.
     const inscription = await prisma.refreshToken.findFirst({ where: { userId: user.id } });
     for (let i = 0; i < 5; i += 1) {
-      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+      await client.post('/api/v2/auth/login').send({ email: payload.email, password: payload.password });
     }
 
     // Sans revocation du jeton, l'appareil evince pourrait encore rafraichir :
@@ -460,7 +568,7 @@ describe('Plafond de sessions', () => {
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
 
     for (let i = 0; i < 4; i += 1) {
-      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+      await client.post('/api/v2/auth/login').send({ email: payload.email, password: payload.password });
     }
 
     // 5 sessions exactement : personne ne doit etre deconnecte.
@@ -474,7 +582,7 @@ describe('Plafond de sessions', () => {
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
 
     for (let i = 0; i < 4; i += 1) {
-      await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+      await client.post('/api/v2/auth/login').send({ email: payload.email, password: payload.password });
     }
     // 5 sessions ouvertes. On en ferme 3 pour en laisser 2 : la nouvelle
     // connexion doit pouvoir passer sans evincer personne.
@@ -488,7 +596,7 @@ describe('Plafond de sessions', () => {
       data: { revokedAt: new Date() },
     });
 
-    const res = await client.post('/api/auth/login').send({ email: payload.email, password: payload.password });
+    const res = await client.post('/api/v2/auth/login').send({ email: payload.email, password: payload.password });
     expect(res.status).toBe(200);
     // 3 sessions ouvertes, aucune eviction de supplement.
     expect(await prisma.session.count({ where: { userId: user.id, revokedAt: null } })).toBe(3);
@@ -523,10 +631,10 @@ describe('Charge utile du jeton d acces', () => {
     const { payload } = await registerViaApi(client);
 
     const premier = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
     const second = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
 
     // Deux appareils : le jeton de chacun designe sa propre session, sinon le
@@ -537,7 +645,7 @@ describe('Charge utile du jeton d acces', () => {
   it('conserve le sessionId apres un refresh', async () => {
     const { accessToken, refreshToken } = await registerViaApi(client);
 
-    const res = await client.post('/api/auth/refresh').send({ refreshToken });
+    const res = await client.post('/api/v2/auth/refresh').send({ refreshToken });
 
     // La session ne change pas au refresh : seul le jeton qui la porte est
     // remplace, sinon le client perdrait la sienne a chaque renouvellement.
@@ -557,7 +665,7 @@ describe('Charge utile du jeton d acces', () => {
     });
 
     const res = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
 
     // Les claims sont techniques : un client compare a "SUSPENDED", pas a
@@ -570,7 +678,7 @@ describe('Charge utile du jeton d acces', () => {
 // La base est la reference. Ces tests verrouillent le sens dans lequel l'ecart
 // entre le jeton et la base se resorbe.
 describe('Statut du compte : la base prime sur le jeton', () => {
-  const routeProtegee = (token) => client.get('/api/auth/me').set('Authorization', `Bearer ${token}`);
+  const routeProtegee = (token) => client.get('/api/v2/auth/me').set('Authorization', `Bearer ${token}`);
 
   it('refuse un jeton.delivre avant une suspension', async () => {
     const { accessToken, payload } = await registerViaApi(client);
@@ -624,7 +732,7 @@ describe('Statut du compte : la base prime sur le jeton', () => {
     await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
 
     const refuse = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
     expect(refuse.status).toBe(403);
 
@@ -632,7 +740,7 @@ describe('Statut du compte : la base prime sur le jeton', () => {
     await prisma.user.update({ where: { id: user.id }, data: { userStatusId: actif.id } });
 
     const res = await client
-      .post('/api/auth/login')
+      .post('/api/v2/auth/login')
       .send({ email: payload.email, password: payload.password });
     expect(res.status).toBe(200);
     expect(claims(res.body.accessToken).userStatus).toBe('ACTIVE');

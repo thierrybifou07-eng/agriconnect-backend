@@ -8,10 +8,10 @@ process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-jwt';
 
 describe('JWT', () => {
   it('encode et décode les charges utiles', () => {
-    const token = generateToken({ id: 42, role: 'FARMER' });
+    const token = generateToken({ id: 42, role: 'SUPPLIER' });
     const decoded = verifyToken(token);
     expect(decoded.id).toBe(42);
-    expect(decoded.role).toBe('FARMER');
+    expect(decoded.role).toBe('SUPPLIER');
   });
 
   it('applique une expiration', () => {

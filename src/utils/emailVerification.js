@@ -93,7 +93,7 @@ export function dispatchVerificationEmail(user, rawToken, { username } = {}) {
       // Le lien est construit ici et non dans le gabarit : un gabarit qui connait
       // la construction d'URL dupliquerait la regle, et le jour ou la forme du
       // lien change il faudrait corriger les deux.
-      verificationUrl: backendUrl('/api/auth/verify-email', { token: rawToken }),
+      verificationUrl: backendUrl('/api/v2/auth/verify-email', { token: rawToken }),
     }
   );
 }

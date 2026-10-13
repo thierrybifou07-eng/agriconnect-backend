@@ -2,7 +2,7 @@ import bcrypt from 'bcrypt';
 import prisma from '../../src/config/prisma.js';
 
 // Fabriques de fixtures. Les utilisateurs sont inseres directement en base
-// plutot que via POST /api/auth/register : les tests qui concernent l'API
+// plutot que via POST /api/v2/auth/register : les tests qui concernent l'API
 // d'authentification utilisent la vraie route, les autres n'ont pas besoin de
 // payer le prix du hachage bcrypt a chaque cas.
 
@@ -75,28 +75,25 @@ export async function createRefreshToken(user, session, overrides = {}) {
   });
 }
 
-export async function createListing({ farmer, ...overrides } = {}) {
-  const owner = farmer || (await createUser({ role: 'FARMER' }));
-  const [categoryId, statusId] = await Promise.all([
-    lookupId('listingCategory', 'CEREALES'),
-    lookupId('listingStatus', 'ACTIVE'),
-  ]);
-
-  return prisma.listing.create({
+// Crée une annonce ACTIVE reliée à un lot (ListingLot). Les commandes et les
+// conversations portent désormais une annonce, plus directement un produit.
+export async function createListingForLot(lot, overrides = {}) {
+  const statusId = await lookupId('listingStatus', 'ACTIVE');
+  const annonce = await prisma.listing.create({
     data: {
-      title: 'Blé tendre',
-      price: 250,
-      quantity: 100,
-      unit: 'kg',
-      location: 'Rabat',
-      latitude: 34.02,
-      longitude: -6.84,
-      farmerId: owner.id,
-      categoryId,
+      reference: `ANN-TMP-${nextId()}`,
+      title: `Annonce ${nextId()}`,
+      unitPrice: lot.agreedUnitPrice,
+      productId: lot.productId,
+      zoneId: lot.zoneId,
       statusId,
-      ...overrides,
+      publishedAt: new Date(),
     },
   });
+  await prisma.listingLot.create({
+    data: { listingId: annonce.id, lotId: lot.id },
+  });
+  return { ...annonce, ...overrides };
 }
 
 // Enregistre l'utilisateur via l'API et renvoie son jeton : à utiliser quand le
@@ -110,13 +107,16 @@ export async function registerViaApi(client, overrides = {}) {
     email: `api${id}@example.com`,
     password: 'MotDePasse1!',
     role: 'BUYER',
+    // L'inscription enregistre l'acceptation des documents requis : sans accord
+    // explicite, la validation Joi refuse la requete (voir registerSchema).
+    acceptTerms: true,
     ...overrides,
     // L email est unique : on le regener systematiquement sauf si le test
     // fournit le sien explicitement.
     ...(overrides.email ? {} : { email: `api${id}@example.com` }),
   };
 
-  const res = await client.post('/api/auth/register').send(payload);
+  const res = await client.post('/api/v2/auth/register').send(payload);
 
   // A l inscription, le controleur tente un envoi d'email. Si le SMTP est
   // injoignable, Express 5 laisse l'erreur remonter au middleware d'erreur et

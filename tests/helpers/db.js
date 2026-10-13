@@ -1,20 +1,76 @@
 import prisma from '../../src/config/prisma.js';
+import { PRODUCT_CATEGORIES, UNITS } from '../../prisma/seed-data/referentials.js';
 
-// Tables métier vidées entre chaque test. Les tables de référence (Role,
-// UserStatus, ListingStatus...) sont volontairement conservées : le seed les
-// remplit et chaque test en a besoin.
-const BUSINESS_TABLES = [
-  'RefreshToken',
+// Tables métier vidées entre chaque test. Les tables de référence
+// (REFERENCE_TABLES : Role, UserStatus, ..., LegalDocumentTranslation) et la
+// configuration (PlatformSetting, LegalDocument*) sont volontairement
+// conservées : le seed les remplit et chaque test en a besoin.
+//
+// Une table métier doit atterrir ici dès qu'elle porte des données de test.
+export const BUSINESS_TABLES = [
+  // auth
   'Session',
+  'RefreshToken',
   'EmailVerificationToken',
   'PasswordResetToken',
-  'Message',
-  'Conversation',
-  'Delivery',
-  'Order',
-  'Media',
-  'Listing',
+  // utilisateurs et profils
   'User',
+  'SupplierProfile',
+  'BuyerProfile',
+  'DriverProfile',
+  'PayoutAccount',
+  'VerificationDocument',
+  'TermsAcceptance',
+  // agents
+  'Agent',
+  'AgentCapabilityLink',
+  // géographie et logistique
+  'Zone',
+  'TransportAgency',
+  'AgencyZone',
+  'Hub',
+  // catalogue et stock
+  'Product',
+  'StockLot',
+  'StockMovement',
+  'LotQualityCheck',
+  // annonces
+  'Listing',
+  'ListingLot',
+  // messagerie
+  'Conversation',
+  'Message',
+  // commandes et paiements
+  'Order',
+  'OrderItem',
+  'Payment',
+  'SupplierPayout',
+  'SupplierCompensation',
+  'Delivery',
+  // divers
+  'Referral',
+  'Media',
+  'AuditLog',
+];
+
+// Tables de référence et de configuration : préservées entre deux tests, car
+// le seed les remplit une seule fois au démarrage de la suite.
+export const REFERENCE_TABLES = [
+  // référentiels seedés
+  'Role',
+  'UserStatus',
+  'MediaType',
+  'MimeType',
+  'DeliveryMode',
+  'ListingStatus',
+  'ProductCategory',
+  'Unit',
+  'AgentCapability',
+  // configuration et documents juridiques
+  'PlatformSetting',
+  'LegalDocument',
+  'LegalDocumentVersion',
+  'LegalDocumentTranslation',
 ];
 
 // DELETE, et non TRUNCATE.
@@ -36,6 +92,18 @@ export async function resetDatabase() {
     for (const table of BUSINESS_TABLES) {
       await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\``);
     }
+
+    // Les référentiels ne sont pas vidés, mais les lignes que les tests
+    // ajoutent directement sur ProductCategory et Unit ne doivent pas
+    // survivre au test suivant : elles s'accumuleraient et contamineraient
+    // les listes paginées des routes admin. On ne garde que les codes du
+    // seed (prisma/seed-data/referentials.js).
+    await prisma.productCategory.deleteMany({
+      where: { code: { notIn: PRODUCT_CATEGORIES.map((c) => c.code) } },
+    });
+    await prisma.unit.deleteMany({
+      where: { code: { notIn: UNITS.map((u) => u.code) } },
+    });
   } finally {
     await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
   }
