@@ -1146,6 +1146,7 @@ model Referral {
   rewardAmount    Decimal?       @db.Decimal(14, 2)
   eligibleAt      DateTime?
   paidAt          DateTime?
+  reference       String?        @db.VarChar(255)
   rejectionReason String?        @db.Text
   createdAt       DateTime       @default(now())
 

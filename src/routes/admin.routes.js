@@ -36,6 +36,7 @@ import {
   listAgencyDrivers,
 } from '../controllers/agency.controller.js';
 import { listPayouts, payPayoutController } from '../controllers/adminPayout.controller.js';
+import { listReferrals, payReferralController, rejectReferralController } from '../controllers/referral.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
@@ -45,6 +46,7 @@ import { createStaffUserSchema, createLegalVersionSchema } from '../validators/a
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 import { reviewVerificationSchema } from '../validators/verification.validator.js';
 import { payPayoutSchema } from '../validators/payout.validator.js';
+import { payReferralSchema, rejectReferralSchema, listReferralsQuerySchema } from '../validators/referral.validator.js';
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -95,6 +97,12 @@ router.patch('/legal/versions/:id/publish', publishLegalVersion);
 // requireHumanActor bloque les agents IA : un IA ne peut pas déplacer de l'argent.
 router.get('/payouts', requireHumanActor, listPayouts);
 router.patch('/payouts/:id/pay', requireHumanActor, validate(payPayoutSchema), payPayoutController);
+
+// Parrainages (montants fixes) : ADMIN et plus, uniquement agents humains.
+// requireHumanActor bloque les agents IA : un IA ne peut pas déplacer de l'argent.
+router.get('/referrals', requireHumanActor, validate(listReferralsQuerySchema, 'query'), listReferrals);
+router.patch('/referrals/:id/pay', requireHumanActor, validate(payReferralSchema), payReferralController);
+router.patch('/referrals/:id/reject', requireHumanActor, validate(rejectReferralSchema), rejectReferralController);
 
 // Administration des fiches d'agents (ADMIN et plus) : lecture, modification
 // (dont les capacités) et création d'agents IA sans compte utilisateur.
