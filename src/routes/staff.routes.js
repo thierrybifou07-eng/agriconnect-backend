@@ -18,7 +18,14 @@ import {
   publishListing,
   unpublishListing,
 } from '../controllers/staffListing.controller.js';
-import { createOrder } from '../controllers/staffOrder.controller.js';
+import {
+  createOrder,
+  listOrders,
+  getOrder,
+  changeOrderStatus,
+  confirmOrderByStaff,
+  cancelOrderByStaff,
+} from '../controllers/staffOrder.controller.js';
 import {
   listConversations,
   assignConversation,
@@ -33,7 +40,7 @@ import upload from '../middlewares/upload.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
-import { orderCreateSchema } from '../validators/order.validator.js';
+import { orderCreateSchema, orderStatusSchema, orderCancelSchema } from '../validators/order.validator.js';
 import {
   assignSchema,
   escalateSchema,
@@ -136,5 +143,13 @@ router.post('/conversations/:id/messages', STAFF_CONVERSATIONS, validate(staffMe
 
 // Devis (P3.4) : l'équipe émet un devis qui réserve le stock et fige les prix.
 router.post('/orders', STAFF_ORDERS, validate(orderCreateSchema), createOrder);
+
+// Cycle de vie de la commande (P3.5) : consultation, changement de statut
+// manuel, confirmation et annulation par l'équipe.
+router.get('/orders', STAFF_ORDERS, listOrders);
+router.get('/orders/:id', STAFF_ORDERS, getOrder);
+router.patch('/orders/:id/status', STAFF_ORDERS, validate(orderStatusSchema), changeOrderStatus);
+router.post('/orders/:id/confirm', STAFF_ORDERS, confirmOrderByStaff);
+router.post('/orders/:id/cancel', STAFF_ORDERS, validate(orderCancelSchema), cancelOrderByStaff);
 
 export default router;

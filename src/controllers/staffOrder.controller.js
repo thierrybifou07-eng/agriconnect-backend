@@ -13,6 +13,7 @@ import {
 } from '../services/pricing.service.js';
 import { haversineDistanceKm } from '../utils/distance.js';
 import { orderToStaffDto } from '../utils/dto/order.dto.js';
+import { confirmerAvecExpiration, cancelOrder, changeStatus } from '../services/order.service.js';
 
 // Résout l'identité de l'acteur pour l'audit (recordAudit attend des objets).
 // Un agent connecté a req.agent (requireCapability) ; un admin n'en a pas.
@@ -301,4 +302,69 @@ export const createOrder = async (req, res) => {
   complet.origins = result.origins;
 
   res.status(201).json(orderToStaffDto(complet));
+};
+
+// Recharge la commande complete pour le DTO staff (apres une mutation).
+async function rechargerCommande(orderId) {
+  return prisma.order.findUnique({
+    where: { id: orderId },
+    include: ORDER_STAFF_INCLUDE,
+  });
+}
+
+// GET /api/v2/staff/orders — toutes les commandes, paginees.
+export const listOrders = async (req, res) => {
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+  const [items, total] = await Promise.all([
+    prisma.order.findMany({
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+      include: ORDER_STAFF_INCLUDE,
+    }),
+    prisma.order.count(),
+  ]);
+  res.json({ items: items.map(orderToStaffDto), page, limit, total });
+};
+
+// GET /api/v2/staff/orders/:id — le detail d'une commande (toutes les
+// donnees internes : lots, commission, origines, acheteur).
+export const getOrder = async (req, res) => {
+  const commande = await prisma.order.findUnique({
+    where: { id: req.params.id },
+    include: ORDER_STAFF_INCLUDE,
+  });
+  if (!commande) {
+    return res.status(404).json({ error: 'Commande introuvable' });
+  }
+  res.json(orderToStaffDto(commande));
+};
+
+// PATCH /api/v2/staff/orders/:id/status — changement de statut manuel.
+// La machine a etats (order.state.js) refuse les transitions interdites ;
+// PREPARING sans paiement exige force: true, reserve aux administrateurs.
+export const changeOrderStatus = async (req, res) => {
+  const { status, force } = req.body;
+  await prisma.$transaction((tx) =>
+    changeStatus(tx, req.params.id, status, acteur(req), { force: force === true })
+  );
+  res.json(orderToStaffDto(await rechargerCommande(req.params.id)));
+};
+
+// POST /api/v2/staff/orders/:id/confirm — confirmation d'un devis par
+// l'equipe (memes regles que la confirmation acheteur, y compris
+// l'expiration : le devis expire repond 409 et son stock est libere).
+export const confirmOrderByStaff = async (req, res) => {
+  await confirmerAvecExpiration(prisma, req.params.id, acteur(req));
+  res.json(orderToStaffDto(await rechargerCommande(req.params.id)));
+};
+
+// POST /api/v2/staff/orders/:id/cancel — annulation par l'equipe. Le staff
+// peut annuler une commande CONFIRMED ou PREPARING, pas seulement un devis :
+// la machine a etats applique les transitions autorisees.
+export const cancelOrderByStaff = async (req, res) => {
+  const raison = req.body?.reason ?? null;
+  await prisma.$transaction((tx) => cancelOrder(tx, req.params.id, acteur(req), raison));
+  res.json(orderToStaffDto(await rechargerCommande(req.params.id)));
 };

@@ -68,7 +68,8 @@ function originsToApi(order) {
 }
 
 // Vue acheteur (P3.4) : montants, statut, mode de livraison, échéance de
-// réservation. JAMAIS de donnée fournisseur (supplierId, farmName, adresse
+// réservation et dates du cycle de vie (confirmation, completion,
+// annulation). JAMAIS de donnée fournisseur (supplierId, farmName, adresse
 // d'enlèvement) ni de prix interne (agreedUnitPrice, commission).
 export function orderToBuyerDto(order) {
   return {
@@ -85,6 +86,10 @@ export function orderToBuyerDto(order) {
     pickup: pickupToApi(order),
     notes: order.notes,
     reservedUntil: order.reservedUntil,
+    confirmedAt: order.confirmedAt ?? null,
+    completedAt: order.completedAt ?? null,
+    cancelledAt: order.cancelledAt ?? null,
+    cancellationReason: order.cancellationReason ?? null,
     createdAt: order.createdAt,
   };
 }
@@ -103,8 +108,5 @@ export function orderToStaffDto(order) {
     handledByAgentId: order.handledByAgentId ?? null,
     conversationId: order.conversationId ?? null,
     paymentStatus: order.paymentStatus ?? null,
-    confirmedAt: order.confirmedAt ?? null,
-    cancelledAt: order.cancelledAt ?? null,
-    cancellationReason: order.cancellationReason ?? null,
   };
 }
