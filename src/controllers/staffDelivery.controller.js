@@ -11,6 +11,7 @@ import {
   tarifOrigine,
 } from '../services/delivery.pricing.js';
 import { deliveryToStaffDto } from '../utils/dto/delivery.dto.js';
+import { assertTransition } from '../services/delivery.state.js';
 
 // Résout l'identité de l'acteur pour l'audit (recordAudit attend des objets).
 // Un agent connecté a req.agent (requireCapability) ; un admin n'en a pas.
@@ -62,9 +63,14 @@ export const createDeliveries = async (req, res) => {
       );
     }
 
-    // 3. Idempotence : toute livraison existante refuse une seconde création.
-    const livraisonsExistantes = await tx.delivery.count({ where: { orderId: order.id } });
-    if (livraisonsExistantes > 0) {
+    // 3. Idempotence : le refus ne s'applique que s'il existe au moins une
+    //    livraison NON annulée. Des livraisons annulées ne bloquent pas une
+    //    nouvelle création : l'équipe doit pouvoir reprendre une commande
+    //    dont toutes les courses ont été annulées.
+    const livraisonsActives = await tx.delivery.count({
+      where: { orderId: order.id, status: { not: 'CANCELLED' } },
+    });
+    if (livraisonsActives > 0) {
       throw Object.assign(
         new Error('Des livraisons existent déjà pour cette commande'),
         { statusCode: 409, code: 'DELIVERIES_ALREADY_CREATED' }
@@ -192,4 +198,186 @@ export const listDeliveries = async (req, res) => {
   ]);
 
   res.json({ items: items.map(deliveryToStaffDto), page, limit, total });
+};
+
+// Include minimal pour les actions staff : l'acheteur sert à l'émission
+// socket delivery:status (le staff suit la course, l'acheteur est informé).
+const INCLUDE_POUR_ACTION = {
+  order: { select: { buyerId: true } },
+};
+
+// Emet delivery:status vers le staff et l'acheteur (payload sans prix,
+// comme en P5.3) : toute action staff sur une course est un changement de
+// statut comme les autres.
+function emettreStatut(req, livraison) {
+  const io = req.app.get('io');
+  if (!io) return;
+  const payload = { deliveryId: livraison.id, status: livraison.status };
+  io.to('staff').emit('delivery:status', payload);
+  io.to(`user:${livraison.order.buyerId}`).emit('delivery:status', payload);
+}
+
+// Emet delivery:available vers la salle de l'agence : la course est de
+// nouveau dans le pool, n'importe quel livreur de l'agence peut la prendre.
+function emettreDisponible(req, livraison) {
+  const io = req.app.get('io');
+  if (!io) return;
+  io.to(`agency:${livraison.agencyId}`).emit('delivery:available', {
+    deliveryId: livraison.id,
+    agencyId: livraison.agencyId,
+  });
+}
+
+// Charge la livraison ou lève 404 DELIVERY_NOT_FOUND.
+async function chargerLivraison(tx, id) {
+  const livraison = await tx.delivery.findUnique({
+    where: { id },
+    include: INCLUDE_POUR_ACTION,
+  });
+  if (!livraison) {
+    throw Object.assign(new Error('Livraison introuvable'), {
+      statusCode: 404,
+      code: 'DELIVERY_NOT_FOUND',
+    });
+  }
+  return livraison;
+}
+
+// POST /api/v2/staff/deliveries/:id/release — libère une course acceptée.
+//
+// Un livreur accepte une course puis ne se présente pas : sans cette action,
+// la course reste bloquée à vie en ACCEPTED. La release remet la course dans
+// la salle de l'agence (PENDING, driverId et acceptedAt à nul) : n'importe
+// quel livreur de l'agence peut alors l'accepter.
+export const releaseDelivery = async (req, res) => {
+  const livraison = await prisma.$transaction(async (tx) => {
+    const livraison = await chargerLivraison(tx, req.params.id);
+
+    // ACCEPTED seulement : libérer une course PENDING n'a pas de sens, et
+    // une course FAILED a sa propre voie de sortie (redispatch).
+    assertTransition(livraison.status, 'PENDING');
+
+    await tx.delivery.update({
+      where: { id: livraison.id },
+      data: { status: 'PENDING', driverId: null, acceptedAt: null },
+    });
+
+    await recordAudit(tx, {
+      ...acteur(req),
+      action: 'DELIVERY_RELEASED',
+      entityType: 'Delivery',
+      entityId: livraison.id,
+      ...(req.body.reason ? { metadata: { reason: req.body.reason } } : {}),
+    });
+
+    return tx.delivery.findUnique({
+      where: { id: livraison.id },
+      include: INCLUDE_POUR_ACTION,
+    });
+  });
+
+  emettreDisponible(req, livraison);
+  emettreStatut(req, livraison);
+
+  res.status(200).json(deliveryToStaffDto(livraison));
+};
+
+// POST /api/v2/staff/deliveries/:id/redispatch — remet une course échouée
+// dans la salle de l'agence.
+//
+// Une course FAILED est bloquée : le livreur ne peut pas la reprendre. Le
+// staff la remet à PENDING (driverId et acceptedAt à nul) : un autre
+// livreur peut l'accepter. L'ancien motif d'échec est copié dans
+// incidentNote avant d'être effacé : l'historique de pourquoi cette course
+// a échoué ne doit pas disparaître avec le statut.
+export const redispatchDelivery = async (req, res) => {
+  const livraison = await prisma.$transaction(async (tx) => {
+    const livraison = await chargerLivraison(tx, req.params.id);
+
+    // FAILED seulement : redispatch d'une course PENDING ou ACCEPTED n'a
+    // pas de sens (release existe pour ACCEPTED).
+    assertTransition(livraison.status, 'PENDING');
+
+    await tx.delivery.update({
+      where: { id: livraison.id },
+      data: {
+        status: 'PENDING',
+        driverId: null,
+        acceptedAt: null,
+        failureReason: null,
+        incidentNote: livraison.failureReason,
+      },
+    });
+
+    await recordAudit(tx, {
+      ...acteur(req),
+      action: 'DELIVERY_REDISPATCHED',
+      entityType: 'Delivery',
+      entityId: livraison.id,
+      metadata: { previousFailureReason: livraison.failureReason },
+    });
+
+    return tx.delivery.findUnique({
+      where: { id: livraison.id },
+      include: INCLUDE_POUR_ACTION,
+    });
+  });
+
+  emettreDisponible(req, livraison);
+  emettreStatut(req, livraison);
+
+  res.status(200).json(deliveryToStaffDto(livraison));
+};
+
+// POST /api/v2/staff/deliveries/:id/cancel — annule une course bloquée.
+//
+// PENDING, ACCEPTED ou FAILED -> CANCELLED. PICKED_UP et IN_TRANSIT ne
+// sont pas annulables (409 INVALID_STATE_TRANSITION) : la marchandise est
+// déjà en mouvement, seule la déclaration FAILED est possible.
+//
+// Si toutes les livraisons de la commande sont alors CANCELLED, les lignes
+// sont détachées (OrderItem.deliveryId à nul) : l'équipe peut recréer des
+// livraisons, l'idempotence ne bloquant que sur une livraison non annulée.
+export const cancelDelivery = async (req, res) => {
+  const { reason } = req.body;
+
+  const livraison = await prisma.$transaction(async (tx) => {
+    const livraison = await chargerLivraison(tx, req.params.id);
+
+    assertTransition(livraison.status, 'CANCELLED');
+
+    await tx.delivery.update({
+      where: { id: livraison.id },
+      data: { status: 'CANCELLED' },
+    });
+
+    // Annulation totale seulement : tant qu'une livraison de la commande
+    // est active, les lignes restent rattachées (annulation partielle).
+    const livraisonsActives = await tx.delivery.count({
+      where: { orderId: livraison.orderId, status: { not: 'CANCELLED' } },
+    });
+    if (livraisonsActives === 0) {
+      await tx.orderItem.updateMany({
+        where: { orderId: livraison.orderId },
+        data: { deliveryId: null },
+      });
+    }
+
+    await recordAudit(tx, {
+      ...acteur(req),
+      action: 'DELIVERY_CANCELLED',
+      entityType: 'Delivery',
+      entityId: livraison.id,
+      metadata: { reason },
+    });
+
+    return tx.delivery.findUnique({
+      where: { id: livraison.id },
+      include: INCLUDE_POUR_ACTION,
+    });
+  });
+
+  emettreStatut(req, livraison);
+
+  res.status(200).json(deliveryToStaffDto(livraison));
 };

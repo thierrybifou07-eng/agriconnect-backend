@@ -43,6 +43,9 @@ import {
 import {
   createDeliveries,
   listDeliveries,
+  releaseDelivery,
+  redispatchDelivery,
+  cancelDelivery,
 } from '../controllers/staffDelivery.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
@@ -129,6 +132,22 @@ const qualityCheckSchema = Joi.object({
   notes: Joi.string().trim().max(500).allow(null).optional(),
 });
 
+// Release d'une course acceptée : la raison est optionnelle (simple
+// mention, l'action se justifie d'elle-même).
+const deliveryReleaseSchema = Joi.object({
+  reason: Joi.string().trim().min(1).max(500).optional().messages({
+    'string.max': 'reason ne peut pas dépasser 500 caractères',
+  }),
+});
+
+// Annulation : la raison est obligatoire — une course annulée doit pouvoir
+// être justifiée a posteriori (audit DELIVERY_CANCELLED).
+const deliveryCancelSchema = Joi.object({
+  reason: Joi.string().trim().min(1).max(500).required().messages({
+    'any.required': 'reason est requis',
+  }),
+});
+
 // Création d'un lot au nom d'un fournisseur (mêmes champs que P2.2 + supplierUserId).
 router.post('/lots', STAFF, uploadImages, validate(staffLotCreateSchema), createLot);
 
@@ -186,5 +205,13 @@ router.post('/payments/:id/refund', STAFF_REFUND, validate(paymentRefundSchema),
 // Livraisons (P5.2) : création par point d'enlèvement et consultation paginée.
 router.post('/orders/:id/deliveries', STAFF_DISPATCH, createDeliveries);
 router.get('/deliveries', STAFF_DISPATCH, listDeliveries);
+
+// Reprise des courses bloquées : release (ACCEPTED -> PENDING), redispatch
+// (FAILED -> PENDING) et annulation (PENDING, ACCEPTED ou FAILED ->
+// CANCELLED). Le refus d'idempotence à la création ne s'applique plus qu'en
+// présence d'au moins une livraison non annulée.
+router.post('/deliveries/:id/release', STAFF_DISPATCH, validate(deliveryReleaseSchema), releaseDelivery);
+router.post('/deliveries/:id/redispatch', STAFF_DISPATCH, redispatchDelivery);
+router.post('/deliveries/:id/cancel', STAFF_DISPATCH, validate(deliveryCancelSchema), cancelDelivery);
 
 export default router;

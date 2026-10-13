@@ -9,14 +9,19 @@
 // (marchandise endommagee, adresse introuvable...). CANCELLED est reserve au
 // staff : un livreur ne peut pas annuler une course qu'il a acceptee, il
 // peut seulement la declarer FAILED.
+//
+// Le staff reprend les courses bloquées : release (ACCEPTED -> PENDING),
+// redispatch (FAILED -> PENDING) et annulation (PENDING, ACCEPTED ou FAILED
+// -> CANCELLED). PICKED_UP et IN_TRANSIT ne sont pas annulables : la
+// marchandise est deja en mouvement, seule la declaration FAILED est possible.
 
 const TRANSITIONS_AUTORISEES = {
-  PENDING: ['ACCEPTED'],
-  ACCEPTED: ['PICKED_UP'],
+  PENDING: ['ACCEPTED', 'CANCELLED'],
+  ACCEPTED: ['PICKED_UP', 'PENDING', 'CANCELLED'],
   PICKED_UP: ['IN_TRANSIT', 'FAILED'],
   IN_TRANSIT: ['DELIVERED', 'FAILED'],
   DELIVERED: [],
-  FAILED: [],
+  FAILED: ['PENDING', 'CANCELLED'],
   CANCELLED: [],
 };
 
