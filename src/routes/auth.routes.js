@@ -26,7 +26,6 @@ import {
   submitDocument,
   listMyDocuments,
 } from '../controllers/user.controller.js';
-import { getMyReferralController } from '../controllers/referral.controller.js';
 import {
   authLimiter,
   refreshLimiter,
@@ -137,8 +136,5 @@ router.delete('/me/payout-accounts/:id', protect, requireRole('SUPPLIER', 'BUYER
 // puis validate controle le corps : l'ordre des middlewares est important.
 router.post('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), uploadDocument.single('file'), validate(submitDocumentSchema), submitDocument);
 router.get('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), listMyDocuments);
-
-// Parrainage : vue parrain (code, totaux, liste des filleuls).
-router.get('/me/referral', protect, getMyReferralController);
 
 export default router;

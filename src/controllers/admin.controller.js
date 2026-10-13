@@ -10,7 +10,6 @@ import { sendTemplateEmail } from '../config/email/sendMail.js';
 // qui donne acces a un asset private (type 'authenticated').
 import { v2 as cloudinary } from 'cloudinary';
 import { recordAudit } from '../utils/audit.js';
-import { onProfileVerified } from '../services/referral.service.js';
 
 const userSafeSelect = {
   id: true,
@@ -348,14 +347,6 @@ export const reviewVerification = async (req, res) => {
             ? { profileVerificationStatus: 'VERIFIED', profileVerifiedAt: new Date(), profileVerifiedById: req.user.id }
             : { profileVerificationStatus: 'REJECTED' },
       });
-    }
-
-    // Parrainage : si le profil passe VERIFIED, les Referrals PENDING sont
-    // réévalués dans la même transaction — un échec annule la validation et
-    // inversement, garantissant qu'un profil VERIFIED a toujours ses parrainages
-    // à jour.
-    if (nouveauStatut === 'VERIFIED') {
-      await onProfileVerified(tx, document.userId);
     }
 
     await recordAudit(tx, {
