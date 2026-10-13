@@ -28,6 +28,8 @@ import {
 } from '../controllers/staffOrder.controller.js';
 import {
   listConversations,
+  getConversation,
+  listMessages,
   assignConversation,
   escalateConversation,
   closeConversation,
@@ -136,6 +138,8 @@ router.post('/listings/:id/unpublish', STAFF_LISTING, unpublishListing);
 // Conversations client <-> équipe (P3.1) : un agent n'agit que sur les
 // conversations de son type (vérifié dans le contrôleur).
 router.get('/conversations', STAFF_CONVERSATIONS, listConversations);
+router.get('/conversations/:id', STAFF_CONVERSATIONS, getConversation);
+router.get('/conversations/:id/messages', STAFF_CONVERSATIONS, listMessages);
 router.post('/conversations/:id/assign', STAFF_CONVERSATIONS, validate(assignSchema), assignConversation);
 router.post('/conversations/:id/escalate', STAFF_CONVERSATIONS, validate(escalateSchema), escalateConversation);
 router.post('/conversations/:id/close', STAFF_CONVERSATIONS, closeConversation);

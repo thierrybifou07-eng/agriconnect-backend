@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { Prisma } from '@prisma/client';
-import { assertInvariant, computeLotStatus } from '../../src/services/stock.service.js';
+import { assertInvariant, computeLotStatus, reserve } from '../../src/services/stock.service.js';
 
 // Tests purs : aucune base, aucun serveur. Les lots sont des objets
 // littéraires, comme ceux que recevrait une fonction transactionnelle.
@@ -107,5 +107,26 @@ describe('computeLotStatus', () => {
   // sans date d'expiration ne doit jamais être expiré.
   it('utilise l horloge courante quand now est omis', () => {
     expect(computeLotStatus(lot({ available: 50 }))).toBe('AVAILABLE');
+  });
+});
+
+describe('reserve — validation de la quantité', () => {
+  // Aucune base nécessaire : quantitePositive est la première instruction de
+  // reserve, avant tout accès à la transaction — un tx nul suffit donc à
+  // vérifier le refus, et le test reste unitaire.
+  // decimal.js considère 0 comme positif (isPositive() === true) : seule une
+  // comparaison greaterThan(0) refuse une réservation de zéro.
+  it('refuse une quantité nulle : 400 INVALID_QUANTITY', async () => {
+    await expect(reserve(null, 1, 0)).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'INVALID_QUANTITY',
+    });
+  });
+
+  it('refuse une quantité négative : 400 INVALID_QUANTITY', async () => {
+    await expect(reserve(null, 1, -5)).rejects.toMatchObject({
+      statusCode: 400,
+      code: 'INVALID_QUANTITY',
+    });
   });
 });

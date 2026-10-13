@@ -1,7 +1,8 @@
 import { randomInt } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma.js';
 import { getLookupId } from '../utils/lookupCache.js';
-import { asMoney, asQuantity, toDecimal } from '../utils/money.js';
+import { asMoney, asQuantity, toDecimal, toNumber } from '../utils/money.js';
 import { recordAudit } from '../utils/audit.js';
 import { reserve } from '../services/stock.service.js';
 import {
@@ -108,27 +109,62 @@ export const createOrder = async (req, res) => {
       }
     }
 
-    // 2. Réserve chaque ligne sur le lot de l'annonce.
-    //    INSUFFICIENT_STOCK annule TOUT (rollback transaction).
-    const lignes = [];
+    // 1bis. Verrouille les lots AVANT toute écriture : l'insertion d'un
+    //        OrderItem prend un verrou partagé sur la ligne référencée (clé
+    //        étrangère) et la réservation prend ensuite le verrou exclusif.
+    //        Sans ce verrou préalable, deux devis concurrents sur le même lot
+    //        se retrouvaient en deadlock (P2034) au lieu de se sérialiser.
+    //        L'ordre croissant des identifiants uniformise l'ordre de
+    //        verrouillage quand un devis porte sur plusieurs lots.
+    const idsLots = [...new Set(items.map((i) => listingById.get(i.listingId).lots[0].lot.id))];
+    idsLots.sort((a, b) => a - b);
+    await tx.$queryRaw`SELECT id FROM StockLot WHERE id IN (${Prisma.join(idsLots)}) ORDER BY id FOR UPDATE`;
+
+    // 2. Prix de vente. Un prix fourni par l'agent ne peut pas descendre sous
+    //    le prix convenu avec le promoteur (supplierUnitPrice) : vendre sous ce
+    //    prix perd le promoteur. ADMIN/ROOT peuvent forcer (force: true) ; la
+    //    dérogation est alors tracée dans l'audit (forced: true sur la ligne).
+    //    Tout prix fourni différent du prix public est tracé dans priceOverrides.
+    //    Ce contrôle précède toute écriture : un 409 annule la transaction.
+    const force = req.body.force === true;
+    const prixForceAutorise = req.user.role.level >= 50;
+    const priceOverrides = [];
     for (const item of items) {
+      if (item.unitPrice === undefined || item.unitPrice === null) continue;
       const listing = listingById.get(item.listingId);
       const lot = listing.lots[0].lot;
-      const quantity = asQuantity(item.quantity);
-      await reserve(tx, lot.id, quantity, {
-        actorUserId: req.user.id,
-        actorAgentId: req.agent?.id ?? null,
-      });
-      lignes.push({ listing, lot, quantity, requestedUnitPrice: item.unitPrice });
+      const appliedPrice = asMoney(item.unitPrice);
+      const sousPrixConvenu = appliedPrice.lessThan(lot.agreedUnitPrice);
+      if (sousPrixConvenu && !(prixForceAutorise && force)) {
+        throw Object.assign(
+          new Error('Prix inférieur au prix convenu avec le promoteur'),
+          { statusCode: 409, code: 'PRICE_BELOW_SUPPLIER' }
+        );
+      }
+      if (!appliedPrice.equals(listing.unitPrice)) {
+        priceOverrides.push({
+          listingId: listing.id,
+          listingPrice: toNumber(listing.unitPrice),
+          appliedPrice: toNumber(appliedPrice),
+          // Seule la ligne qui a contourné la règle porte la mention.
+          ...(sousPrixConvenu ? { forced: true } : {}),
+        });
+      }
     }
 
     // 3. Prix figés : unitPrice = prix de l'annonce (ou surcharge), supplierUnitPrice = prix convenu du lot.
+    //    Les lignes sont calculées AVANT la réservation : computeLine ne dépend
+    //    que des données déjà chargées, et la réservation a besoin de
+    //    l'orderItemId de sa ligne.
     const settings = await getSettings(tx);
     const commissionRate = settings.supplierCommissionRate;
     const currency = settings.currency;
 
-    const lignesCalculees = lignes.map(({ listing, lot, quantity, requestedUnitPrice }) => {
-      const unitPrice = asMoney(requestedUnitPrice ?? listing.unitPrice);
+    const lignesCalculees = items.map((item) => {
+      const listing = listingById.get(item.listingId);
+      const lot = listing.lots[0].lot;
+      const quantity = asQuantity(item.quantity);
+      const unitPrice = asMoney(item.unitPrice ?? listing.unitPrice);
       const supplierUnitPrice = lot.agreedUnitPrice;
       const calc = computeLine({ quantity, unitPrice, supplierUnitPrice, commissionRate }, currency);
       return { listing, lot, quantity, unitPrice, supplierUnitPrice, ...calc };
@@ -232,7 +268,10 @@ export const createOrder = async (req, res) => {
     const buyerFee = computeBuyerFee(subtotal, { type: settings.buyerFeeType, value: settings.buyerFeeValue }, currency);
     const totaux = computeOrderTotals({ lines: lignesCalculees, buyerFee, deliveryFee: deliveryFeeTotal });
 
-    // 7. Crée la commande puis les lignes, puis l'audit.
+    // 7. Crée la commande puis les lignes AVANT de réserver : le mouvement
+    //    RESERVED est relié à sa ligne (orderItemId), ce qui rattache chaque
+    //    réservation au devis qui l'a émise. Même transaction : un
+    //    INSUFFICIENT_STOCK annule commande, lignes et mouvements (rollback).
     const deliveryModeId = await getLookupId('deliveryMode', deliveryMode);
     const maintenant = new Date();
     const reservedUntil = new Date(maintenant.getTime() + settings.reservationHours * 3600 * 1000);
@@ -266,9 +305,10 @@ export const createOrder = async (req, res) => {
       data: { orderNumber },
     });
 
-    // Crée les OrderItem (listingId ET lotId renseignés).
+    // Crée les OrderItem (listingId ET lotId renseignés), dans le même ordre
+    // que lignesCalculees, puis réserve chaque ligne avec son orderItemId.
     for (const l of lignesCalculees) {
-      await tx.orderItem.create({
+      const orderItem = await tx.orderItem.create({
         data: {
           orderId: orderCreated.id,
           listingId: l.listing.id,
@@ -282,6 +322,15 @@ export const createOrder = async (req, res) => {
           supplierNetAmount: l.supplierNetAmount,
         },
       });
+      l.orderItemId = orderItem.id;
+
+      // Réservation rattachée à la ligne créée ci-dessus. INSUFFICIENT_STOCK
+      // annule TOUT (rollback transaction) : stock, commande et lignes.
+      await reserve(tx, l.lot.id, l.quantity, {
+        actorUserId: req.user.id,
+        actorAgentId: req.agent?.id ?? null,
+        orderItemId: l.orderItemId,
+      });
     }
 
     await recordAudit(tx, {
@@ -289,6 +338,10 @@ export const createOrder = async (req, res) => {
       action: 'ORDER_QUOTED',
       entityType: 'Order',
       entityId: orderCreated.id,
+      // Les dérogations de prix sont tracées : prix fourni différent du prix
+      // public (priceOverrides), avec forced: true pour les lignes passées
+      // sous le prix convenu avec l'accord d'un administrateur.
+      metadata: priceOverrides.length > 0 ? { priceOverrides } : undefined,
     });
 
     return { id: orderCreated.id, origins };

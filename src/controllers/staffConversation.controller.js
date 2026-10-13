@@ -88,6 +88,41 @@ export const listConversations = async (req, res) => {
   res.json({ items: items.map(conversationToStaffDto), page, limit, total });
 };
 
+// GET /api/v2/staff/conversations/:id — le détail d'une conversation : client,
+// annonce ou lot lié, agent assigné, escalade. Mêmes protections que la liste
+// (conversationPourStaff : 404 si inconnue, 403 si le type est hors du
+// périmètre de l'agent).
+export const getConversation = async (req, res) => {
+  const conversation = await conversationPourStaff(req, res);
+  if (!conversation) return;
+  res.json(conversationToStaffDto(conversation));
+};
+
+// GET /api/v2/staff/conversations/:id/messages — l'historique COMPLET de la
+// conversation : tous les messages, notes internes comprises (côté client, le
+// filtre isInternal les masque ; l'équipe, elle, doit tout lire). Ordre
+// chronologique, pagination classique.
+export const listMessages = async (req, res) => {
+  const conversation = await conversationPourStaff(req, res);
+  if (!conversation) return;
+
+  const page = pageLimite(req.query.page, 1);
+  const limit = pageLimite(req.query.limit, 20);
+
+  const where = { conversationId: conversation.id };
+  const [items, total] = await Promise.all([
+    prisma.message.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.message.count({ where }),
+  ]);
+
+  res.json({ items: items.map(messageToStaffDto), page, limit, total });
+};
+
 // POST /api/v2/staff/conversations/:id/assign — prendre une conversation en
 // charge. Un agent s'assigne à lui-même ; un ADMIN, sans fiche d'agent, doit
 // désigner un agentId.

@@ -602,3 +602,167 @@ describe('Routes staff — assign, escalate, close, messages', () => {
     expect(new Date(maj.lastMessageAt).getTime()).toBeGreaterThan(new Date(conv.lastMessageAt).getTime());
   });
 });
+
+describe('Routes staff — détail et historique des messages', () => {
+  // Conversation acheteur sur une annonce, avec son acheteur et son annonce.
+  async function conversationAcheteur() {
+    const buyer = await createUser({ role: 'BUYER' });
+    const { profile } = await fournisseur();
+    const lot = await createLot(profile);
+    const annonce = await createListingForLot(lot);
+    const res = await client
+      .post('/api/v2/conversations')
+      .set(authHeader(tokenPour(buyer)))
+      .send({ listingId: annonce.id, content: 'Question acheteur' });
+    return { conv: res.body, buyer, annonce };
+  }
+
+  it('un agent lit le détail d\'une conversation de son type (client, annonce, agent, escalade)', async () => {
+    const { conv, buyer, annonce } = await conversationAcheteur();
+    const { user: agentUser, agent } = await createAgentUser({ capabilities: ['BUYER_SUPPORT'] });
+
+    // Prise en charge puis escalade : le détail doit refléter les deux.
+    await client
+      .post(`/api/v2/staff/conversations/${conv.id}/assign`)
+      .set(authHeader(tokenPour(agentUser)))
+      .send({});
+    await client
+      .post(`/api/v2/staff/conversations/${conv.id}/escalate`)
+      .set(authHeader(tokenPour(agentUser)))
+      .send({ reason: 'Litige sur le prix' });
+
+    const res = await client
+      .get(`/api/v2/staff/conversations/${conv.id}`)
+      .set(authHeader(tokenPour(agentUser)));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.type).toBe('BUYER_SUPPORT');
+    expect(res.body.status).toBe('OPEN');
+    expect(res.body.customer).toMatchObject({
+      id: buyer.id,
+      firstname: buyer.firstname,
+      lastname: buyer.lastname,
+    });
+    expect(res.body.listingId).toBe(annonce.id);
+    // L'escalade désassigne : la conversation repart dans la file commune.
+    expect(res.body.assignedAgent).toBeNull();
+    expect(res.body.escalatedAt).toBeTruthy();
+    expect(res.body.escalationReason).toBe('Litige sur le prix');
+  });
+
+  it('l\'historique staff contient TOUS les messages, notes internes comprises, en ordre chronologique et paginé', async () => {
+    const { conv, buyer } = await conversationAcheteur();
+    const { user: agentUser, agent } = await createAgentUser({ capabilities: ['BUYER_SUPPORT'] });
+
+    // Messages insérés directement en base avec des dates espacées : l'ordre
+    // chronologique ne doit pas dépendre de la résolution de l'horloge.
+    const base = Date.now() + 60_000;
+    const messages = [
+      { senderType: 'CUSTOMER', senderUserId: buyer.id, senderAgentId: null, content: 'Message 2', isInternal: false, decalage: 1000 },
+      { senderType: 'AGENT', senderUserId: agentUser.id, senderAgentId: agent.id, content: 'Note interne', isInternal: true, decalage: 2000 },
+      { senderType: 'AGENT', senderUserId: agentUser.id, senderAgentId: agent.id, content: 'Réponse agent', isInternal: false, decalage: 3000 },
+    ];
+    for (const m of messages) {
+      await prisma.message.create({
+        data: {
+          conversationId: conv.id,
+          senderType: m.senderType,
+          senderUserId: m.senderUserId,
+          senderAgentId: m.senderAgentId,
+          content: m.content,
+          isInternal: m.isInternal,
+          createdAt: new Date(base + m.decalage),
+        },
+      });
+    }
+    // 4 messages en tout : le premier (question) + les trois ci-dessus.
+
+    const page1 = await client
+      .get(`/api/v2/staff/conversations/${conv.id}/messages?page=1&limit=2`)
+      .set(authHeader(tokenPour(agentUser)));
+
+    expect(page1.status, page1.text).toBe(200);
+    expect(page1.body).toMatchObject({ page: 1, limit: 2, total: 4 });
+    expect(page1.body.items).toHaveLength(2);
+    // Ordre chronologique : le premier message de la conversation d'abord.
+    expect(page1.body.items.map((m) => m.content)).toEqual(['Question acheteur', 'Message 2']);
+    // Champs staff complets sur chaque message.
+    expect(page1.body.items[0]).toMatchObject({
+      senderType: 'CUSTOMER',
+      senderUserId: buyer.id,
+      senderAgentId: null,
+      isInternal: false,
+    });
+
+    const page2 = await client
+      .get(`/api/v2/staff/conversations/${conv.id}/messages?page=2&limit=2`)
+      .set(authHeader(tokenPour(agentUser)));
+
+    expect(page2.status, page2.text).toBe(200);
+    expect(page2.body.items.map((m) => m.content)).toEqual(['Note interne', 'Réponse agent']);
+
+    // La note interne est bien dans l'historique staff, avec son identité complète.
+    const note = page2.body.items[0];
+    expect(note.isInternal).toBe(true);
+    expect(note.senderType).toBe('AGENT');
+    expect(note.senderAgentId).toBe(agent.id);
+    expect(note.senderUserId).toBe(agentUser.id);
+  });
+
+  it('un agent d\'un autre type : 403 sur le détail et l\'historique', async () => {
+    const { conv } = await conversationAcheteur();
+    const { user: agentAcheteur } = await createAgentUser({ capabilities: ['BUYER_SUPPORT'] });
+
+    // Une conversation fournisseur : hors du périmètre de l'agent acheteur.
+    const { user: fournisseurUser, profile } = await fournisseur();
+    const lot = await createLot(profile);
+    const convFournisseur = await client
+      .post('/api/v2/conversations')
+      .set(authHeader(tokenPour(fournisseurUser)))
+      .send({ lotId: lot.id, content: 'Question fournisseur' });
+
+    const detail = await client
+      .get(`/api/v2/staff/conversations/${convFournisseur.body.id}`)
+      .set(authHeader(tokenPour(agentAcheteur)));
+    expect(detail.status, detail.text).toBe(403);
+
+    const historique = await client
+      .get(`/api/v2/staff/conversations/${convFournisseur.body.id}/messages`)
+      .set(authHeader(tokenPour(agentAcheteur)));
+    expect(historique.status, historique.text).toBe(403);
+
+    // La conversation acheteur, elle, reste accessible.
+    const ok = await client
+      .get(`/api/v2/staff/conversations/${conv.id}`)
+      .set(authHeader(tokenPour(agentAcheteur)));
+    expect(ok.status, ok.text).toBe(200);
+  });
+
+  it('conversation inconnue : 404 sur le détail et l\'historique', async () => {
+    const { user: agentUser } = await createAgentUser({ capabilities: ['BUYER_SUPPORT'] });
+
+    const detail = await client
+      .get('/api/v2/staff/conversations/999999')
+      .set(authHeader(tokenPour(agentUser)));
+    expect(detail.status, detail.text).toBe(404);
+
+    const historique = await client
+      .get('/api/v2/staff/conversations/999999/messages')
+      .set(authHeader(tokenPour(agentUser)));
+    expect(historique.status, historique.text).toBe(404);
+  });
+
+  it('un client sur ces routes : 403', async () => {
+    const { conv, buyer } = await conversationAcheteur();
+
+    const detail = await client
+      .get(`/api/v2/staff/conversations/${conv.id}`)
+      .set(authHeader(tokenPour(buyer)));
+    expect(detail.status, detail.text).toBe(403);
+
+    const historique = await client
+      .get(`/api/v2/staff/conversations/${conv.id}/messages`)
+      .set(authHeader(tokenPour(buyer)));
+    expect(historique.status, historique.text).toBe(403);
+  });
+});

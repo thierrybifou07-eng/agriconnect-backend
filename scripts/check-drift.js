@@ -1,7 +1,10 @@
 // Contrôle de dérive entre les migrations appliquées et le schéma Prisma.
 // Utilise une base SHADOW dédiée (vide) que Prisma crée et détruit pour
-// l'occasion. Renvoie le code de sortie de `prisma migrate diff` :
-//   0 = pas de dérive, 1 = dérive détectée, 2 = configuration manquante.
+// l'occasion. Codes de sortie, sans ambiguïté :
+//   0 = aucun écart, 1 = écart détecté, 2 = configuration manquante,
+//   3 = erreur d'exécution (Prisma renvoie 2 pour un écart et 1 pour une
+//   erreur : ces codes sont traduits ci-dessous pour ne pas entrer en
+//   collision avec les nôtres).
 import 'dotenv/config';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
@@ -45,7 +48,16 @@ const result = spawnSync(
 
 if (result.error) {
   console.error('Échec de l\'exécution de prisma migrate diff :', result.error.message);
-  process.exit(2);
+  process.exit(3);
 }
 
-process.exit(result.status ?? 2);
+// --exit-code fait sortir Prisma avec 2 en cas d'écart et 1 en cas d'erreur :
+// ces codes entreraient en collision avec les nôtres, on les traduit donc
+// explicitement pour que le script ait toujours le même contrat.
+if (result.status === 0) {
+  process.exit(0); // aucun écart
+}
+if (result.status === 2) {
+  process.exit(1); // écart détecté
+}
+process.exit(3); // tout autre code : erreur d'exécution de Prisma

@@ -568,7 +568,9 @@ describe('POST /api/v2/staff/orders', () => {
 
   it('utilise le prix fourni dans la request plutôt que celui de l\'annonce', async () => {
     const buyer = await createUser({ role: 'BUYER' });
-    const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
+    // Prix convenu sous le prix fourni du test (900) : la règle du prix
+    // plancher (PRICE_BELOW_SUPPLIER) ne doit pas interférer ici.
+    const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '500.00' });
     const annonce = await annoncePour(monLot);
     await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
 
@@ -590,5 +592,137 @@ describe('POST /api/v2/staff/orders', () => {
     // Le prix fourni (900) est utilisé, pas le prix de l'annonce (1200)
     expect(res.body.items[0].unitPrice).toBe(900);
     expect(res.body.items[0].lineTotal).toBe(1800); // 2 x 900
+  });
+
+  it('un prix inférieur au prix convenu est refusé : 409 PRICE_BELOW_SUPPLIER et stock inchangé', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
+    const annonce = await annoncePour(monLot);
+    await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
+
+    const hub = await creerHub();
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING']);
+
+    const res = await api()
+      .post('/api/v2/staff/orders')
+      .set(authHeader(tokenPour(agentUser)))
+      .send({
+        buyerId: buyer.id,
+        items: [{ listingId: annonce.id, quantity: 2, unitPrice: 900 }],
+        deliveryMode: 'HUB_PICKUP',
+        pickupHubId: hub.id,
+      });
+
+    expect(res.status, res.text).toBe(409);
+    expect(res.body.code).toBe('PRICE_BELOW_SUPPLIER');
+    expect(res.body.error).toBe('Prix inférieur au prix convenu avec le promoteur');
+
+    // Le 409 annule toute la transaction : stock, mouvement et commande.
+    const lotApres = await prisma.stockLot.findUnique({ where: { id: monLot.id } });
+    expect(Number(lotApres.quantityAvailable)).toBe(10);
+    expect(Number(lotApres.quantityReserved)).toBe(0);
+    const mouvements = await prisma.stockMovement.findMany({ where: { lotId: monLot.id } });
+    expect(mouvements).toHaveLength(0);
+    const orders = await prisma.order.findMany({ where: { buyerId: buyer.id } });
+    expect(orders).toHaveLength(0);
+  });
+
+  it('un ADMIN peut forcer un prix sous le prix convenu : 201 et audit forced', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
+    const annonce = await annoncePour(monLot);
+    await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
+
+    const hub = await creerHub();
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const res = await api()
+      .post('/api/v2/staff/orders')
+      .set(authHeader(tokenAdminPour(admin)))
+      .send({
+        buyerId: buyer.id,
+        items: [{ listingId: annonce.id, quantity: 2, unitPrice: 900 }],
+        deliveryMode: 'HUB_PICKUP',
+        pickupHubId: hub.id,
+        force: true,
+      });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.items[0].unitPrice).toBe(900);
+
+    // La dérogation est tracée dans l'audit, forced: true sur la ligne.
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'ORDER_QUOTED', entityType: 'Order', entityId: res.body.id },
+    });
+    expect(audit).toBeTruthy();
+    expect(audit.metadata).toMatchObject({
+      priceOverrides: [{ listingId: annonce.id, listingPrice: 1200, appliedPrice: 900, forced: true }],
+    });
+
+    // La réservation a bien eu lieu malgré le prix forcé.
+    const lotApres = await prisma.stockLot.findUnique({ where: { id: monLot.id } });
+    expect(Number(lotApres.quantityReserved)).toBe(2);
+  });
+
+  it('un prix différent mais >= prix convenu : 201 avec metadata priceOverrides', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
+    const annonce = await annoncePour(monLot);
+    await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
+
+    const hub = await creerHub();
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING']);
+
+    const res = await api()
+      .post('/api/v2/staff/orders')
+      .set(authHeader(tokenPour(agentUser)))
+      .send({
+        buyerId: buyer.id,
+        items: [{ listingId: annonce.id, quantity: 2, unitPrice: 1100 }],
+        deliveryMode: 'HUB_PICKUP',
+        pickupHubId: hub.id,
+      });
+
+    expect(res.status, res.text).toBe(201);
+    expect(res.body.items[0].unitPrice).toBe(1100);
+
+    // L'écart avec le prix public est tracé, sans mention forced.
+    const audit = await prisma.auditLog.findFirst({
+      where: { action: 'ORDER_QUOTED', entityType: 'Order', entityId: res.body.id },
+    });
+    expect(audit).toBeTruthy();
+    expect(audit.metadata).toMatchObject({
+      priceOverrides: [{ listingId: annonce.id, listingPrice: 1200, appliedPrice: 1100 }],
+    });
+    expect(audit.metadata.priceOverrides[0]).not.toHaveProperty('forced');
+  });
+
+  it('le mouvement RESERVED est relié à sa ligne (orderItemId)', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
+    const annonce = await annoncePour(monLot);
+
+    const hub = await creerHub();
+    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING']);
+
+    const res = await api()
+      .post('/api/v2/staff/orders')
+      .set(authHeader(tokenPour(agentUser)))
+      .send({
+        buyerId: buyer.id,
+        items: [{ listingId: annonce.id, quantity: 3 }],
+        deliveryMode: 'HUB_PICKUP',
+        pickupHubId: hub.id,
+      });
+
+    expect(res.status, res.text).toBe(201);
+
+    // Le mouvement de réservation porte l'identifiant de sa ligne de commande.
+    const mouvement = await prisma.stockMovement.findFirst({
+      where: { type: 'RESERVED', lotId: monLot.id },
+    });
+    expect(mouvement).toBeTruthy();
+    expect(mouvement.orderItemId).toBe(res.body.items[0].id);
+    expect(Number(mouvement.quantityDelta)).toBe(3);
   });
 });

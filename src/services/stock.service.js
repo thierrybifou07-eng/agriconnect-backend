@@ -52,9 +52,11 @@ async function ecrireMouvement(tx, { lotId, type, quantite, ctx = {} }) {
 
 // Quantité strictement positive attendue par les fonctions qui déplacent du
 // stock : une réservation ou une vente de zéro n'a pas de sens métier.
+// greaterThan(0) et non isPositive() : decimal.js considère 0 comme positif,
+// ce qui laisserait passer une réservation de zéro.
 function quantitePositive(quantite, nom) {
   const valeur = toDecimal(quantite);
-  if (!valeur.isPositive()) {
+  if (!valeur.greaterThan(0)) {
     throw erreurStock(`${nom} doit être une quantité positive`, 400, 'INVALID_QUANTITY');
   }
   return valeur;

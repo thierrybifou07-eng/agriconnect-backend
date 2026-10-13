@@ -88,6 +88,10 @@ export const orderCreateSchema = Joi.object({
   notes: Joi.string().trim().max(1000).allow(null).optional().messages({
     'string.max': 'notes ne peut pas dépasser 1000 caractères',
   }),
+  // Contournement de la règle du prix plancher (prix convenu avec le
+  // promoteur) : réservé à ADMIN/ROOT, vérifié et tracé par le contrôleur.
+  // Un agent peut l'envoyer : il est simplement ignoré pour lui.
+  force: Joi.boolean().optional(),
 });
 
 // PATCH /api/v2/staff/orders/:id/status — changement de statut manuel.
