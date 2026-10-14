@@ -49,6 +49,7 @@ import {
   rejectCompensationController,
   payCompensationController,
 } from '../controllers/adminCompensation.controller.js';
+import { getStats, listAuditLogs } from '../controllers/adminStats.controller.js';
 import { protect, requireMinLevel, requireRole } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
@@ -185,5 +186,11 @@ router.get('/compensations', requireHumanActor, listCompensationsAdmin);
 router.patch('/compensations/:id/approve', requireHumanActor, approveCompensationController);
 router.patch('/compensations/:id/reject', requireHumanActor, validate(compensationRejectSchema), rejectCompensationController);
 router.patch('/compensations/:id/pay', requireHumanActor, validate(compensationPaySchema), payCompensationController);
+
+// Tableau de bord et journal d'audit (P6.4) : ADMIN et plus. Le
+// requireMinLevel(50) global ci-dessus s'applique : un AGENT (niveau 30)
+// recoit un 403, meme muni de capacites.
+router.get('/stats', getStats);
+router.get('/audit-logs', listAuditLogs);
 
 export default router;
