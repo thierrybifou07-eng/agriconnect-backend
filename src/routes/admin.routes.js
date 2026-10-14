@@ -7,6 +7,8 @@ import {
   listVerifications,
   getVerification,
   reviewVerification,
+  getSettings,
+  updateSettings,
 } from '../controllers/admin.controller.js';
 import { createLegalVersion, publishLegalVersion } from '../controllers/legal.controller.js';
 import { listAgents, updateAgent, createAiAgent } from '../controllers/agent.controller.js';
@@ -36,12 +38,12 @@ import {
   listAgencyDrivers,
 } from '../controllers/agency.controller.js';
 import { listPayouts, payPayoutController } from '../controllers/adminPayout.controller.js';
-import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
+import { protect, requireMinLevel, requireRole } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
-import { createStaffUserSchema, createLegalVersionSchema } from '../validators/admin.validator.js';
+import { createStaffUserSchema, createLegalVersionSchema, updateSettingsSchema } from '../validators/admin.validator.js';
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 import { reviewVerificationSchema } from '../validators/verification.validator.js';
 import { payPayoutSchema } from '../validators/payout.validator.js';
@@ -77,6 +79,13 @@ router.get('/verifications/:id', protect, requireCapability('USER_VERIFICATION')
 router.patch('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), validate(reviewVerificationSchema), reviewVerification);
 
 router.use(protect, requireMinLevel(50));
+
+// Configuration de la plateforme : lecture ADMIN et plus, modification ROOT
+// seul. requireRole('ROOT') est explicite : requireMinLevel(50) laisserait
+// passer un ADMIN, et ce contrôle d'autorisation ne peut pas vivre dans le
+// validateur (règle de forme du corps).
+router.get('/settings', getSettings);
+router.patch('/settings', requireRole('ROOT'), validate(updateSettingsSchema), updateSettings);
 
 router.get('/users', listUsers);
 router.patch('/users/:id/suspend', suspendUser);

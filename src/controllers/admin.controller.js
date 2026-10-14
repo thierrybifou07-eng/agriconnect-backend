@@ -1,8 +1,10 @@
 import bcrypt from 'bcrypt';
+import { Prisma } from '@prisma/client';
 import prisma from '../config/prisma.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { closeAllSessions } from '../utils/session.js';
 import { emitSessionRevoked } from '../sockets/revocation.js';
+import { asMoney, toDecimal, toNumber } from '../utils/money.js';
 // Meme pile que l inscription (src/config/email) : un seul moteur de rendu,
 // une seule configuration SMTP.
 import { sendTemplateEmail } from '../config/email/sendMail.js';
@@ -186,6 +188,96 @@ export const createStaffUser = async (req, res) => {
   }
 
   res.status(201).json(staffUser);
+};
+
+// GET /api/v2/admin/settings — réglages de la plateforme (ligne unique id = 1).
+// Aucun cache : la réponse porte toujours la valeur courante de la base, donc
+// une modification par ROOT est effective à la requête suivante.
+export const getSettings = async (req, res) => {
+  const settings = await prisma.platformSetting.findUnique({ where: { id: 1 } });
+  if (!settings) {
+    return res.status(500).json({ error: 'Paramètres de la plateforme manquants' });
+  }
+  res.json(settings);
+};
+
+// PATCH /api/v2/admin/settings — modification partielle, ROOT seulement.
+//
+// Deux propriétés importantes :
+//  - les taux ne sont jamais rétroactifs : chaque OrderItem porte les valeurs
+//    figées au moment du devis, donc modifier un taux ne touche aucune commande
+//    existante ;
+//  - getSettings lit la base à chaque appel (aucun cache) : la modification est
+//    effective à la requête suivante.
+//
+// La règle de cohérence (NONE -> buyerFeeValue = 0) s'applique APRÈS fusion
+// avec la valeur actuelle : passer NONE alors que la valeur en base vaut 500
+// est un 400, pas une écriture qui écraserait la valeur.
+export const updateSettings = async (req, res) => {
+  if (req.user.role.code !== 'ROOT') {
+    return res.status(403).json({ error: 'Seul ROOT peut modifier les réglages de la plateforme' });
+  }
+
+  const body = req.body; // validé par updateSettingsSchema en amont
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const current = await tx.platformSetting.findUnique({ where: { id: 1 } });
+    if (!current) {
+      throw Object.assign(new Error('Paramètres de la plateforme manquants'), { statusCode: 500 });
+    }
+
+    // Fusion : seuls les champs fournis écrasent la valeur courante.
+    const merged = { ...current };
+    for (const key of Object.keys(body)) merged[key] = body[key];
+
+    if (merged.buyerFeeType === 'NONE' && !toDecimal(merged.buyerFeeValue).isZero()) {
+      throw Object.assign(
+        new Error('Frais acheteur désactivés : buyerFeeValue doit valoir 0'),
+        { statusCode: 400, code: 'INVALID_BUYER_FEE' }
+      );
+    }
+
+    // Mise à jour partielle : argent et taux passent par Prisma.Decimal, jamais
+    // par un Number ni une chaîne. Les récompenses (Decimal(14,2)) sont arrondies
+    // au centime comme tout montant ; les taux gardent leurs 4 décimales.
+    const data = {};
+    if (body.supplierCommissionRate !== undefined) data.supplierCommissionRate = toDecimal(body.supplierCommissionRate);
+    if (body.buyerFeeType !== undefined) data.buyerFeeType = body.buyerFeeType;
+    if (body.buyerFeeValue !== undefined) data.buyerFeeValue = toDecimal(body.buyerFeeValue);
+    if (body.transportMarkupRate !== undefined) data.transportMarkupRate = toDecimal(body.transportMarkupRate);
+    if (body.referralBuyerReward !== undefined) data.referralBuyerReward = asMoney(body.referralBuyerReward);
+    if (body.referralSupplierReward !== undefined) data.referralSupplierReward = asMoney(body.referralSupplierReward);
+    if (body.reservationHours !== undefined) data.reservationHours = body.reservationHours;
+    if (body.expiryCompensationRate !== undefined) data.expiryCompensationRate = toDecimal(body.expiryCompensationRate);
+
+    const result = await tx.platformSetting.update({ where: { id: 1 }, data });
+
+    // Audit limité aux champs réellement modifiés : la valeur d'un champ non
+    // changé n'a pas à figer dans le journal. Comparaison par valeur pour les
+    // Decimal (0 et 0.0 sont égaux) ; reservationHours est un Int, comparé par
+    // égalité stricte.
+    const before = {};
+    const after = {};
+    for (const [key, value] of Object.entries(data)) {
+      const unchanged = value instanceof Prisma.Decimal ? value.equals(current[key]) : value === current[key];
+      if (!unchanged) {
+        before[key] = toNumber(current[key]);
+        after[key] = toNumber(value);
+      }
+    }
+
+    await recordAudit(tx, {
+      actorUser: req.user,
+      action: 'SETTINGS_UPDATED',
+      entityType: 'PlatformSetting',
+      entityId: 1,
+      metadata: { before, after },
+    });
+
+    return result;
+  });
+
+  res.json(updated);
 };
 
 // GET /api/v2/admin/verifications?status=

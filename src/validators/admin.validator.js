@@ -110,3 +110,42 @@ export const createLegalVersionSchema = Joi.object({
       translations_frRequired: 'La traduction fr est obligatoire',
     }),
 });
+
+// PATCH /api/v2/admin/settings — modification partielle des réglages de la
+// plateforme, réservée à ROOT. Au moins un champ (Joi.min(1) : un corps vide
+// est un 400, pas une modification silencieuse).
+//
+// currency est en lecture seule : Joi.forbidden() fait renvoyer un 400 explicite
+// quand elle est fournie, plutôt que de la supprimer en silence avec
+// stripUnknown (middlewares/validate.middleware.js).
+export const updateSettingsSchema = Joi.object({
+  // Bornes alignées sur le schéma (Decimal(5,4) pour les taux) : une valeur
+  // hors bornes corromprait chaque nouveau devis, donc elle est refusée ici
+  // (400), jamais bornée silencieusement.
+  supplierCommissionRate: Joi.number().min(0).max(0.5),
+  buyerFeeType: Joi.string().valid('NONE', 'FIXED', 'PERCENT'),
+  // PERCENT : la valeur est un taux (1 = 100 %) ; NONE/FIXED : un montant.
+  buyerFeeValue: Joi.number()
+    .min(0)
+    .when('buyerFeeType', {
+      is: 'PERCENT',
+      then: Joi.number().max(1),
+      otherwise: Joi.number(),
+    }),
+  transportMarkupRate: Joi.number().min(0).max(1),
+  referralBuyerReward: Joi.number().min(0),
+  referralSupplierReward: Joi.number().min(0),
+  // Une réservation dure entre 1 heure et une semaine : au-delà, le stock serait
+  // bloqué sans raison.
+  reservationHours: Joi.number().integer().min(1).max(168),
+  expiryCompensationRate: Joi.number().min(0).max(1),
+  currency: Joi.forbidden(),
+})
+  .min(1)
+  .messages({
+    'object.min': 'Aucun champ à modifier',
+    'any.unknown': 'Champ non autorisé',
+    'number.min': 'La valeur minimale est {{#limit}}',
+    'number.max': 'La valeur maximale est {{#limit}}',
+    'number.integer': 'La valeur doit être un entier',
+  });
