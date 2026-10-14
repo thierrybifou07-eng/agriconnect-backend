@@ -2,7 +2,7 @@
 
 **Date :** 8 octobre 2026 · **Dépôt :** `thierrybifou07-eng/agriconnect-backend`
 **Branche de travail :** `feature/dev-v2` (créée depuis `development`, commit `d83ce69`, état final de la v1)
-**Progression :** P0.2 à P2.6 réalisés. **Prochaine étape : bloc S (S1 à S4), puis P3.1.**
+**Progression :** P0.2 à P6.1, S1 à S6 réalisés. **Prochaine étape : S7 (références de paiement), puis P6.2.**
 **Base :** MySQL · identifiants **Int** · module auth de la v1 **conservé**
 
 Ce document remplace `PLAN_REFORME_V2.md` de l'ancienne branche. Il est conçu pour des modèles gratuits : prompts courts, périmètre fermé, critères de sortie vérifiables, **un prompt = un commit**.
@@ -180,14 +180,14 @@ Le corps doit être rédigé **à partir de `git diff --cached`** : pas de gén�
 | 0 — Socle | P0.0 à P0.4 | Branche, docs, retrait marketplace, compte aligné v2, schéma de domaine |
 | 1 — Comptes | P1.1 à P1.6 | CGU FR/EN, inscription v2, comptes d'équipe, agents et audit, profils, vérification |
 | 2 — Lots et annonces | P2.1 à P2.6 | Référentiels admin, lots du promoteur, service de stock, validation et qualité, annonces publiées par l'équipe, catalogue acheteur |
-| S — Stabilisation | S1 à S4 | Schéma réconcilié et contrôle de dérive, fiabilité des tests, règles de péremption, profils manquants |
+| S — Stabilisation | S1 à S7 | Schéma réconcilié et contrôle de dérive, fiabilité des tests, règles de péremption, profils manquants, correctifs de revue (post-P3.5, post-P5.3), références de paiement du parrainage et des indemnisations |
 | 3 — Commandes | P3.1 à P3.5 | Messagerie REST puis temps réel, moteur de prix, devis, cycle de vie |
 | 4 — Argent | P4.1 à P4.2 | Paiements manuels idempotents, reversements |
-| 5 — Livraison | P5.1 à P5.3 | Agences et tarifs, création des livraisons, dispatch livreur |
-| 6 — Équipe et jobs | P6.1 à P6.4 | Parrainage, indemnisation, tâches planifiées, tableau de bord et audit |
+| 5 — Livraison | P5.1 à P5.4 | Agences et tarifs, création des livraisons, dispatch livreur, reprise des livraisons bloquées |
+| 6 — Équipe et jobs | P6.0 à P6.4 | Paramètres de la plateforme, parrainage, indemnisation, tâches planifiées, tableau de bord et audit |
 | 7 — Finition | P7.1 à P7.3 | Confidentialité, documentation, vérification finale |
 
-**36 commits** après le commit de documentation (32 prompts du plan + 4 de stabilisation). Ordre strict : chaque prompt suppose les précédents terminés.
+**41 commits** après le commit de documentation (34 prompts du plan + 7 de stabilisation). Ordre strict : chaque prompt suppose les précédents terminés.
 
 ---
 
@@ -1073,6 +1073,45 @@ aux admins ; commande d'un autre acheteur 404.
 Commit: feat(orders): add buyer confirmation, cancellation and the order state machine
 ```
 
+### S5 — Correctifs de revue (après P3.5, AVANT P4.1)
+
+Origine : revue de S3 à P3.5. Quatre points à corriger avant que l'argent ne s'appuie sur les devis.
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : corriger les points relevés à la revue de S3 à P3.5, avant les paiements et les reversements (P4).
+Lis d'abord : src/controllers/staffOrder.controller.js, src/services/stock.service.js, src/controllers/staffConversation.controller.js,
+src/controllers/conversation.controller.js, src/routes/staff.routes.js, scripts/check-drift.js,
+tests/integration/staff-orders.test.js, tests/integration/conversations.test.js, tests/unit/stock.service.test.js.
+
+1. Historique des conversations pour l'équipe. Ajoute (mêmes protections que les autres routes de conversations du staff) :
+   GET /api/v2/staff/conversations/:id : détail { type, statut, client { id, firstname, lastname }, annonce ou lot lié, agent assigné,
+   escalade } ;
+   GET /api/v2/staff/conversations/:id/messages (paginé { items, page, limit, total }, chronologique) : TOUS les messages, notes
+   internes comprises, avec senderType, senderUserId, senderAgentId et isInternal.
+   Accès identique à la liste : un agent ne voit que les conversations de son type, ADMIN et ROOT voient tout, sinon 403 ; id inconnu -> 404.
+   Les routes client et leurs DTO ne changent pas.
+2. Prix de vente d'un devis. Dans createOrder, quand l'agent fournit un unitPrice :
+   - s'il diffère du prix de l'annonce : ajoute à l'AuditLog ORDER_QUOTED une metadata
+     { priceOverrides: [{ listingId, listingPrice, appliedPrice }] } ;
+   - s'il est INFÉRIEUR au supplierUnitPrice (prix convenu du lot) : 409 code PRICE_BELOW_SUPPLIER
+     'Prix inférieur au prix convenu avec le promoteur', SAUF si l'utilisateur est ADMIN ou ROOT ET que le corps contient
+     force: true (champ booléen optionnel à ajouter au schéma Joi) ; dans ce cas l'audit porte forced: true sur la ligne concernée.
+   Un 409 annule toute la transaction (stock inchangé).
+3. Traçabilité de la réservation. Dans createOrder, crée l'Order puis les OrderItem AVANT de réserver, puis appelle reserve avec
+   orderItemId pour chaque ligne, afin que le mouvement RESERVED soit relié à sa ligne. Même transaction, même rollback en cas
+   d'INSUFFICIENT_STOCK, même comportement observable (réponse, DTO, montants). order.service.js ne change pas.
+4. stock.service.js : quantitePositive utilise valeur.greaterThan(0) au lieu de isPositive() (decimal.js considère 0 comme positif).
+5. scripts/check-drift.js : codes de sortie sans ambiguïté : 0 = aucun écart ; 1 = écart détecté (Prisma renvoie 2) ; 2 = configuration
+   manquante ; 3 = erreur d'exécution (Prisma renvoie 1, ou échec du lancement). Corrige le commentaire d'en-tête du fichier.
+Tests : messages staff avec notes internes, ordre chronologique, pagination ; agent d'un autre type -> 403 ; conversation inconnue -> 404 ;
+un client sur ces routes -> 403 ; prix inférieur au prix convenu -> 409 PRICE_BELOW_SUPPLIER et stock inchangé ; ADMIN avec force -> 201 et
+audit forced ; prix différent mais >= prix convenu -> 201 avec metadata priceOverrides ; le mouvement RESERVED porte bien l'orderItemId
+(vérification en base) ; reserve avec quantité 0 -> 400 INVALID_QUANTITY (test unitaire du service). Les tests existants restent verts.
+Commit : fix(orders,messaging): let staff read conversations, guard sale prices and trace reservations
+```
+
 ---
 
 ## PHASE 4 — Argent
@@ -1162,6 +1201,9 @@ Commit: feat(delivery): administer transport agencies, zone coverage and tariffs
 Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
 
 Objectif : une livraison par point d'enlèvement, avec assurance et frais figés.
+IMPORTANT : réutilise EXACTEMENT le calcul des origines et des frais déjà écrit dans staffOrder.controller.js (P3.4). S'il est
+enfermé dans le contrôleur, EXTRAIS-LE dans src/services/delivery.pricing.js (modification autorisée de staffOrder.controller.js,
+limitée à cette extraction, comportement identique) pour que les frais de livraison égalent ceux du devis.
 Lis d'abord : src/services/agency.service.js, src/services/pricing.service.js, src/utils/distance.js,
 src/services/order.service.js, modèles Delivery, OrderItem.
 
@@ -1210,7 +1252,107 @@ Commit: feat(delivery): add the pull dispatch for drivers with atomic acceptance
 
 ---
 
+### S6 — Correctifs argent et temps réel (après P5.3, AVANT P5.4)
+
+Origine : revue de S5 à P5.3. Deux failles de cohérence de l'argent, un test fragile, des sockets non testés.
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : corriger les points relevés à la revue de S5 à P5.3.
+Lis d'abord : src/services/payment.service.js, src/services/payout.service.js, src/services/order.service.js,
+src/controllers/staffOrder.controller.js, src/controllers/staffDelivery.controller.js, src/sockets/chat.socket.js,
+tests/integration/staff-payments.test.js, tests/integration/supplier-payouts.test.js, tests/integration/socket-chat.test.js,
+tests/integration/forgot-password.test.js, tests/integration/staff-deliveries.test.js.
+
+1. Clé d'idempotence liée à sa requête (payment.service.js). Aujourd'hui, rejouer une clé sur une AUTRE commande renvoie
+   silencieusement le paiement de la première commande (200). Corrige le rejeu séquentiel ET le rejeu après P2002 : si le paiement
+   existant n'a pas le même orderId, ou un montant différent, ou une méthode différente, réponds 409 code IDEMPOTENCY_KEY_CONFLICT
+   'Clé d'idempotence déjà utilisée pour une autre opération'. Même clé + mêmes paramètres : comportement inchangé (200, même paiement).
+2. Remboursement et reversements (payout.service.js, payment.service.js).
+   a) refreshPayoutReadiness devient BIDIRECTIONNELLE : commande COMPLETED ET PAID -> ON_HOLD vers READY ; sinon READY -> ON_HOLD.
+      Les reversements PAID ne sont jamais modifiés.
+   b) refundPayment, dans sa transaction : (i) si un reversement de la commande est déjà PAID, réponds 409 code PAYOUT_ALREADY_PAID
+      'Reversement déjà payé : à traiter manuellement', SAUF si l'utilisateur est ADMIN ou ROOT ET que le corps contient force: true
+      (champ booléen optionnel ajouté au schéma Joi) ; dans ce cas l'audit PAYMENT_REFUNDED porte forcedAfterPayout: true ;
+      (ii) après le recalcul de paymentStatus, appelle refreshPayoutReadiness ; (iii) si paymentStatus vaut REFUNDED (tout est remboursé),
+      appelle cancelPayoutsForOrder.
+3. Sockets de livraison : crée tests/integration/socket-delivery.test.js en suivant le modèle de socket-chat.test.js (vrai serveur
+   Socket.io) : (a) à la création des livraisons, un livreur de l'agence reçoit delivery:available, un livreur d'une autre agence et
+   l'acheteur ne le reçoivent PAS ; (b) à l'acceptation et aux changements de statut, delivery:status atteint le staff et l'acheteur
+   concerné, jamais un autre acheteur, et son payload ne contient aucun prix ; (c) un livreur sans DriverProfile se connecte sans rejoindre
+   de salle d'agence. Si un de ces comportements est faux, corrige le code et dis-le dans le commit.
+4. Test fragile : tests/integration/forgot-password.test.js compare des durées sous charge (rapport > 0,25). Garde le MÊME rapport mais
+   mesure chaque cas 5 fois et compare les MÉDIANES. N'abaisse aucun seuil.
+5. Frais de livraison : la logique « origines + distance + frais » est dupliquée dans staffOrder.controller.js et staffDelivery.controller.js.
+   Extrais-la dans src/services/delivery.pricing.js (fonctions pures ou prenant les données déjà chargées) utilisée par les deux
+   contrôleurs, comportement strictement identique. Ajoute un test : pour une commande à deux origines, la somme des deliveryFee des
+   livraisons créées égale le deliveryFee du devis.
+Critères : npm test vert (lance-le deux fois) ; aucun comportement observable ne change hors points 1 et 2.
+Tests (points 1 et 2) : même clé sur une autre commande -> 409 IDEMPOTENCY_KEY_CONFLICT ; même clé et même corps -> 200 inchangé ; remboursement
+partiel d'une commande COMPLETED+PAID : reversement READY -> ON_HOLD, puis nouveau paiement -> READY ; remboursement total : reversements
+CANCELLED ; remboursement avec reversement PAID -> 409 PAYOUT_ALREADY_PAID ; ADMIN avec force -> 200 et audit forcedAfterPayout ; AGENT avec
+force -> ignoré (409).
+Commit: fix(payments,delivery): scope idempotency keys, keep payouts consistent with refunds and test delivery sockets
+```
+
+### P5.4 — Reprise des livraisons bloquées
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : l'équipe peut reprendre une livraison qui ne se déroule pas comme prévu. Aujourd'hui une course acceptée par un livreur
+absent, ou échouée, reste bloquée à vie.
+Lis d'abord : src/services/delivery.state.js, src/controllers/staffDelivery.controller.js, src/controllers/driverDelivery.controller.js,
+src/services/order.service.js, src/utils/audit.js, tests/integration/staff-deliveries.test.js, tests/integration/driver-deliveries.test.js.
+
+Ajoute dans staffDelivery.controller.js et staff.routes.js (capability DISPATCH_COORDINATION ; ADMIN et ROOT toujours autorisés) :
+- POST /api/v2/staff/deliveries/:id/release { reason? } : ACCEPTED -> PENDING (driverId et acceptedAt remis à nul) ; émet delivery:available
+  vers la salle de l'agence ; audit DELIVERY_RELEASED.
+- POST /api/v2/staff/deliveries/:id/redispatch : FAILED -> PENDING (driverId et acceptedAt remis à nul ; l'ancien failureReason est copié dans
+  incidentNote avant d'être effacé) ; émet delivery:available ; audit DELIVERY_REDISPATCHED.
+- POST /api/v2/staff/deliveries/:id/cancel { reason } (reason obligatoire) : PENDING, ACCEPTED ou FAILED -> CANCELLED ; si TOUTES les
+  livraisons de la commande sont alors CANCELLED, remets OrderItem.deliveryId à nul pour ses lignes afin de pouvoir recréer les livraisons ;
+  audit DELIVERY_CANCELLED.
+- Complète delivery.state.js avec ces transitions (PICKED_UP et IN_TRANSIT ne sont PAS annulables : 409 INVALID_STATE_TRANSITION).
+- POST /api/v2/staff/orders/:id/deliveries (P5.2) : le refus d'idempotence ne s'applique plus que s'il existe au moins une livraison NON annulée.
+- Chaque action émet aussi delivery:status vers staff et l'acheteur (payload sans prix, comme en P5.3).
+Tests : release d'une course ACCEPTED puis acceptation par un autre livreur ; redispatch d'une course FAILED ; cancel sans reason -> 400 ;
+cancel d'une course IN_TRANSIT -> 409 ; après annulation de toutes les livraisons, nouvelle création possible ; une annulation partielle ne
+libère pas les lignes ; AGENT sans DISPATCH_COORDINATION -> 403 ; audit écrit pour chaque action.
+Commit: feat(delivery): let staff release, redispatch and cancel stuck deliveries
+```
+
+---
+
 ## PHASE 6 — Parrainage, indemnisation, tâches planifiées, tableau de bord
+
+### P6.0 — Paramètres de la plateforme
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : permettre de lire et modifier PlatformSetting. Aujourd'hui rien ne le permet : la commission reste à 0 et les devis ne
+génèrent aucun revenu.
+Lis d'abord : src/services/pricing.service.js (getSettings), src/routes/admin.routes.js, src/utils/audit.js, src/validators/admin.validator.js,
+src/middlewares/auth.middleware.js (requireRole), modèle PlatformSetting dans prisma/schema.prisma.
+
+Routes (montées dans admin.routes.js) :
+- GET /api/v2/admin/settings (ADMIN et plus) : la ligne unique id = 1.
+- PATCH /api/v2/admin/settings (ROOT SEULEMENT, requireRole('ROOT')) : modification PARTIELLE, au moins un champ. Champs et bornes :
+  supplierCommissionRate (0 à 0,5), buyerFeeType (NONE | FIXED | PERCENT), buyerFeeValue (>= 0 ; <= 1 si le type est PERCENT),
+  transportMarkupRate (0 à 1), referralBuyerReward (>= 0), referralSupplierReward (>= 0), reservationHours (entier de 1 à 168),
+  expiryCompensationRate (0 à 1). currency est en lecture seule : la fournir donne 400.
+- Règle de cohérence : si buyerFeeType est NONE, buyerFeeValue doit valoir 0 (après fusion avec la valeur actuelle) ; sinon 400.
+- Toutes les valeurs d'argent et de taux passent par Prisma.Decimal. Audit SETTINGS_UPDATED dans la même transaction, avec
+  metadata { before, after } limité aux champs modifiés.
+- getSettings continue de lire la base (aucun cache) : une modification est effective à la requête suivante. Elle ne touche JAMAIS les
+  commandes existantes (taux figés sur chaque OrderItem) : ajoute un test qui le prouve.
+Tests : lecture par ADMIN ; PATCH par ADMIN -> 403 ; PATCH par ROOT -> 200 ; bornes (commission 0,6 -> 400, reservationHours 0 -> 400,
+currency -> 400, corps vide -> 400) ; incohérence NONE + valeur -> 400 ; audit avec before/after ; un devis créé APRÈS un changement de
+commission utilise le nouveau taux, un devis créé AVANT garde l'ancien ; le seed ne réécrit pas une valeur modifiée.
+Commit: feat(settings): let ROOT manage platform rates and fees with an audit trail
+```
 
 ### P6.1 — Parrainage
 
@@ -1235,6 +1377,59 @@ ELIGIBLE quand il est vérifié ; paiement unique (double paiement 409) ; rejet 
 Commit: feat(referral): grant fixed-amount rewards when referred users are verified
 ```
 
+### S7 — Références de paiement et transitions sûres en concurrence, AVANT P6.2
+
+Origine : revue de S6 à P6.1 et arrêt de P6.2. P6.2 s'est arrêté à raison (règle 11) : `SupplierCompensation` n'a pas de colonne `reference`. `Referral` non plus, alors que P6.1 expose déjà `PATCH /admin/referrals/:id/pay { reference }`. `SupplierPayout` a déjà `reference`, `paidAt` et `paidById` : on aligne les deux autres tables sur ce modèle. Le schéma cible `docs/schema.v2.target.prisma` joint à ce plan contient déjà ces champs.
+
+```
+Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
+
+Objectif : enregistrer, pour chaque récompense de parrainage et chaque indemnisation payées, la référence du paiement et
+l'humain qui l'a effectué (comme SupplierPayout).
+Lis d'abord : prisma/schema.prisma, docs/schema.v2.target.prisma, src/services/referral.service.js, src/services/payout.service.js
+(payPayout), src/services/payment.service.js (refundPayment), les contrôleurs admin des parrainages (listReferrals,
+payReferralController dans src/controllers/admin.controller.js), tests/integration/referral.test.js,
+tests/integration/supplier-payouts.test.js, tests/integration/staff-payments.test.js.
+Fichiers dont la MODIFICATION est autorisée en plus du schéma : referral.service.js, payout.service.js, payment.service.js,
+admin.controller.js (uniquement les fonctions de parrainage), admin.validator.js (schéma de paiement d'un parrainage),
+tests/integration/forgot-password.test.js.
+
+Écarts ATTENDUS entre prisma/schema.prisma et docs/schema.v2.target.prisma (et SEULEMENT ceux-là) :
+ a) Referral : ajout de reference (String?), paidById (Int?) et de la relation paidBy -> User nommée "ReferralPaidBy" ;
+ b) SupplierCompensation : ajout de reference (String?), paidById (Int?) et de la relation paidBy -> User nommée
+    "CompensationPaidBy" ; la relation existante approvedBy est renommée "CompensationApprovedBy" (obligatoire : deux relations
+    vers User dans le même modèle) ;
+ c) User : compensationsApproved reçoit @relation("CompensationApprovedBy") ; nouveaux champs compensationsPaid
+    (relation "CompensationPaidBy") et referralsPaid (relation "ReferralPaidBy").
+1. Vérifie avec `git diff --no-index prisma/schema.prisma docs/schema.v2.target.prisma` que les écarts sont exactement a, b, c.
+   Tout autre écart : ARRÊTE-TOI.
+2. Copie docs/schema.v2.target.prisma sur prisma/schema.prisma.
+3. Migration `v2_payment_references` selon la règle 10 du préambule. SQL attendu : sur Referral et SupplierCompensation, ajout des
+   colonnes reference (VARCHAR) et paidById (INT NULL) + index et clé étrangère vers User (ON DELETE SET NULL). Aucun DROP.
+   Renommer une relation Prisma ne change pas la base : aucune instruction pour approvedById.
+4. Code P6.1 : payReferral enregistre reference, paidById (utilisateur) et paidAt dans la ligne Referral, EN PLUS de l'audit
+   (qui garde la référence dans sa metadata). Si, jusqu'ici, la référence n'était écrite que dans l'audit, dis-le dans le
+   commit. reference est obligatoire (Joi, 1 à 100 caractères) ; elle est exposée dans la vue admin des parrainages.
+   GET /api/v2/admin/referrals est aujourd'hui sans pagination et sans compte de paiement : rends-la paginée
+   ({ items, page, limit, total }, comme les autres listes) et ajoute pour chaque parrainage le compte de paiement par défaut du
+   parrain (numéro complet, comme la vue admin des reversements) : l'admin doit savoir où payer.
+5. Transitions sûres en concurrence. payReferral, rejectReferral, payPayout et refundPayment lisent la ligne puis écrivent sans
+   condition : deux clics simultanés réussissent tous les deux (deux audits, la référence du second écrase la première).
+   Remplace chaque transition par tx.<modèle>.updateMany({ where: { id, status: <statut attendu> }, data }) ; si count vaut 0, relis
+   la ligne et renvoie EXACTEMENT le 404 ou le 409 actuel. L'audit n'est écrit que par l'appel gagnant. Le reste de la logique de
+   ces fonctions ne change pas.
+6. Test fragile forgot-password : sur le test de timing de tests/integration/forgot-password.test.js, ajoute { retry: 3 } au test
+   (options Vitest). N'abaisse AUCUN seuil, ne retire AUCUNE assertion. Si le test échoue encore, copie le message d'échec
+   (les trois durées) dans ton résumé.
+Tests : parrainage payé -> reference, paidById et paidAt renseignés en base ; reference absente -> 400 ; double paiement -> 409 ;
+la vue admin est paginée et expose la référence et le compte de paiement du parrain ; un AGENT ne peut pas payer (403) ;
+deux paiements SIMULTANÉS (Promise.all) du même parrainage ELIGIBLE -> un 200 et un 409, un seul audit, une seule référence ;
+même test pour un reversement READY (payPayout) et pour un remboursement (un seul REFUNDED, un seul audit).
+Critères : npm test vert (deux fois) ; migrate deploy sur base vierge OK ; diff vide entre prisma/schema.prisma et
+docs/schema.v2.target.prisma ; npm run db:drift ne signale que la casse.
+Commit: feat(payments): record payment references and make payment transitions race-safe
+```
+
 ### P6.2 — Indemnisation des fournisseurs
 
 ```
@@ -1242,7 +1437,7 @@ Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
 
 Objectif : indemniser les invendus ou pertes, avec validation humaine.
 Lis d'abord : src/services/stock.service.js, src/services/pricing.service.js, src/middlewares/humanActor.middleware.js,
-modèle SupplierCompensation.
+modèle SupplierCompensation. Prérequis : S7 terminé (colonnes reference et paidById).
 
 1. Crée src/services/compensation.service.js :
    - createForLoss(tx, { lot, quantity, reason, deliveryId?, note? }) : amount = roundMoney(quantity x agreedUnitPrice x
@@ -1250,8 +1445,10 @@ modèle SupplierCompensation.
 2. Staff : POST /api/staff/compensations { lotId, reason, quantity, deliveryId?, note } (capability DISPUTE_HANDLING ; ADMIN
    toujours) ; quantité > quantité du lot -> 400.
 3. Admin (ADMIN et plus, requireHumanActor) : GET /api/admin/compensations?status= ; PATCH /:id/approve ; PATCH /:id/reject
-   { note } ; PATCH /:id/pay { reference } ; transitions PENDING_APPROVAL -> APPROVED | REJECTED, APPROVED -> PAID ; invalide ->
-   409 ; audit.
+   { note } ; PATCH /:id/pay { reference } (reference obligatoire, 1 à 100 caractères) ; transitions PENDING_APPROVAL -> APPROVED |
+   REJECTED, APPROVED -> PAID ; invalide -> 409 ; audit. Le paiement écrit reference, paidAt ET paidById (utilisateur) dans la
+   ligne SupplierCompensation (colonnes ajoutées en S7). La vue admin affiche le compte de paiement par défaut du fournisseur
+   (numéro complet, comme la vue admin des reversements).
 4. Fournisseur : GET /api/supplier/compensations (paginé) : motif, quantité, montant, statut.
 Tests : montant (arrondi XAF) ; taux 0 -> aucune indemnisation ; cycle complet ; paiement d'une indemnisation non approuvée 409 ;
 un AGENT sans capacité 403 ; fournisseur ne voit que les siennes.
@@ -1270,7 +1467,8 @@ src/services/compensation.service.js, src/utils/audit.js.
 
 Crée src/jobs/ avec trois fonctions asynchrones exportées, chacune prenant `now` en paramètre (testables) :
 - releaseExpiredReservations(now) : commandes QUOTED avec reservedUntil < now -> annulées (raison 'Devis expiré'), réservations
-  libérées, audit avec acteur système.
+  libérées, audit avec acteur système. Réutilise order.service.js (cancelOrder) : MODIFICATION AUTORISÉE de ce fichier pour
+  accepter un acteur système (sans utilisateur), sans changer le comportement existant ; ne réimplémente PAS le calcul de libération.
 - expireLots(now) : lots dont expiresAt < now et quantityAvailable > 0, QUEL QUE SOIT LEUR STATUT (un lot déjà EXPIRED peut avoir
   récupéré du disponible après l'annulation d'une commande) -> expireAvailable, puis createForLoss (raison EXPIRED_UNSOLD).
   Le statut est calculé par computeLotStatus (S3), jamais forcé ici.

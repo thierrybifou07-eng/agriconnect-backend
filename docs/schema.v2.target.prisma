@@ -392,12 +392,14 @@ model User {
   termsAcceptances      TermsAcceptance[]
   referralsMade         Referral[]             @relation("Referrer")
   referralReceived      Referral?              @relation("Referred")
+  referralsPaid         Referral[]             @relation("ReferralPaidBy")
   conversations         Conversation[]
   messagesSent          Message[]
   orders                Order[]
   paymentsRecorded      Payment[]
   payoutsPaid           SupplierPayout[]
-  compensationsApproved SupplierCompensation[]
+  compensationsApproved SupplierCompensation[] @relation("CompensationApprovedBy")
+  compensationsPaid     SupplierCompensation[] @relation("CompensationPaidBy")
   stockMovements        StockMovement[]
   auditLogs             AuditLog[]
   lotQualityChecks      LotQualityCheck[]
@@ -1075,8 +1077,12 @@ model SupplierCompensation {
   status       CompensationStatus @default(PENDING_APPROVAL)
   note         String?            @db.Text
   approvedById Int?
-  approvedBy   User?              @relation(fields: [approvedById], references: [id])
+  approvedBy   User?              @relation("CompensationApprovedBy", fields: [approvedById], references: [id])
   approvedAt   DateTime?
+  // Paiement manuel : référence saisie par l'humain qui l'effectue (jamais un agent IA).
+  reference    String?
+  paidById     Int?
+  paidBy       User?              @relation("CompensationPaidBy", fields: [paidById], references: [id])
   paidAt       DateTime?
   createdAt    DateTime           @default(now())
 
@@ -1145,6 +1151,10 @@ model Referral {
   status          ReferralStatus @default(PENDING)
   rewardAmount    Decimal?       @db.Decimal(14, 2)
   eligibleAt      DateTime?
+  // Paiement manuel de la récompense : référence et humain qui l'a effectué.
+  reference       String?
+  paidById        Int?
+  paidBy          User?          @relation("ReferralPaidBy", fields: [paidById], references: [id])
   paidAt          DateTime?
   rejectionReason String?        @db.Text
   createdAt       DateTime       @default(now())
