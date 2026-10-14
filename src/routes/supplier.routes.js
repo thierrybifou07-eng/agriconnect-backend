@@ -9,6 +9,7 @@ import {
   withdrawLot,
 } from '../controllers/supplierLot.controller.js';
 import { listPayouts } from '../controllers/supplierPayout.controller.js';
+import { listCompensations } from '../controllers/supplierCompensation.controller.js';
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
@@ -49,6 +50,8 @@ router.post('/lots', protect, requireRole('SUPPLIER'), uploadImages, validate(lo
 router.get('/lots', protect, requireRole('SUPPLIER'), listLots);
 // Reversements du fournisseur connecte (P4.2).
 router.get('/payouts', protect, requireRole('SUPPLIER'), listPayouts);
+// Indemnisations du fournisseur connecte (P6.2).
+router.get('/compensations', protect, requireRole('SUPPLIER'), listCompensations);
 router.get('/lots/:id', protect, requireRole('SUPPLIER'), getLot);
 router.patch('/lots/:id', protect, requireRole('SUPPLIER'), validate(lotUpdateSchema), updateLot);
 router.delete('/lots/:id', protect, requireRole('SUPPLIER'), deleteLot);

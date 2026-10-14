@@ -47,6 +47,7 @@ import {
   redispatchDelivery,
   cancelDelivery,
 } from '../controllers/staffDelivery.controller.js';
+import { createCompensation } from '../controllers/staffCompensation.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
@@ -57,6 +58,7 @@ import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
 import { orderCreateSchema, orderStatusSchema, orderCancelSchema } from '../validators/order.validator.js';
 import { paymentCreateSchema, paymentRefundSchema } from '../validators/payment.validator.js';
+import { compensationCreateSchema } from '../validators/compensation.validator.js';
 import {
   assignSchema,
   escalateSchema,
@@ -93,6 +95,9 @@ const STAFF_REFUND = [protect, requireMinLevel(50), requireHumanActor];
 
 // Les livraisons exigent DISPATCH_COORDINATION (AGENT) ou ADMIN/ROOT.
 const STAFF_DISPATCH = [protect, requireCapability('DISPATCH_COORDINATION')];
+
+// Les indemnisations exigent DISPUTE_HANDLING (AGENT) ou ADMIN/ROOT.
+const STAFF_COMPENSATIONS = [protect, requireCapability('DISPUTE_HANDLING')];
 
 // Sans ce callback, un sixième fichier arrêterait multer avec
 // LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
@@ -213,5 +218,9 @@ router.get('/deliveries', STAFF_DISPATCH, listDeliveries);
 router.post('/deliveries/:id/release', STAFF_DISPATCH, validate(deliveryReleaseSchema), releaseDelivery);
 router.post('/deliveries/:id/redispatch', STAFF_DISPATCH, redispatchDelivery);
 router.post('/deliveries/:id/cancel', STAFF_DISPATCH, validate(deliveryCancelSchema), cancelDelivery);
+
+// Indemnisations fournisseurs (P6.2) : demande pour invendus ou pertes.
+// L'approbation et le paiement sont des actes d'admin (routes /admin).
+router.post('/compensations', STAFF_COMPENSATIONS, validate(compensationCreateSchema), createCompensation);
 
 export default router;

@@ -43,6 +43,12 @@ import {
   payReferralController,
   rejectReferralController,
 } from '../controllers/admin.controller.js';
+import {
+  listCompensationsAdmin,
+  approveCompensationController,
+  rejectCompensationController,
+  payCompensationController,
+} from '../controllers/adminCompensation.controller.js';
 import { protect, requireMinLevel, requireRole } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
@@ -58,6 +64,10 @@ import {
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 import { reviewVerificationSchema } from '../validators/verification.validator.js';
 import { payPayoutSchema } from '../validators/payout.validator.js';
+import {
+  compensationRejectSchema,
+  compensationPaySchema,
+} from '../validators/compensation.validator.js';
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -166,5 +176,14 @@ router.get('/agencies/:id/drivers', listAgencyDrivers);
 router.get('/referrals', requireHumanActor, listReferrals);
 router.patch('/referrals/:id/pay', requireHumanActor, validate(payReferralSchema), payReferralController);
 router.patch('/referrals/:id/reject', requireHumanActor, validate(rejectReferralSchema), rejectReferralController);
+
+// Indemnisations fournisseurs (P6.2) : ADMIN et plus, uniquement agents
+// humains. requireHumanActor bloque les agents IA : un IA ne peut pas déplacer
+// de l'argent. La vue admin affiche le compte de paiement par défaut du
+// fournisseur (numéro complet), comme la vue admin des reversements.
+router.get('/compensations', requireHumanActor, listCompensationsAdmin);
+router.patch('/compensations/:id/approve', requireHumanActor, approveCompensationController);
+router.patch('/compensations/:id/reject', requireHumanActor, validate(compensationRejectSchema), rejectCompensationController);
+router.patch('/compensations/:id/pay', requireHumanActor, validate(compensationPaySchema), payCompensationController);
 
 export default router;
