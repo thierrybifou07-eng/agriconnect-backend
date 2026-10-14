@@ -12,6 +12,12 @@ import { sendTemplateEmail } from '../config/email/sendMail.js';
 // qui donne acces a un asset private (type 'authenticated').
 import { v2 as cloudinary } from 'cloudinary';
 import { recordAudit } from '../utils/audit.js';
+import {
+  onProfileVerified,
+  payReferral,
+  rejectReferral,
+} from '../services/referral.service.js';
+import { toNumber } from '../utils/money.js';
 
 const userSafeSelect = {
   id: true,
@@ -441,6 +447,14 @@ export const reviewVerification = async (req, res) => {
       });
     }
 
+    // Parrainage (P6.1) : dans la MÊME transaction que la validation du profil.
+    // Si le filleul a un Referral PENDING et que le parrain est vérifié, il passe
+    // à ELIGIBLE. Si le parrain vient d'être vérifié, ses filleuls déjà vérifiés
+    // dont le Referral est PENDING passent à ELIGIBLE.
+    if (nouveauStatut === 'VERIFIED') {
+      await onProfileVerified(tx, document.userId);
+    }
+
     await recordAudit(tx, {
       actorUser: req.user,
       action: decision === 'APPROVE' ? 'PROFILE_DOCUMENT_APPROVED' : 'PROFILE_DOCUMENT_REJECTED',
@@ -465,4 +479,54 @@ export const reviewVerification = async (req, res) => {
     reviewedAt: doc.reviewedAt,
     createdAt: doc.createdAt,
   });
+};
+
+// GET /api/v2/admin/referrals?status= — liste des parrainages (ADMIN et plus).
+// Le filtre porte sur le statut du parrainage (PENDING, ELIGIBLE, PAID, REJECTED).
+export const listReferrals = async (req, res) => {
+  const { status } = req.query;
+  const where = status ? { status } : {};
+
+  const referrals = await prisma.referral.findMany({
+    where,
+    include: {
+      referrer: { select: { id: true, firstname: true, lastname: true, email: true } },
+      referred: { select: { id: true, firstname: true, lastname: true, email: true } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json(referrals);
+};
+
+// PATCH /api/v2/admin/referrals/:id/pay — ELIGIBLE -> PAID.
+// Le parrainage ne peut être payé qu'une seule fois : un second paiement
+// est un 409 (INVALID_STATE_TRANSITION).
+export const payReferralController = async (req, res) => {
+  const { reference } = req.body; // validé par payReferralSchema en amont
+
+  const paid = await prisma.$transaction(async (tx) => {
+    return payReferral(tx, req.params.id, {
+      reference,
+      actor: { user: req.user, agent: req.agent ?? null },
+    });
+  });
+
+  res.json(paid);
+};
+
+// PATCH /api/v2/admin/referrals/:id/reject — PENDING ou ELIGIBLE -> REJECTED.
+// Le motif est obligatoire : rejeter sans dire pourquoi priverait le parrain
+// de toute correction possible.
+export const rejectReferralController = async (req, res) => {
+  const { reason } = req.body; // validé par rejectReferralSchema en amont
+
+  const rejected = await prisma.$transaction(async (tx) => {
+    return rejectReferral(tx, req.params.id, {
+      reason,
+      actor: { user: req.user, agent: req.agent ?? null },
+    });
+  });
+
+  res.json(rejected);
 };

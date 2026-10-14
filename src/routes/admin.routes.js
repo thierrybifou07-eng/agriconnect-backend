@@ -38,12 +38,23 @@ import {
   listAgencyDrivers,
 } from '../controllers/agency.controller.js';
 import { listPayouts, payPayoutController } from '../controllers/adminPayout.controller.js';
+import {
+  listReferrals,
+  payReferralController,
+  rejectReferralController,
+} from '../controllers/admin.controller.js';
 import { protect, requireMinLevel, requireRole } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
-import { createStaffUserSchema, createLegalVersionSchema, updateSettingsSchema } from '../validators/admin.validator.js';
+import {
+  createStaffUserSchema,
+  createLegalVersionSchema,
+  updateSettingsSchema,
+  payReferralSchema,
+  rejectReferralSchema,
+} from '../validators/admin.validator.js';
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
 import { reviewVerificationSchema } from '../validators/verification.validator.js';
 import { payPayoutSchema } from '../validators/payout.validator.js';
@@ -149,5 +160,11 @@ router.put('/agencies/:id/zones/:zoneId', validate(upsertAgencyZoneSchema), upse
 router.delete('/agencies/:id/zones/:zoneId', removeAgencyZone);
 
 router.get('/agencies/:id/drivers', listAgencyDrivers);
+
+// Parrainage (P6.1) : ADMIN et plus, uniquement agents humains.
+// requireHumanActor bloque les agents IA : un IA ne peut pas déplacer de l'argent.
+router.get('/referrals', requireHumanActor, listReferrals);
+router.patch('/referrals/:id/pay', requireHumanActor, validate(payReferralSchema), payReferralController);
+router.patch('/referrals/:id/reject', requireHumanActor, validate(rejectReferralSchema), rejectReferralController);
 
 export default router;

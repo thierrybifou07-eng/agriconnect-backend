@@ -149,3 +149,16 @@ export const updateSettingsSchema = Joi.object({
     'number.max': 'La valeur maximale est {{#limit}}',
     'number.integer': 'La valeur doit être un entier',
   });
+
+// PATCH /api/v2/admin/referrals/:id/pay — référence de paiement obligatoire.
+// Le parrainage ne peut être payé qu'une seule fois : la référence permet de
+// tracer le paiement dans l'audit.
+export const payReferralSchema = Joi.object({
+  reference: Joi.string().trim().min(1).max(100).required(),
+});
+
+// PATCH /api/v2/admin/referrals/:id/reject — motif obligatoire. Rejeter sans
+// dire pourquoi priverait le parrain de toute correction possible.
+export const rejectReferralSchema = Joi.object({
+  reason: Joi.string().trim().min(1).max(2000).required(),
+});

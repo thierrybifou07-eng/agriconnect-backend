@@ -292,3 +292,38 @@ export const listMyDocuments = async (req, res) => {
   });
   res.json(documents);
 };
+
+// GET /api/auth/me/referral — parrainage de l'utilisateur connecté.
+//
+// Le parrain ne voit que le prénom de ses filleuls : c'est la donnée minimale
+// pour reconnaître la personne, sans exposer son nom, son email ou son téléphone.
+// Le montant de la récompense est figé au moment du passage à ELIGIBLE : il
+// n'est pas recalculé si PlatformSetting change ensuite.
+export const getMyReferral = async (req, res) => {
+  const referrals = await prisma.referral.findMany({
+    where: { referrerId: req.user.id },
+    include: { referred: { select: { firstname: true } } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  // Totaux par statut : le client affiche ces compteurs sans avoir à
+  // recalculer la liste à chaque affichage.
+  const totals = { pending: 0, eligible: 0, paid: 0 };
+  for (const r of referrals) {
+    if (r.status === 'PENDING') totals.pending++;
+    else if (r.status === 'ELIGIBLE') totals.eligible++;
+    else if (r.status === 'PAID') totals.paid++;
+  }
+
+  res.json({
+    code: req.user.referralCode,
+    totals,
+    referrals: referrals.map((r) => ({
+      status: r.status,
+      kind: r.kind,
+      rewardAmount: r.rewardAmount,
+      createdAt: r.createdAt,
+      referredFirstname: r.referred.firstname,
+    })),
+  });
+};

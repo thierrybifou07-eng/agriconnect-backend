@@ -25,6 +25,7 @@ import {
   deletePayoutAccount,
   submitDocument,
   listMyDocuments,
+  getMyReferral,
 } from '../controllers/user.controller.js';
 import {
   authLimiter,
@@ -136,5 +137,9 @@ router.delete('/me/payout-accounts/:id', protect, requireRole('SUPPLIER', 'BUYER
 // puis validate controle le corps : l'ordre des middlewares est important.
 router.post('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), uploadDocument.single('file'), validate(submitDocumentSchema), submitDocument);
 router.get('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), listMyDocuments);
+
+// Parrainage : tout utilisateur connecté peut consulter son code de parrainage
+// et la liste de ses filleuls. Le parrain ne voit que le prénom de ses filleul.
+router.get('/me/referral', protect, getMyReferral);
 
 export default router;
