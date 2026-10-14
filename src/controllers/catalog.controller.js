@@ -1,6 +1,7 @@
 import prisma from '../config/prisma.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { listingToBuyerDto } from '../utils/dto/listing.dto.js';
+import { categoryToApi } from '../utils/dto/category.dto.js';
 
 // Le DTO acheteur a besoin du statut, du produit (avec catégorie et unité),
 // de la zone, des photos et des lots (quantité, qualité, péremption).
@@ -34,7 +35,7 @@ export const listCategories = async (req, res) => {
     orderBy: { label: 'asc' },
     select: { id: true, code: true, label: true },
   });
-  res.json(categories);
+  res.json(categories.map(categoryToApi));
 };
 
 // GET /api/v2/catalog/listings — annonces ACTIVE avec du stock, paginées.

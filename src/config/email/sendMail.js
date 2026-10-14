@@ -70,13 +70,15 @@ const isDisabled = () => process.env.SMTP_DISABLED === '1';
 export async function sendTemplateEmail(to, subject, template, props = {}) {
   if (!to) return false;
 
+  // Le destinataire ne figure jamais dans les logs : une adresse email est une
+  // donnée personnelle, et un journal ne doit pas la conserver.
   if (isDisabled()) {
-    console.log(`[mail] envoi ignore (SMTP_DISABLED) : "${subject}" a ${to}`);
+    console.log(`[mail] envoi ignore (SMTP_DISABLED) : "${subject}"`);
     return false;
   }
 
   if (!isMailConfigured()) {
-    console.warn(`[mail] SMTP non configure - "${subject}" a ${to} non envoye (dev/local)`);
+    console.warn(`[mail] SMTP non configure - "${subject}" non envoye (dev/local)`);
     return false;
   }
 
@@ -87,7 +89,7 @@ export async function sendTemplateEmail(to, subject, template, props = {}) {
     await transport.sendMail({ from: sender, to, subject, html });
     return true;
   } catch (error) {
-    console.error(`[mail] envoi en echec pour "${subject}" a ${to} :`, error.message);
+    console.error(`[mail] envoi en echec pour "${subject}" :`, error.message);
     return false;
   }
 }

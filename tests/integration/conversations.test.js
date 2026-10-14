@@ -141,7 +141,8 @@ describe('POST /api/v2/conversations — ouverture et premier message', () => {
 
     expect(res.status, res.text).toBe(201);
     expect(res.body.type).toBe('SUPPLIER_SUPPORT');
-    expect(res.body.lotId).toBe(lot.id);
+    // lotId ne sort plus côté client : le fournisseur retrouve son lot via /supplier/lots.
+    expect(res.body.lotId).toBeUndefined();
   });
 
   it('un fournisseur ouvre une conversation sans lot', async () => {
@@ -154,7 +155,7 @@ describe('POST /api/v2/conversations — ouverture et premier message', () => {
 
     expect(res.status, res.text).toBe(201);
     expect(res.body.type).toBe('SUPPLIER_SUPPORT');
-    expect(res.body.lotId).toBeNull();
+    expect(res.body.lotId).toBeUndefined();
   });
 
   it('un fournisseur ne peut pas ouvrir de conversation sur le lot d’un tiers : 404', async () => {

@@ -7,6 +7,9 @@
 // customerId) : la provenance d'un message est rendue par senderLabel.
 
 // Conversation côté client : le suivi de SA conversation, sans identité.
+// lotId ne sort jamais côté client : le lot est une donnée interne, et l'acheteur
+// n'a pas à savoir à quelle conversation correspond un lot. Le fournisseur retrouve
+// ses propres lots via GET /api/v2/supplier/lots.
 export function conversationToClientDto(conversation) {
   return {
     id: conversation.id,
@@ -14,7 +17,6 @@ export function conversationToClientDto(conversation) {
     status: conversation.status,
     subject: conversation.subject ?? null,
     listingId: conversation.listingId ?? null,
-    lotId: conversation.lotId ?? null,
     escalatedAt: conversation.escalatedAt,
     escalationReason: conversation.escalationReason ?? null,
     lastMessageAt: conversation.lastMessageAt,

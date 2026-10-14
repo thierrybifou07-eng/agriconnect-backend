@@ -4,6 +4,8 @@ import { getLookupId } from '../utils/lookupCache.js';
 import { userToApi, payoutAccountToApi } from '../utils/userApi.js';
 import { resetVerificationForNewEmail } from '../utils/emailVerification.js';
 import { ensureProfile } from '../utils/profile.js';
+import { mediaToApi } from '../utils/dto/media.dto.js';
+import { profileToApi } from '../utils/dto/profile.dto.js';
 
 // Ces quatre routes vivaient sous /api/users et	y ont ete deplacees : un
 // utilisateur qui gere son propre profil est, du point de vue de l'API, dans le
@@ -16,7 +18,10 @@ async function loadRoleProfile(db, user) {
   const modeles = { SUPPLIER: 'supplierProfile', BUYER: 'buyerProfile', DRIVER: 'driverProfile' };
   const modele = modeles[user.role.code];
   if (!modele) return null;
-  return db[modele].findUnique({ where: { userId: user.id } });
+  const profile = await db[modele].findUnique({ where: { userId: user.id } });
+  // Le profil passe par le DTO : les colonnes techniques (userId, dates)
+  // et les objets liés ne sortent jamais de l'API.
+  return profileToApi(profile, user.role.code);
 }
 
 // Modele de profil d'un role donne. requireRole (auth.routes.js) garantit que
@@ -85,7 +90,9 @@ export const uploadAvatar = async (req, res) => {
     });
   });
 
-  res.status(201).json(media);
+  // L'objet Media brut porte publicId, fileSize et les clés de référence :
+  // seul le DTO d'affichage (URL, position, principale) est renvoyé.
+  res.status(201).json(mediaToApi(media));
 };
 
 // PATCH /api/auth/me/profile
@@ -119,7 +126,7 @@ export const updateMyProfile = async (req, res) => {
     data: req.body,
   });
 
-  res.json(misAJour);
+  res.json(profileToApi(misAJour, req.user.role.code));
 };
 
 // Comptes de paiement — GET /api/auth/me/payout-accounts

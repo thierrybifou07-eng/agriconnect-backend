@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import routes from './routes/index.js';
 import { notFound, errorHandler } from './middlewares/error.middleware.js';
 import { apiLimiter } from './middlewares/rateLimit.middleware.js';
@@ -7,6 +8,12 @@ import { decimalAsNumber } from './middlewares/decimal-json.middleware.js';
 import { httpCorsOptions } from './utils/cors.js';
 
 const app = express();
+
+// En-têtes de sécurité HTTP (CSP, HSTS, X-Content-Type-Options, ...) :
+// helmet pose par défaut un socle de protections sans casser les clients
+// existants. La CSP par défaut est stricte mais n'interdit ni les scripts
+// ni les styles inline du serveur de pages (renderPage sert du HTML fixe).
+app.use(helmet());
 
 // Avant toute route : les montants stockes en Decimal doivent partir en nombres.
 app.use(decimalAsNumber);

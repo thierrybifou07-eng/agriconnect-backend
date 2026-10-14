@@ -640,7 +640,6 @@ describe('GET /api/v2/auth/me - profil du role', () => {
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.profile).toMatchObject({
-      userId: buyer.id,
       buyerType: 'WHOLESALER',
       businessName: 'Grossiste du Sud',
     });
@@ -657,7 +656,6 @@ describe('GET /api/v2/auth/me - profil du role', () => {
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.profile).toMatchObject({
-      userId: supplier.id,
       farmName: 'Ferme des Oliviers',
       description: 'Olives et huile',
     });
@@ -677,7 +675,6 @@ describe('GET /api/v2/auth/me - profil du role', () => {
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.profile).toMatchObject({
-      userId: driver.id,
       vehicleType: 'Camion',
       plateNumber: 'CD-456-EF',
     });
