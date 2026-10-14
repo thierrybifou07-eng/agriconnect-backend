@@ -545,5 +545,32 @@ describe('Reversements fournisseurs (P4.2)', () => {
 
       expect(res.status, res.text).toBe(400);
     });
+
+    it('deux paiements SIMULTANÉS -> un 200 et un 409, un seul audit', async () => {
+      const { payout } = await preparerPayoutReady();
+      const admin = await createUser({ role: 'ADMIN' });
+      const token = authHeader(tokenAdminPour(admin));
+
+      const [res1, res2] = await Promise.all([
+        api().patch(`/api/v2/admin/payouts/${payout.id}/pay`).set(token).send({ reference: 'VIR-A' }),
+        api().patch(`/api/v2/admin/payouts/${payout.id}/pay`).set(token).send({ reference: 'VIR-B' }),
+      ]);
+
+      // Exactement un gagnant.
+      expect([res1.status, res2.status].sort()).toEqual([200, 409]);
+
+      // Une seule référence écrite : celle du gagnant.
+      const maj = await prisma.supplierPayout.findUnique({ where: { id: payout.id } });
+      expect(maj.status).toBe('PAID');
+      expect(['VIR-A', 'VIR-B']).toContain(maj.reference);
+      expect(maj.paidById).toBe(admin.id);
+      expect(maj.paidAt).toBeTruthy();
+
+      // Un seul audit PAYOUT_PAID.
+      const audits = await prisma.auditLog.findMany({
+        where: { action: 'PAYOUT_PAID', entityType: 'SupplierPayout', entityId: payout.id },
+      });
+      expect(audits).toHaveLength(1);
+    });
   });
 });

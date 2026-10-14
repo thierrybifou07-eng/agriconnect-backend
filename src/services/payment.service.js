@@ -199,10 +199,24 @@ export async function refundPayment(db, paymentId, acteur, force = false) {
       );
     }
 
-    const maj = await tx.payment.update({
-      where: { id: paymentId },
+    // Transition atomique : updateMany filtré sur le statut CONFIRMED. Deux
+    // appels simultanés ne peuvent pas réussir tous les deux — le second a
+    // count = 0, relit la ligne et reçoit exactement le 404 ou le 409.
+    const maj = await tx.payment.updateMany({
+      where: { id: paymentId, status: 'CONFIRMED' },
       data: { status: 'REFUNDED' },
     });
+
+    if (maj.count === 0) {
+      // Un appel concurrent a rembourse entre-temps : relire pour renvoyer le
+      // 409 exact (le paiement n'est plus CONFIRMED).
+      const majUnique = await tx.payment.findUnique({ where: { id: paymentId } });
+      if (!majUnique) {
+        throw erreurPaiement(`Paiement ${paymentId} introuvable`, 404, 'PAYMENT_NOT_FOUND');
+      }
+      throw erreurPaiement(`Paiement ${majUnique.status} non remboursable`, 409, 'PAYMENT_NOT_CONFIRMED');
+    }
+
     const statut = await recalculerStatut(tx, payment.orderId);
     await refreshPayoutReadiness(tx, payment.orderId);
     if (statut === 'REFUNDED') {
@@ -219,7 +233,7 @@ export async function refundPayment(db, paymentId, acteur, force = false) {
         ...(reversementPaye ? { forcedAfterPayout: true } : {}),
       },
     });
-    return maj;
+    return tx.payment.findUnique({ where: { id: paymentId } });
   });
 }
 

@@ -481,22 +481,73 @@ export const reviewVerification = async (req, res) => {
   });
 };
 
-// GET /api/v2/admin/referrals?status= — liste des parrainages (ADMIN et plus).
+// GET /api/v2/admin/referrals?status=&page=&limit= — liste des parrainages
+// (ADMIN et plus), paginée comme les autres listes.
+//
 // Le filtre porte sur le statut du parrainage (PENDING, ELIGIBLE, PAID, REJECTED).
+// Chaque parrainage expose la référence de paiement (quand il est payé) et le
+// compte de paiement par défaut du parrain : l'admin doit savoir où payer
+// (numéro complet, comme la vue admin des reversements).
 export const listReferrals = async (req, res) => {
   const { status } = req.query;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
   const where = status ? { status } : {};
 
-  const referrals = await prisma.referral.findMany({
-    where,
-    include: {
-      referrer: { select: { id: true, firstname: true, lastname: true, email: true } },
-      referred: { select: { id: true, firstname: true, lastname: true, email: true } },
-    },
-    orderBy: { createdAt: 'desc' },
-  });
+  const [items, total] = await Promise.all([
+    prisma.referral.findMany({
+      where,
+      include: {
+        referrer: {
+          select: {
+            id: true,
+            firstname: true,
+            lastname: true,
+            email: true,
+            payoutAccounts: {
+              where: { isDefault: true },
+              select: { method: true, provider: true, accountNumber: true, accountName: true },
+            },
+          },
+        },
+        referred: { select: { id: true, firstname: true, lastname: true, email: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.referral.count({ where }),
+  ]);
 
-  res.json(referrals);
+  res.json({
+    items: items.map((r) => ({
+      id: r.id,
+      referrer: r.referrer
+        ? {
+            id: r.referrer.id,
+            firstname: r.referrer.firstname,
+            lastname: r.referrer.lastname,
+            email: r.referrer.email,
+            // Compte de paiement par défaut du parrain (numero complet) : c'est
+            // sur ce compte que la récompense est versée.
+            defaultPayoutAccount: r.referrer.payoutAccounts[0] ?? null,
+          }
+        : null,
+      referred: r.referred,
+      kind: r.kind,
+      status: r.status,
+      rewardAmount: r.rewardAmount,
+      eligibleAt: r.eligibleAt,
+      reference: r.reference,
+      paidById: r.paidById,
+      paidAt: r.paidAt,
+      rejectionReason: r.rejectionReason,
+      createdAt: r.createdAt,
+    })),
+    page,
+    limit,
+    total,
+  });
 };
 
 // PATCH /api/v2/admin/referrals/:id/pay — ELIGIBLE -> PAID.

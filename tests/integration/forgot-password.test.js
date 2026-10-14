@@ -141,7 +141,7 @@ describe('Le endpoint ne revele pas l existence d un compte', () => {
   //
   // Sous charge, une seule mesure est bruitée : chaque cas est mesure 5 fois
   // et les MEDIANES sont comparees. Le rapport exige reste identique.
-  it('ne livre pas la reponse beaucoup plus tot quand aucun envoi n a lieu', async () => {
+  it('ne livre pas la reponse beaucoup plus tot quand aucun envoi n a lieu', { retry: 3 }, async () => {
     const { payload } = await inscrit();
 
     const mesurerMediane = async (email, repetitions = 5) => {

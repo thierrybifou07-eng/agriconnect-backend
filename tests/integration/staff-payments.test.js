@@ -496,6 +496,29 @@ describe('POST /api/v2/staff/payments/:id/refund', () => {
     expect(res.body.code).toBe('PAYMENT_NOT_CONFIRMED');
   });
 
+  it('deux remboursements SIMULTANÉS -> un 200 et un 409, un seul audit', async () => {
+    const { paiements } = await commandeCompleteePayee();
+    const admin = await createUser({ role: 'ADMIN' });
+    const token = authHeader(tokenAdminPour(admin));
+
+    const [res1, res2] = await Promise.all([
+      api().post(`/api/v2/staff/payments/${paiements[0].id}/refund`).set(token),
+      api().post(`/api/v2/staff/payments/${paiements[0].id}/refund`).set(token),
+    ]);
+
+    // Exactement un gagnant.
+    expect([res1.status, res2.status].sort()).toEqual([200, 409]);
+
+    // Un seul paiement REFUNDED, un seul audit.
+    const maj = await prisma.payment.findUnique({ where: { id: paiements[0].id } });
+    expect(maj.status).toBe('REFUNDED');
+
+    const audits = await prisma.auditLog.findMany({
+      where: { action: 'PAYMENT_REFUNDED', entityType: 'Payment', entityId: paiements[0].id },
+    });
+    expect(audits).toHaveLength(1);
+  });
+
   it('refuse un remboursement d\'un paiement inexistant : 404', async () => {
     const admin = await createUser({ role: 'ADMIN' });
 
@@ -589,59 +612,59 @@ describe('Idempotence liée à la requête', () => {
   });
 });
 
-describe('Remboursement et cohérence des reversements', () => {
-  // Devis HUB_PICKUP (5 x 1200 = 6000) avec un lot, confirmé, payé en deux
-  // fois (3000 + 3000), passé COMPLETED : reversement READY. Retourne les
-  // deux paiements pour les rembourser.
-  async function commandeCompleteePayee() {
-    const buyer = await createUser({ role: 'BUYER' });
-    const lot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
-    const annonce = await createListingForLot(lot);
-    await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
-    const hub = await creerHub();
-    const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'PAYMENT_FOLLOWUP']);
+// Devis HUB_PICKUP (5 x 1200 = 6000) avec un lot, confirmé, payé en deux
+// fois (3000 + 3000), passé COMPLETED : reversement READY. Retourne les
+// deux paiements pour les rembourser.
+async function commandeCompleteePayee() {
+  const buyer = await createUser({ role: 'BUYER' });
+  const lot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
+  const annonce = await createListingForLot(lot);
+  await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
+  const hub = await creerHub();
+  const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'PAYMENT_FOLLOWUP']);
 
-    const res = await api()
-      .post('/api/v2/staff/orders')
+  const res = await api()
+    .post('/api/v2/staff/orders')
+    .set(authHeader(tokenPour(agentUser)))
+    .send({
+      buyerId: buyer.id,
+      items: [{ listingId: annonce.id, quantity: 5 }],
+      deliveryMode: 'HUB_PICKUP',
+      pickupHubId: hub.id,
+    });
+  expect(res.status).toBe(201);
+  const orderId = res.body.id;
+
+  const tokenAcheteur = generateToken({ id: buyer.id, role: { code: 'BUYER', level: 10 } });
+  const conf = await api()
+    .post(`/api/v2/orders/${orderId}/confirm`)
+    .set(authHeader(tokenAcheteur));
+  expect(conf.status, conf.text).toBe(200);
+
+  const paiements = [];
+  for (let i = 0; i < 2; i++) {
+    const resPay = await api()
+      .post(`/api/v2/staff/orders/${orderId}/payments`)
       .set(authHeader(tokenPour(agentUser)))
-      .send({
-        buyerId: buyer.id,
-        items: [{ listingId: annonce.id, quantity: 5 }],
-        deliveryMode: 'HUB_PICKUP',
-        pickupHubId: hub.id,
-      });
-    expect(res.status).toBe(201);
-    const orderId = res.body.id;
-
-    const tokenAcheteur = generateToken({ id: buyer.id, role: { code: 'BUYER', level: 10 } });
-    const conf = await api()
-      .post(`/api/v2/orders/${orderId}/confirm`)
-      .set(authHeader(tokenAcheteur));
-    expect(conf.status, conf.text).toBe(200);
-
-    const paiements = [];
-    for (let i = 0; i < 2; i++) {
-      const resPay = await api()
-        .post(`/api/v2/staff/orders/${orderId}/payments`)
-        .set(authHeader(tokenPour(agentUser)))
-        .set('Idempotency-Key', identifiant('PAY'))
-        .send({ amount: 3000, method: 'CASH' });
-      expect(resPay.status, resPay.text).toBe(201);
-      paiements.push(resPay.body);
-    }
-
-    // PREPARING exige PAID : ok. Puis READY_FOR_PICKUP et COMPLETED.
-    for (const status of ['PREPARING', 'READY_FOR_PICKUP', 'COMPLETED']) {
-      const resStatus = await api()
-        .patch(`/api/v2/staff/orders/${orderId}/status`)
-        .set(authHeader(tokenPour(agentUser)))
-        .send({ status });
-      expect(resStatus.status, resStatus.text).toBe(200);
-    }
-
-    return { orderId, paiements, agentUser };
+      .set('Idempotency-Key', identifiant('PAY'))
+      .send({ amount: 3000, method: 'CASH' });
+    expect(resPay.status, resPay.text).toBe(201);
+    paiements.push(resPay.body);
   }
 
+  // PREPARING exige PAID : ok. Puis READY_FOR_PICKUP et COMPLETED.
+  for (const status of ['PREPARING', 'READY_FOR_PICKUP', 'COMPLETED']) {
+    const resStatus = await api()
+      .patch(`/api/v2/staff/orders/${orderId}/status`)
+      .set(authHeader(tokenPour(agentUser)))
+      .send({ status });
+    expect(resStatus.status, resStatus.text).toBe(200);
+  }
+
+  return { orderId, paiements, agentUser };
+}
+
+describe('Remboursement et cohérence des reversements', () => {
   it('remboursement partiel d\'une commande COMPLETED+PAID : reversement READY -> ON_HOLD, puis nouveau paiement -> READY', async () => {
     const { orderId, paiements, agentUser } = await commandeCompleteePayee();
 

@@ -264,6 +264,11 @@ export async function listAllPayouts(db, { page = 1, limit = 20, status } = {}) 
 // encore les fonds, un PAID est deja paye, un CANCELLED est annule.
 // Le changement de compte (payoutAccountId) est optionnel : l'admin peut
 // choisir un compte different de celui par defaut.
+//
+// Transition atomique : updateMany filtré sur le statut READY. Deux appels
+// simultanés ne peuvent pas réussir tous les deux — le second a count = 0,
+// relit la ligne et reçoit exactement le 404 ou le 409 qu'une lecture
+// préalable aurait renvoyé. L'audit n'est écrit que par l'appel gagnant.
 export async function payPayout(db, payoutId, { reference, payoutAccountId }, acteur) {
   return db.$transaction(async (tx) => {
     const payout = await tx.supplierPayout.findUnique({ where: { id: payoutId } });
@@ -289,8 +294,8 @@ export async function payPayout(db, payoutId, { reference, payoutAccountId }, ac
       }
     }
 
-    const maj = await tx.supplierPayout.update({
-      where: { id: payoutId },
+    const maj = await tx.supplierPayout.updateMany({
+      where: { id: payoutId, status: 'READY' },
       data: {
         status: 'PAID',
         paidAt: new Date(),
@@ -299,6 +304,22 @@ export async function payPayout(db, payoutId, { reference, payoutAccountId }, ac
         ...(payoutAccountId !== undefined ? { payoutAccountId } : {}),
       },
     });
+
+    if (maj.count === 0) {
+      // Un appel concurrent a paye entre-temps : relire pour renvoyer le 409
+      // exact (le reversement n'est plus READY).
+      const majUnique = await tx.supplierPayout.findUnique({ where: { id: payoutId } });
+      if (!majUnique) {
+        throw erreurPayout(`Reversement ${payoutId} introuvable`, 404, 'PAYOUT_NOT_FOUND');
+      }
+      throw erreurPayout(
+        `Seul un reversement READY peut être payé (statut actuel : ${majUnique.status})`,
+        409,
+        'INVALID_STATE_TRANSITION'
+      );
+    }
+
+    const misAJour = await tx.supplierPayout.findUnique({ where: { id: payoutId } });
 
     await recordAudit(tx, {
       ...acteur,
@@ -314,6 +335,6 @@ export async function payPayout(db, payoutId, { reference, payoutAccountId }, ac
       },
     });
 
-    return maj;
+    return misAJour;
   });
 }
