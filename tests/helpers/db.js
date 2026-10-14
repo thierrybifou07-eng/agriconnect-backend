@@ -87,26 +87,34 @@ export const REFERENCE_TABLES = [
 export async function resetDatabase() {
   // SET et SET SESSION sont deux commandes distinctes : PRISMA n'accepte pas
   // de plusieurs instructions dans un seul $executeRawUnsafe.
-  await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
-  try {
-    for (const table of BUSINESS_TABLES) {
-      await prisma.$executeRawUnsafe(`DELETE FROM \`${table}\``);
-    }
+  //
+  // Tout tient dans une transaction interactive : FOREIGN_KEY_CHECKS est une
+  // variable de SESSION, et le pool de connexions de Prisma peut sinon
+  // exécuter un DELETE sur une autre connexion que celle du SET — le DELETE
+  // échoue alors sur une contrainte, de façon non déterministe. La
+  // transaction interactive garantit une seule connexion pour tout le reset.
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
+    try {
+      for (const table of BUSINESS_TABLES) {
+        await tx.$executeRawUnsafe(`DELETE FROM \`${table}\``);
+      }
 
-    // Les référentiels ne sont pas vidés, mais les lignes que les tests
-    // ajoutent directement sur ProductCategory et Unit ne doivent pas
-    // survivre au test suivant : elles s'accumuleraient et contamineraient
-    // les listes paginées des routes admin. On ne garde que les codes du
-    // seed (prisma/seed-data/referentials.js).
-    await prisma.productCategory.deleteMany({
-      where: { code: { notIn: PRODUCT_CATEGORIES.map((c) => c.code) } },
-    });
-    await prisma.unit.deleteMany({
-      where: { code: { notIn: UNITS.map((u) => u.code) } },
-    });
-  } finally {
-    await prisma.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
-  }
+      // Les référentiels ne sont pas vidés, mais les lignes que les tests
+      // ajoutent directement sur ProductCategory et Unit ne doivent pas
+      // survivre au test suivant : elles s'accumuleraient et contamineraient
+      // les listes paginées des routes admin. On ne garde que les codes du
+      // seed (prisma/seed-data/referentials.js).
+      await tx.productCategory.deleteMany({
+        where: { code: { notIn: PRODUCT_CATEGORIES.map((c) => c.code) } },
+      });
+      await tx.unit.deleteMany({
+        where: { code: { notIn: UNITS.map((u) => u.code) } },
+      });
+    } finally {
+      await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
+    }
+  });
 }
 
 // Supprime les jetons de rafraîchissement expirés : le test de rotation en

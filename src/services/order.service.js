@@ -129,16 +129,23 @@ export async function confirmerAvecExpiration(db, orderId, acteur = {}) {
 // Annulation (QUOTED, CONFIRMED ou PREPARING) : libere chaque reservation
 // encore vivante et trace la raison. Les lignes deja liberees (devis expire)
 // ne sont pas reliberees : quantiteEncoreReservee connait l'historique.
+//
+// Un acteur systeme (aucun acteurUser, aucun acteurAgent) est admis : les
+// taches planifiees (src/jobs) annulent les devis expires sans utilisateur
+// connecte. L'audit trace alors des colonnes acteur nulles ; le reste du
+// comportement ne change pas.
 export async function cancelOrder(tx, orderId, acteur = {}, raison = null) {
+  const { actorUser = null, actorAgent = null } = acteur ?? {};
   const order = await chargerCommande(tx, orderId);
   assertTransition(order.status, 'CANCELLED');
-  await libererReservations(tx, order, acteur, 'Commande annulée');
+  await libererReservations(tx, order, { actorUser, actorAgent }, 'Commande annulée');
   await tx.order.update({
     where: { id: orderId },
     data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: raison },
   });
   await recordAudit(tx, {
-    ...acteur,
+    actorUser,
+    actorAgent,
     action: 'ORDER_CANCELLED',
     entityType: 'Order',
     entityId: orderId,
