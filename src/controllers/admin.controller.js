@@ -17,7 +17,6 @@ import {
   payReferral,
   rejectReferral,
 } from '../services/referral.service.js';
-import { toNumber } from '../utils/money.js';
 
 const userSafeSelect = {
   id: true,
