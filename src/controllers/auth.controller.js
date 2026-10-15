@@ -92,7 +92,7 @@ export const register = async (req, res) => {
   // code de parrainage invalide ne doit laisser aucun compte derriere lui, et
   // un echec sur le profil ne doit pas laisser un compte orphelin.
   const inscription = await prisma.$transaction(async (tx) => {
-    // Code unique : 5 essais, puis on abandonne plutot que de repondre avec
+    // Code unique : 5 essais, puis on abandonne plutôt que de répondre avec
     // un code deja pris.
     let codeParrainage = null;
     for (let essai = 0; essai < 5 && !codeParrainage; essai += 1) {
@@ -101,7 +101,7 @@ export const register = async (req, res) => {
       if (!collision) codeParrainage = candidat;
     }
     if (!codeParrainage) {
-      throw Object.assign(new Error('Impossible de generer un code de parrainage unique'), {
+      throw Object.assign(new Error('Impossible de générer un code de parrainage unique'), {
         statusCode: 500,
         code: 'REFERRAL_CODE_UNAVAILABLE',
       });
@@ -421,7 +421,7 @@ export const resetPassword = async (req, res) => {
   res.type('html').send(html);
 };
 
-// GET /api/auth/verify-email?token=...
+// GET /api/v2/auth/verify-email?token=...
 //
 // Affiche une page de confirmation, sans consommer le jeton.
 //
@@ -435,7 +435,7 @@ export const verifyEmailPage = async (req, res) => {
     title: 'Confirmer votre adresse',
     description:
       'Confirmez que cette adresse email est bien la votre. Vous pourrez continuer a utiliser AgriConnect dans tous les cas.',
-    action: '/api/auth/verify-email',
+    action: '/api/v2/auth/verify-email',
     token: req.query.token ?? '',
     libelle: 'Confirmer mon adresse',
     succes: null,
@@ -446,7 +446,7 @@ export const verifyEmailPage = async (req, res) => {
   res.type('html').send(html);
 };
 
-// POST /api/auth/verify-email
+// POST /api/v2/auth/verify-email
 export const verifyEmail = async (req, res) => {
   const resultat = await consumeVerificationToken(req.body.token);
 
@@ -459,7 +459,7 @@ export const verifyEmail = async (req, res) => {
     const html = await renderPage('formulaire', {
       title: 'Confirmation impossible',
       description: '',
-      action: '/api/auth/verify-email',
+      action: '/api/v2/auth/verify-email',
       token: '',
       libelle: 'Confirmer mon adresse',
       succes: null,

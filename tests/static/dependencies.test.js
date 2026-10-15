@@ -4,7 +4,11 @@ import { builtinModules } from 'node:module';
 import path from 'node:path';
 import { PROJECT_ROOT } from '../setup/env.js';
 
-const SRC = path.join(PROJECT_ROOT, 'src');
+// Tous les dossiers qui portent du code de production, et pas seulement src/ :
+// config/ héberge la configuration d'exécution (env.js, generate_secret.js)
+// et le document OpenAPI (config/openapi). Un paquet importé là doit être
+// classé comme les autres, sinon le contrôle voit un orphelin à tort.
+const SRC_DIRS = [path.join(PROJECT_ROOT, 'src'), path.join(PROJECT_ROOT, 'config')];
 
 function listJsFiles(dir) {
   return readdirSync(dir).flatMap((entry) => {
@@ -28,19 +32,21 @@ function isExternal(specifier) {
 
 function collectImports() {
   const found = new Map();
-  for (const file of listJsFiles(SRC)) {
-    const code = readFileSync(file, 'utf8');
-    const specifiers = [
-      ...code.matchAll(/(?:^|\s)(?:import|export)[^'"`]*?from\s*['"]([^'"]+)['"]/g),
-      ...code.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g),
-    ].map((m) => m[1]);
+  for (const dir of SRC_DIRS) {
+    for (const file of listJsFiles(dir)) {
+      const code = readFileSync(file, 'utf8');
+      const specifiers = [
+        ...code.matchAll(/(?:^|\s)(?:import|export)[^'"`]*?from\s*['"]([^'"]+)['"]/g),
+        ...code.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g),
+      ].map((m) => m[1]);
 
-    for (const specifier of specifiers) {
-      if (!isExternal(specifier)) continue;
-      const name = specifier.startsWith('@')
-        ? specifier.split('/').slice(0, 2).join('/')
-        : specifier.split('/')[0];
-      if (!found.has(name)) found.set(name, path.relative(PROJECT_ROOT, file));
+      for (const specifier of specifiers) {
+        if (!isExternal(specifier)) continue;
+        const name = specifier.startsWith('@')
+          ? specifier.split('/').slice(0, 2).join('/')
+          : specifier.split('/')[0];
+        if (!found.has(name)) found.set(name, path.relative(PROJECT_ROOT, file));
+      }
     }
   }
   return found;
