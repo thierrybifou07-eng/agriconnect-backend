@@ -8,8 +8,13 @@ des **annonces** (`Listing`, prix public figé par l'équipe) et l'acheteur
 une ligne de commande (`OrderItem`) reprend les deux identifiants et les prix au
 moment de la vente.
 
-La spécification complète de l'API : [`docs/openapi.yaml`](docs/openapi.yaml)
-(OpenAPI 3.0, une route de `src/routes` = une entrée, vérifiée par un test).
+La spécification complète de l'API est **générée depuis le code** : les fragments
+Joi par domaine vivent dans [`openapi/`](openapi) (`openapi.config.js` assemble le
+document, `openapi.helpers.js` convertit les schémas Joi 18 en JSON Schema), et le
+serveur les expose sur **`http://localhost:${PORT}/agriconnect-openapi`** (interface
+Scalar, OpenAPI 3.0). [`docs/openapi.yaml`](docs/openapi.yaml) en reste un export
+statique, vérifié comme le document généré par les tests. Une route de `src/routes`
+= une entrée.
 Historique v1 → v2 : [`docs/CHANGELOG_V2.md`](docs/CHANGELOG_V2.md).
 Plan d'implémentation : [`docs/PLAN_IMPLEMENTATION_V2.md`](docs/PLAN_IMPLEMENTATION_V2.md).
 
@@ -21,6 +26,8 @@ Plan d'implémentation : [`docs/PLAN_IMPLEMENTATION_V2.md`](docs/PLAN_IMPLEMENTA
 - Socket.io (messagerie temps réel, salle `user:{id}`)
 - Cloudinary (média ; documents d'identité en mode privé, URL signée)
 - Joi (validation d'entrée) + express-rate-limit (anti brute-force)
+- OpenAPI généré depuis Joi : `openapi-merge` (assemblage des fragments) +
+  `@scalar/express-api-reference` (interface servie par l'API)
 - bcrypt, ejs + juice + nodemailer (emails transactionnels)
 - Vitest + Supertest (tests, voir « Tests »)
 
@@ -97,7 +104,8 @@ métier vides ; les tables de référence sont conservées.
 `tests/static` vérifie le code sans base : dépendances, champs Prisma,
 `prisma/schema.prisma` identique à `docs/schema.v2.target.prisma`, et
 **couverture OpenAPI** (`tests/unit/openapi-routes.test.js` : toute route de
-`src/routes` figure dans `docs/openapi.yaml`, et inversement).
+`src/routes` figure dans le document généré `openapi/openapi.config.js`, et
+inversement ; `docs/openapi.yaml` est l'export statique de ce document).
 
 MySQL doit tourner. Les tests n'utilisent aucun SMTP (`SMTP_DISABLED`) et
 l'anti-brute-force est neutralisé, sauf dans `rate-limit.test.js` qui le
@@ -106,7 +114,8 @@ réactive explicitement pour le vérifier.
 ## Routes par rôle
 
 Toutes sous `/api/v2`. `protect` = JWT requis. Le tableau complet (paramètres
-de requête, schémas de corps Joi, codes d'erreur) est dans `docs/openapi.yaml`.
+de requête, schémas de corps Joi, codes d'erreur) est dans l'interface
+`/agriconnect-openapi` et dans `docs/openapi.yaml`.
 
 ### Public (sans compte)
 

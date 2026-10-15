@@ -5,6 +5,7 @@ import path from 'node:path';
 import { PROJECT_ROOT } from '../setup/env.js';
 
 const SRC = path.join(PROJECT_ROOT, 'src');
+const OPENAPI = path.join(PROJECT_ROOT, 'openapi');
 
 function listJsFiles(dir) {
   return readdirSync(dir).flatMap((entry) => {
@@ -28,7 +29,10 @@ function isExternal(specifier) {
 
 function collectImports() {
   const found = new Map();
-  for (const file of listJsFiles(SRC)) {
+  // src/ et openapi/ : les deux sont du code de production (openapi/ est charge
+  // par src/server.js pour generer la specification servie sur la route).
+  const files = [...listJsFiles(SRC), ...listJsFiles(OPENAPI)];
+  for (const file of files) {
     const code = readFileSync(file, 'utf8');
     const specifiers = [
       ...code.matchAll(/(?:^|\s)(?:import|export)[^'"`]*?from\s*['"]([^'"]+)['"]/g),
@@ -50,7 +54,7 @@ describe('Classification des dependances', () => {
   const pkg = JSON.parse(readFileSync(path.join(PROJECT_ROOT, 'package.json'), 'utf8'));
   const imported = collectImports();
 
-  it('trouve des imports externes dans src/', () => {
+  it('trouve des imports externes dans src/ et openapi/', () => {
     // Garde-fou : si le collecteur ne marche plus, ce test passerait a vide
     // et le suivant ne testerait plus rien.
     expect(imported.size).toBeGreaterThan(5);

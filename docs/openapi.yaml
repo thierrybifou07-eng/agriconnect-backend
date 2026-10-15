@@ -2,52 +2,46 @@ openapi: 3.0.0
 info:
   title: AgriConnect API v2
   version: 2.0.0
-  description: |
-    API REST + WebSocket AgriConnect — consignation de lots agricoles.
+  description: 'API REST + WebSocket AgriConnect — consignation de lots agricoles.
 
-    Trois couches : le promoteur (SUPPLIER) déclare des **lots** (StockLot, interne),
-    l'équipe (AGENT/ADMIN) publie des **annonces** (Listing, prix public) et
-    l'acheteur (BUYER) ne voit que les annonces. Le lot relié à une annonce est
-    figé dans ListingLot ; une ligne de commande (OrderItem) reprend les deux
-    identifiants et les prix au moment de la vente.
 
-    Montants et quantités : `Decimal` Prisma, convertis en nombre JSON par
-    `decimal-json.middleware.js`. Identifiants : entiers (`Int @id`).
+    Trois couches : le promoteur (SUPPLIER) déclare des **lots** (StockLot, interne), l''équipe (AGENT/ADMIN) publie des **annonces** (Listing, prix public) et l''acheteur (BUYER) ne voit que les annonces. Le lot relié à une annonce est figé dans ListingLot ; une ligne de commande (OrderItem) reprend les deux identifiants et les prix au moment de la vente.
+
+
+    Montants et quantités : `Decimal` Prisma, convertis en nombre JSON par decimal-json.middleware.js. Identifiants : entiers (`Int @id`).'
   contact:
     name: AgriConnect
 servers:
-  - url: /api/v2
-    description: Préfixe de l'API (monté dans src/app.js)
+- url: /api/v2
+  description: Préfixe de l'API (monté dans src/app.js)
 tags:
-  - name: Auth
-    description: Authentification, sessions et récupération de compte
-  - name: Utilisateur
-    description: Profil, comptes de paiement, documents et parrainage de l'utilisateur connecté
-  - name: Admin
-    description: Administration (ADMIN et ROOT, capacités agent)
-  - name: CGU
-    description: Conditions d'utilisation versionnées, publiques
-  - name: Fournisseur
-    description: Lots déclarés par le promoteur connecté
-  - name: Équipe
-    description: Validation des lots, annonces, commandes, paiements, livraisons, indemnisations (AGENT par capacité, ADMIN/ROOT)
-  - name: Catalogue
-    description: Consultation du catalogue par l'acheteur
-  - name: Conversations
-    description: Messagerie client ↔ équipe
-  - name: Commandes
-    description: Cycle de vie de la commande côté acheteur
-  - name: Livreur
-    description: Courses du livreur connecté
+- name: Auth
+  description: Authentification, sessions et récupération de compte
+- name: Utilisateur
+  description: Profil, comptes de paiement, documents et parrainage de l'utilisateur connecté
+- name: Admin
+  description: Administration (ADMIN et ROOT, capacités agent)
+- name: CGU
+  description: Conditions d'utilisation versionnées, publiques
+- name: Fournisseur
+  description: Lots déclarés par le promoteur connecté
+- name: Équipe
+  description: Validation des lots, annonces, commandes, paiements, livraisons, indemnisations (AGENT par capacité, ADMIN/ROOT)
+- name: Catalogue
+  description: Consultation du catalogue par l'acheteur
+- name: Conversations
+  description: Messagerie client <-> équipe
+- name: Commandes
+  description: Cycle de vie de la commande côté acheteur
+- name: Livreur
+  description: Courses du livreur connecté
 paths:
   /auth/register:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Inscription publique (SUPPLIER ou BUYER)
-      description: |
-        Crée le compte, son profil, l'acceptation des CGU requises pour le rôle et
-        éventuellement le parrainage. Ouvre une session (access + refresh token).
-        ADMIN, AGENT, DRIVER et ROOT ne sont jamais acceptés ici.
+      description: Crée le compte, son profil, l'acceptation des CGU requises pour le rôle et éventuellement le parrainage. Ouvre une session (access + refresh token). ADMIN, AGENT, DRIVER et ROOT ne sont jamais acceptés ici.
       security: []
       requestBody:
         required: true
@@ -55,50 +49,59 @@ paths:
           application/json:
             schema:
               type: object
-              required: [firstname, lastname, phone, email, password, role, acceptTerms]
               properties:
                 firstname:
                   type: string
                   minLength: 2
-                  example: Awa
                 lastname:
                   type: string
                   minLength: 2
-                  example: Diop
                 phone:
                   type: string
                   pattern: ^\+?[0-9]{8,15}$
-                  example: "+221771234567"
                 email:
                   type: string
                   format: email
                 password:
                   type: string
-                  description: 8+ caractères, majuscule, minuscule, chiffre, caractère spécial (@$!%*?&), pas 4 caractères identiques consécutifs
+                  pattern: ^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])(?!.*(.)\1\1\1)[A-Za-z\d@$!%*?&]{8,}$
                 role:
                   type: string
-                  enum: [SUPPLIER, BUYER]
-                acceptTerms:
-                  type: boolean
-                  enum: [true]
-                  description: Obligatoire — l'inscription enregistre l'acceptation des CGU de la version PUBLISHED
+                  enum:
+                  - SUPPLIER
+                  - BUYER
                 location:
                   type: string
                   nullable: true
+                acceptTerms:
+                  type: boolean
+                  enum:
+                  - true
                 referralCode:
                   type: string
                   maxLength: 20
-                  description: Code du parrain ; inconnu -> 400 REFERRAL_CODE_UNKNOWN
                 farmName:
                   type: string
                   minLength: 2
                   maxLength: 120
                 buyerType:
                   type: string
-                  enum: [RETAILER, FARMER, WHOLESALER, OTHER]
+                  enum:
+                  - RETAILER
+                  - FARMER
+                  - WHOLESALER
+                  - OTHER
                 businessName:
                   type: string
                   maxLength: 120
+              required:
+              - firstname
+              - lastname
+              - phone
+              - email
+              - password
+              - role
+              - acceptTerms
       responses:
         '201':
           description: Utilisateur créé, session ouverte
@@ -116,7 +119,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /auth/login:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Connexion (email + mot de passe)
       security: []
       requestBody:
@@ -125,12 +129,14 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email, password]
               properties:
                 email:
                   type: string
                 password:
                   type: string
+              required:
+              - email
+              - password
       responses:
         '200':
           description: Session ouverte (plafond 5 sessions par compte)
@@ -154,7 +160,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /auth/refresh:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Rotation du refresh token
       description: Remplace le jeton reçu ; un jeton déjà remplacé est un vol (sauf grâce de 30 s).
       security: []
@@ -164,10 +171,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [refreshToken]
               properties:
                 refreshToken:
                   type: string
+              required:
+              - refreshToken
       responses:
         '200':
           description: Nouveau accessToken + nouveau refreshToken
@@ -181,7 +189,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /auth/logout:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Ferme la session de l'appareil (par refresh token)
       security: []
       requestBody:
@@ -190,10 +199,11 @@ paths:
           application/json:
             schema:
               type: object
-              required: [refreshToken]
               properties:
                 refreshToken:
                   type: string
+              required:
+              - refreshToken
       responses:
         '200':
           description: Session fermée
@@ -209,7 +219,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
   /auth/forgot-password:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Demande de réinitialisation de mot de passe
       description: Réponse identique que l'adresse existe ou non (anti-énumération).
       security: []
@@ -219,11 +230,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [email]
               properties:
                 email:
                   type: string
                   format: email
+              required:
+              - email
       responses:
         '200':
           description: Réponse identique dans tous les cas
@@ -239,17 +251,13 @@ paths:
           $ref: '#/components/responses/BadRequest'
   /auth/reset-password:
     get:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Affiche le formulaire de réinitialisation
       description: Page HTML servie par l'API ; le GET ne consomme pas le jeton.
       security: []
       parameters:
-        - in: query
-          name: token
-          required: true
-          schema:
-            type: string
-            pattern: ^[a-f0-9]{80}$
+      - $ref: '#/components/parameters/TokenParam'
       responses:
         '200':
           description: Page HTML du formulaire
@@ -260,7 +268,8 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Applique le nouveau mot de passe
       description: Détruit toutes les sessions du compte.
       security: []
@@ -270,14 +279,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [token, password]
               properties:
                 token:
                   type: string
                   pattern: ^[a-f0-9]{80}$
                 password:
                   type: string
-                  description: Mêmes règles que l'inscription
+                  pattern: ^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])(?!.*(.)\1\1\1)[A-Za-z\d@$!%*?&]{8,}$
+              required:
+              - token
+              - password
       responses:
         '200':
           description: Mot de passe modifié
@@ -298,16 +309,12 @@ paths:
                 $ref: '#/components/schemas/Error'
   /auth/verify-email:
     get:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Affiche la page de vérification d'adresse
       security: []
       parameters:
-        - in: query
-          name: token
-          required: true
-          schema:
-            type: string
-            pattern: ^[a-f0-9]{80}$
+      - $ref: '#/components/parameters/TokenParam'
       responses:
         '200':
           description: Page HTML
@@ -318,7 +325,8 @@ paths:
         '400':
           $ref: '#/components/responses/BadRequest'
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Vérifie l'adresse (consomme le jeton)
       security: []
       requestBody:
@@ -327,11 +335,12 @@ paths:
           application/json:
             schema:
               type: object
-              required: [token]
               properties:
                 token:
                   type: string
                   pattern: ^[a-f0-9]{80}$
+              required:
+              - token
       responses:
         '200':
           description: Adresse vérifiée
@@ -352,7 +361,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /auth/resend-verification:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Renvoie le lien de vérification (cooldown 5 min)
       responses:
         '200':
@@ -361,12 +371,13 @@ paths:
           $ref: '#/components/responses/BadRequest'
   /auth/sessions:
     get:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Sessions ouvertes du compte connecté
       description: Identifie l'appareil courant par le sessionId du jeton d'accès.
       responses:
         '200':
-          description: Liste des sessions avec `isCurrent`
+          description: Liste des sessions avec isCurrent
           content:
             application/json:
               schema:
@@ -377,10 +388,11 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /auth/sessions/{id}:
     delete:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Ferme une session du compte
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Session fermée
@@ -394,7 +406,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /auth/logout-all:
     post:
-      tags: [Auth]
+      tags:
+      - Auth
       summary: Ferme toutes les sessions sauf la courante
       responses:
         '200':
@@ -403,9 +416,10 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /auth/me:
     get:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Profil de l'utilisateur connecté
-      description: userToApi + objet `profile` selon le rôle (SupplierProfile, BuyerProfile, DriverProfile).
+      description: userToApi + objet profile selon le rôle (SupplierProfile, BuyerProfile, DriverProfile).
       responses:
         '200':
           description: Utilisateur courant
@@ -416,7 +430,8 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
     patch:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Modifie prénom, nom ou localisation
       requestBody:
         required: true
@@ -452,7 +467,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /auth/me/avatar:
     post:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Téléverse un avatar (multipart)
       description: Remplace l'avatar ; ne supprime jamais un document de vérification.
       requestBody:
@@ -461,11 +477,13 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [avatar]
               properties:
                 avatar:
                   type: string
                   format: binary
+                  description: Image du profil
+              required:
+              - avatar
       responses:
         '200':
           description: Avatar remplacé
@@ -475,44 +493,59 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /auth/me/profile:
     patch:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Modifie le profil du rôle (SUPPLIER, BUYER, DRIVER)
-      description: Schéma selon le rôle — un SUPPLIER n'a pas à connaître les champs BUYER.
+      description: 'Le contrôleur sélectionne le schéma du rôle de l''appelant : un SUPPLIER n''a pas à connaître les champs BUYER. Les trois formes acceptées sont listées ci-dessous (celle du rôle de l''appelant fait foi).'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              type: object
-              minProperties: 1
-              properties:
-                farmName:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                description:
-                  type: string
-                  maxLength: 2000
-                  nullable: true
-                buyerType:
-                  type: string
-                  enum: [RETAILER, FARMER, WHOLESALER, OTHER]
-                businessName:
-                  type: string
-                  maxLength: 120
-                  nullable: true
-                vehicleType:
-                  type: string
-                  maxLength: 50
-                  nullable: true
-                plateNumber:
-                  type: string
-                  maxLength: 20
-                  nullable: true
-                zoneId:
-                  type: integer
-                  nullable: true
-                  description: Zone existante (vérifiée par le contrôleur)
+              oneOf:
+              - type: object
+                properties:
+                  farmName:
+                    type: string
+                    minLength: 2
+                    maxLength: 120
+                  description:
+                    type: string
+                    maxLength: 2000
+                    nullable: true
+                  zoneId:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: true
+                    nullable: true
+              - type: object
+                properties:
+                  buyerType:
+                    type: string
+                    enum:
+                    - RETAILER
+                    - FARMER
+                    - WHOLESALER
+                    - OTHER
+                  businessName:
+                    type: string
+                    maxLength: 120
+                    nullable: true
+                  zoneId:
+                    type: integer
+                    minimum: 0
+                    exclusiveMinimum: true
+                    nullable: true
+              - type: object
+                properties:
+                  vehicleType:
+                    type: string
+                    maxLength: 50
+                    nullable: true
+                  plateNumber:
+                    type: string
+                    maxLength: 20
+                    nullable: true
       responses:
         '200':
           description: Profil mis à jour
@@ -528,9 +561,10 @@ paths:
                 $ref: '#/components/schemas/Error'
   /auth/me/payout-accounts:
     get:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Comptes de paiement du connecté (numéros masqués)
-      description: SUPPLIER et BUYER uniquement ; `accountNumberMasked` = "••••1234".
+      description: SUPPLIER et BUYER uniquement ; accountNumberMasked = "••••1234".
       responses:
         '200':
           description: Liste des comptes
@@ -545,7 +579,8 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Ajoute un compte de paiement
       requestBody:
         required: true
@@ -553,11 +588,13 @@ paths:
           application/json:
             schema:
               type: object
-              required: [method, accountNumber]
               properties:
                 method:
                   type: string
-                  enum: [MOBILE_MONEY, BANK_TRANSFER, CASH]
+                  enum:
+                  - MOBILE_MONEY
+                  - BANK_TRANSFER
+                  - CASH
                 provider:
                   type: string
                   maxLength: 80
@@ -572,7 +609,9 @@ paths:
                   nullable: true
                 isDefault:
                   type: boolean
-                  description: Un seul compte par défaut (transaction retire l'ancien)
+              required:
+              - method
+              - accountNumber
       responses:
         '201':
           description: Compte créé
@@ -588,21 +627,24 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /auth/me/payout-accounts/{id}:
     patch:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Modifie un compte de paiement (partiel)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              minProperties: 1
               properties:
                 method:
                   type: string
-                  enum: [MOBILE_MONEY, BANK_TRANSFER, CASH]
+                  enum:
+                  - MOBILE_MONEY
+                  - BANK_TRANSFER
+                  - CASH
                 provider:
                   type: string
                   maxLength: 80
@@ -635,10 +677,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     delete:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Supprime un compte de paiement
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Compte supprimé
@@ -652,27 +695,35 @@ paths:
                 $ref: '#/components/schemas/Error'
   /auth/me/documents:
     post:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Dépose un document de vérification (multipart)
-      description: |
-        SUPPLIER et BUYER. Crée VerificationDocument (PENDING) + Media privé
-        (Cloudinary `authenticated`). Si profileVerificationStatus vaut UNVERIFIED
-        ou REJECTED, il passe à PENDING. La liste ne renvoie jamais d'URL.
+      description: SUPPLIER et BUYER. Crée VerificationDocument (PENDING) + Media privé (Cloudinary authenticated). Si profileVerificationStatus vaut UNVERIFIED ou REJECTED, il passe à PENDING. La liste ne renvoie jamais d'URL.
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [file, type]
               properties:
                 file:
                   type: string
                   format: binary
                   description: jpeg, png, webp ou pdf, 8 Mo max
                 type:
-                  type: string
-                  enum: [ID_CARD, BUSINESS_REGISTRATION, FARM_PROOF, OTHER]
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                      - ID_CARD
+                      - BUSINESS_REGISTRATION
+                      - FARM_PROOF
+                      - OTHER
+                  required:
+                  - type
+              required:
+              - file
       responses:
         '201':
           description: Document déposé
@@ -683,7 +734,8 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     get:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Documents du connecté (sans URL)
       responses:
         '200':
@@ -699,10 +751,17 @@ paths:
                       type: integer
                     type:
                       type: string
-                      enum: [ID_CARD, BUSINESS_REGISTRATION, FARM_PROOF, OTHER]
+                      enum:
+                      - ID_CARD
+                      - BUSINESS_REGISTRATION
+                      - FARM_PROOF
+                      - OTHER
                     status:
                       type: string
-                      enum: [PENDING, VERIFIED, REJECTED]
+                      enum:
+                      - PENDING
+                      - VERIFIED
+                      - REJECTED
                     note:
                       type: string
                       nullable: true
@@ -713,7 +772,8 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /auth/me/referral:
     get:
-      tags: [Utilisateur]
+      tags:
+      - Utilisateur
       summary: Parrainage du connecté
       description: Code de parrainage et liste des filleuls (le parrain ne voit que le prénom du filleul).
       responses:
@@ -735,17 +795,1566 @@ paths:
                           type: integer
                         kind:
                           type: string
-                          enum: [SUPPLIER, BUYER]
+                          enum:
+                          - SUPPLIER
+                          - BUYER
                         status:
                           type: string
-                          enum: [PENDING, APPROVED, REJECTED]
+                          enum:
+                          - PENDING
+                          - APPROVED
+                          - REJECTED
                         firstname:
                           type: string
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /admin/verifications:
+    get:
+      tags:
+      - Admin
+      summary: Dossiers de vérification des profils (paginé)
+      description: ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION.
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - VERIFIED
+          - REJECTED
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedVerifications'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/verifications/{id}:
+    get:
+      tags:
+      - Admin
+      summary: Détail d'un dossier (URL signée Cloudinary, 10 min)
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Détail + URL signée de courte durée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VerificationDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Admin
+      summary: Décision d'examen (APPROVE / REJECT)
+      description: APPROVE -> document VERIFIED, utilisateur VERIFIED si aucun document PENDING. REJECT sans document VERIFIED -> utilisateur REJECTED. Audit dans la même transaction.
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                decision:
+                  type: string
+                  enum:
+                  - APPROVE
+                  - REJECT
+                note:
+                  anyOf:
+                  - type: string
+                    minLength: 1
+                    maxLength: 2000
+                  - type: string
+                    maxLength: 2000
+                    nullable: true
+                  description: 'Conditionnel — si decision vaut REJECT : requis, sinon doit être string'
+              required:
+              - decision
+      responses:
+        '200':
+          description: Décision appliquée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/settings:
+    get:
+      tags:
+      - Admin
+      summary: Réglages de la plateforme (ADMIN et plus)
+      responses:
+        '200':
+          description: Settings de la plateforme (singleton id=1)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    patch:
+      tags:
+      - Admin
+      summary: Modifie les réglages (ROOT seul)
+      description: La commission fournisseur vaut 0 tant qu'elle n'est pas fixée par ROOT. currency est en lecture seule. Au moins un champ obligatoire.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                supplierCommissionRate:
+                  type: number
+                  minimum: 0
+                  maximum: 0.5
+                buyerFeeType:
+                  type: string
+                  enum:
+                  - NONE
+                  - FIXED
+                  - PERCENT
+                buyerFeeValue:
+                  type: number
+                  minimum: 0
+                  description: 'Conditionnel — si buyerFeeType vaut PERCENT : doit être number, sinon doit être number'
+                transportMarkupRate:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+                referralBuyerReward:
+                  type: number
+                  minimum: 0
+                referralSupplierReward:
+                  type: number
+                  minimum: 0
+                reservationHours:
+                  type: integer
+                  minimum: 1
+                  maximum: 168
+                expiryCompensationRate:
+                  type: number
+                  minimum: 0
+                  maximum: 1
+              minProperties: 1
+      responses:
+        '200':
+          description: Réglages mis à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlatformSettings'
+        '400':
+          description: Corps vide ou champ hors bornes (currency fournie -> 400)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: ADMIN refusé ; ROOT seul
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/users:
+    get:
+      tags:
+      - Admin
+      summary: Liste des utilisateurs (ADMIN et plus)
+      parameters:
+      - in: query
+        name: profileVerificationStatus
+        schema:
+          type: string
+          enum:
+          - UNVERIFIED
+          - PENDING
+          - VERIFIED
+          - REJECTED
+      responses:
+        '200':
+          description: Tableau d'utilisateurs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Crée un compte staff (ADMIN, AGENT, DRIVER)
+      description: ADMIN réservé à ROOT (403 sinon). AGENT et DRIVER pour ADMIN et ROOT. Unicité email ET téléphone (409). L'email de bienvenue n'est jamais bloquant.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                firstname:
+                  type: string
+                  minLength: 2
+                lastname:
+                  type: string
+                  minLength: 2
+                phone:
+                  type: string
+                  pattern: ^\+?[0-9]{8,15}$
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  pattern: ^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])(?!.*(.)\1\1\1)[A-Za-z\d@$!%*?&]{8,}$
+                role:
+                  type: string
+                  enum:
+                  - ADMIN
+                  - AGENT
+                  - DRIVER
+                agent:
+                  type: object
+                  properties:
+                    displayName:
+                      type: string
+                    capabilities:
+                      type: array
+                      items:
+                        type: string
+                      uniqueItems: true
+                  description: 'Conditionnel — si role vaut AGENT : doit être object, sinon interdit'
+                driver:
+                  type: object
+                  properties:
+                    agencyId:
+                      type: integer
+                      minimum: 0
+                      exclusiveMinimum: true
+                    vehicleType:
+                      type: string
+                      maxLength: 50
+                      nullable: true
+                    plateNumber:
+                      type: string
+                      maxLength: 20
+                      nullable: true
+                  required:
+                  - agencyId
+                  description: 'Conditionnel — si role vaut DRIVER : doit être object, sinon interdit'
+              required:
+              - firstname
+              - lastname
+              - phone
+              - email
+              - password
+              - role
+      responses:
+        '201':
+          description: Compte créé avec son profil
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Création d'un ADMIN par un non-ROOT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: Email ou téléphone déjà utilisé (codes distincts)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/users/{id}/suspend:
+    patch:
+      tags:
+      - Admin
+      summary: Suspendre un compte
+      description: Ferme ses sessions et déconnecte ses websockets (session_revoked).
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Compte suspendu
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/users/{id}/reactivate:
+    patch:
+      tags:
+      - Admin
+      summary: Réactiver un compte suspendu
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Compte réactivé
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/legal/{code}/versions:
+    post:
+      tags:
+      - Admin
+      summary: Crée une version brouillon de CGU
+      description: '"fr" obligatoire, "en" facultatif. La version est DRAFT.'
+      parameters:
+      - $ref: '#/components/parameters/LegalCodeParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                version:
+                  type: string
+                  minLength: 1
+                  maxLength: 20
+                translations:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      locale:
+                        type: string
+                        enum:
+                        - fr
+                        - en
+                      title:
+                        type: string
+                        minLength: 1
+                        maxLength: 200
+                      content:
+                        type: string
+                        minLength: 1
+                    required:
+                    - locale
+                    - title
+                    - content
+                  minItems: 1
+              required:
+              - version
+              - translations
+      responses:
+        '201':
+          description: Version DRAFT créée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Code inconnu
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/legal/versions/{id}/publish:
+    patch:
+      tags:
+      - Admin
+      summary: Publie une version de CGU
+      description: Passe la version en PUBLISHED et archive la précédente du même document (transaction).
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Version publiée, ancienne archivée
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Version déjà publiée
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/payouts:
+    get:
+      tags:
+      - Admin
+      summary: Reversements fournisseurs (ADMIN humain)
+      description: requireHumanActor — un agent IA ne peut pas déplacer de l'argent.
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedPayouts'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/payouts/{id}/pay:
+    patch:
+      tags:
+      - Admin
+      summary: Marque un reversement comme payé
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reference:
+                  type: string
+                  minLength: 1
+                  maxLength: 255
+                payoutAccountId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                  nullable: true
+              required:
+              - reference
+      responses:
+        '200':
+          description: Reversement payé
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/agents:
+    get:
+      tags:
+      - Admin
+      summary: Fiches d'agents (humains et IA)
+      responses:
+        '200':
+          description: Liste des agents
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/agents/ai:
+    post:
+      tags:
+      - Admin
+      summary: Crée un agent IA (sans compte utilisateur)
+      description: autonomy par défaut SUGGEST_ONLY. Un IA ne peut jamais recevoir PAYMENT_FOLLOWUP (règle C6 — 400 si demandé).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                aiProvider:
+                  type: string
+                  minLength: 1
+                  maxLength: 80
+                aiModel:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                aiConfig:
+                  type: object
+                  properties: {}
+                autonomy:
+                  type: string
+                  enum:
+                  - SUGGEST_ONLY
+                  - ACT_WITH_APPROVAL
+                  - AUTONOMOUS
+              required:
+              - displayName
+              - aiProvider
+              - aiModel
+      responses:
+        '201':
+          description: Agent IA créé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/agents/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Modifie une fiche d'agent
+      description: capabilities remplace TOUTES les capacités (liste complète).
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
+                  minLength: 1
+                  maxLength: 120
+                isActive:
+                  type: boolean
+                capabilities:
+                  type: array
+                  items:
+                    type: string
+                  uniqueItems: true
+                autonomy:
+                  type: string
+                  enum:
+                  - SUGGEST_ONLY
+                  - ACT_WITH_APPROVAL
+                  - AUTONOMOUS
+                  nullable: true
+      responses:
+        '200':
+          description: Fiche mise à jour
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/categories:
+    get:
+      tags:
+      - Admin
+      summary: Catégories de produits
+      parameters:
+      - in: query
+        name: active
+        schema:
+          type: boolean
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedCategories'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Crée une catégorie
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 2
+                  maxLength: 20
+                  pattern: ^[A-Z][A-Z0-9_]*$
+                label:
+                  type: string
+                  minLength: 2
+                  maxLength: 80
+                isActive:
+                  type: boolean
+              required:
+              - code
+              - label
+      responses:
+        '201':
+          description: Catégorie créée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Code déjà utilisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/categories/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Modifie ou désactive une catégorie
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 2
+                  maxLength: 20
+                  pattern: ^[A-Z][A-Z0-9_]*$
+                label:
+                  type: string
+                  minLength: 2
+                  maxLength: 80
+                isActive:
+                  type: boolean
+              minProperties: 1
+      responses:
+        '200':
+          description: Catégorie mise à jour
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/units:
+    get:
+      tags:
+      - Admin
+      summary: Unités de mesure
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedUnits'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Crée une unité
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 2
+                  maxLength: 20
+                  pattern: ^[A-Z][A-Z0-9_]*$
+                label:
+                  type: string
+                  minLength: 2
+                  maxLength: 80
+              required:
+              - code
+              - label
+      responses:
+        '201':
+          description: Unité créée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Code déjà utilisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/units/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Modifie une unité (code, label — pas d'isActive)
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                code:
+                  type: string
+                  minLength: 2
+                  maxLength: 20
+                  pattern: ^[A-Z][A-Z0-9_]*$
+                label:
+                  type: string
+                  minLength: 2
+                  maxLength: 80
+              minProperties: 1
+      responses:
+        '200':
+          description: Unité mise à jour
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/products:
+    get:
+      tags:
+      - Admin
+      summary: Produits du catalogue
+      parameters:
+      - in: query
+        name: active
+        schema:
+          type: boolean
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedProducts'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Crée un produit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoryId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                unitId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                description:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+                imageUrl:
+                  type: string
+                  format: uri
+                  maxLength: 500
+                  nullable: true
+                isPerishable:
+                  type: boolean
+                isActive:
+                  type: boolean
+              required:
+              - categoryId
+              - unitId
+              - name
+      responses:
+        '201':
+          description: Produit créé
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/products/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Modifie ou désactive un produit
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                categoryId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                unitId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                description:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+                imageUrl:
+                  type: string
+                  format: uri
+                  maxLength: 500
+                  nullable: true
+                isPerishable:
+                  type: boolean
+                isActive:
+                  type: boolean
+              minProperties: 1
+      responses:
+        '200':
+          description: Produit mis à jour
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/zones:
+    get:
+      tags:
+      - Admin
+      summary: Zones
+      parameters:
+      - in: query
+        name: active
+        schema:
+          type: boolean
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedZones'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Crée une zone
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                city:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                region:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                isActive:
+                  type: boolean
+              required:
+              - name
+      responses:
+        '201':
+          description: Zone créée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Nom déjà utilisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/zones/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Modifie ou désactive une zone
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                city:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                region:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                isActive:
+                  type: boolean
+              minProperties: 1
+      responses:
+        '200':
+          description: Zone mise à jour
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/hubs:
+    get:
+      tags:
+      - Admin
+      summary: Points de dépôt
+      parameters:
+      - in: query
+        name: active
+        schema:
+          type: boolean
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedHubs'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Crée un point de dépôt
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                address:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+                city:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                latitude:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                longitude:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+                zoneId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                acceptsDropoff:
+                  type: boolean
+                acceptsPickup:
+                  type: boolean
+                isActive:
+                  type: boolean
+              required:
+              - name
+              - address
+              - latitude
+              - longitude
+              - zoneId
+      responses:
+        '201':
+          description: Hub créé
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/hubs/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Modifie ou désactive un hub
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                address:
+                  type: string
+                  minLength: 3
+                  maxLength: 500
+                city:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                latitude:
+                  type: number
+                  minimum: -90
+                  maximum: 90
+                longitude:
+                  type: number
+                  minimum: -180
+                  maximum: 180
+                zoneId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+                acceptsDropoff:
+                  type: boolean
+                acceptsPickup:
+                  type: boolean
+                isActive:
+                  type: boolean
+              minProperties: 1
+      responses:
+        '200':
+          description: Hub mis à jour
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/agencies:
+    get:
+      tags:
+      - Admin
+      summary: Agences de transport
+      parameters:
+      - in: query
+        name: active
+        schema:
+          type: boolean
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedAgencies'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Crée une agence de transport
+      description: L'unicité du nom est vérifiée dans le contrôleur (409).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                contactName:
+                  type: string
+                  maxLength: 120
+                  nullable: true
+                phone:
+                  type: string
+                  minLength: 6
+                  maxLength: 20
+                email:
+                  type: string
+                  format: email
+                  maxLength: 160
+                  nullable: true
+                insuranceProvider:
+                  type: string
+                  maxLength: 120
+                  nullable: true
+                insurancePolicyNumber:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                insuranceExpiresAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                isActive:
+                  type: boolean
+              required:
+              - name
+              - phone
+      responses:
+        '201':
+          description: Agence créée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Nom déjà utilisé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/agencies/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Modifie ou désactive une agence
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 120
+                contactName:
+                  type: string
+                  maxLength: 120
+                  nullable: true
+                phone:
+                  type: string
+                  minLength: 6
+                  maxLength: 20
+                email:
+                  type: string
+                  format: email
+                  maxLength: 160
+                  nullable: true
+                insuranceProvider:
+                  type: string
+                  maxLength: 120
+                  nullable: true
+                insurancePolicyNumber:
+                  type: string
+                  maxLength: 80
+                  nullable: true
+                insuranceExpiresAt:
+                  type: string
+                  format: date-time
+                  nullable: true
+                isActive:
+                  type: boolean
+              minProperties: 1
+      responses:
+        '200':
+          description: Agence mise à jour
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/agencies/{id}/zones/{zoneId}:
+    put:
+      tags:
+      - Admin
+      summary: Couvre une zone avec tarifs (crée ou met à jour)
+      description: Tarifs arrondis au centime par le contrôleur.
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      - in: path
+        name: zoneId
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                baseFee:
+                  type: number
+                  minimum: 0
+                perKmFee:
+                  type: number
+                  minimum: 0
+                isActive:
+                  type: boolean
+              required:
+              - baseFee
+              - perKmFee
+      responses:
+        '200':
+          description: Couverture enregistrée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Agence ou zone introuvable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      tags:
+      - Admin
+      summary: Retire la couverture d'une zone
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      - in: path
+        name: zoneId
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Couverture retirée
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/agencies/{id}/drivers:
+    get:
+      tags:
+      - Admin
+      summary: Livreurs rattachés à une agence
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Liste des livreurs de l'agence
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/referrals:
+    get:
+      tags:
+      - Admin
+      summary: Parrainages (ADMIN humain)
+      description: requireHumanActor — un agent IA ne peut pas déplacer de l'argent.
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedReferrals'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/referrals/{id}/pay:
+    patch:
+      tags:
+      - Admin
+      summary: Paye une commission de parrainage
+      description: Référence de paiement obligatoire (traçabilité audit).
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reference:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+              required:
+              - reference
+      responses:
+        '200':
+          description: Parrainage payé
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Transition interdite (INVALID_STATE_TRANSITION)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/referrals/{id}/reject:
+    patch:
+      tags:
+      - Admin
+      summary: Rejette un parrainage
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  minLength: 1
+                  maxLength: 2000
+              required:
+              - reason
+      responses:
+        '200':
+          description: Parrainage rejeté
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Transition interdite (INVALID_STATE_TRANSITION)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/compensations:
+    get:
+      tags:
+      - Admin
+      summary: Indemnisations fournisseurs (ADMIN humain)
+      description: La vue admin affiche le compte de paiement par défaut du fournisseur (numéro complet).
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedCompensations'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/compensations/{id}/approve:
+    patch:
+      tags:
+      - Admin
+      summary: Approuve une indemnisation
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Indemnisation approuvée
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Transition interdite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/compensations/{id}/reject:
+    patch:
+      tags:
+      - Admin
+      summary: Rejette une indemnisation (justification obligatoire)
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                note:
+                  type: string
+                  minLength: 1
+                  maxLength: 500
+              required:
+              - note
+      responses:
+        '200':
+          description: Indemnisation rejetée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/compensations/{id}/pay:
+    patch:
+      tags:
+      - Admin
+      summary: Paie une indemnisation (référence de virement obligatoire)
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reference:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+              required:
+              - reference
+      responses:
+        '200':
+          description: Indemnisation payée
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Transition interdite
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+  /admin/stats:
+    get:
+      tags:
+      - Admin
+      summary: Tableau de bord
+      responses:
+        '200':
+          description: Statistiques agrégées
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/audit-logs:
+    get:
+      tags:
+      - Admin
+      summary: Journal d'audit
+      parameters:
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          $ref: '#/components/responses/PaginatedAuditLogs'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
   /legal:
     get:
-      tags: [CGU]
+      tags:
+      - CGU
       summary: Documents courants (publique)
       security: []
       responses:
@@ -765,28 +2374,26 @@ paths:
                       type: string
                     version:
                       type: string
-                      example: "1.0"
+                      example: '1.0'
                     publishedAt:
                       type: string
                       format: date-time
   /legal/{code}:
     get:
-      tags: [CGU]
+      tags:
+      - CGU
       summary: Contenu d'une version publiée, FR ou EN
-      description: "'?lang=' ou en-tête Accept-Language > fr. Repli sur fr si la langue manque ; le champ locale donne la langue réelle."
+      description: '''?lang='' ou en-tête Accept-Language > fr. Repli sur fr si la langue manque ; le champ locale donne la langue réelle.'
       security: []
       parameters:
-        - in: path
-          name: code
-          required: true
-          schema:
-            type: string
-            enum: [CGU, BUYER_TERMS, SUPPLIER_CONSIGNMENT_TERMS]
-        - in: query
-          name: lang
-          schema:
-            type: string
-            enum: [fr, en]
+      - $ref: '#/components/parameters/LegalCodeParam'
+      - in: query
+        name: lang
+        schema:
+          type: string
+          enum:
+          - fr
+          - en
       responses:
         '200':
           description: Contenu du document
@@ -815,1508 +2422,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-  /admin/verifications:
-    get:
-      tags: [Admin]
-      summary: Dossiers de vérification des profils (paginé)
-      description: ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION.
-      parameters:
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [PENDING, VERIFIED, REJECTED]
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200':
-          $ref: '#/components/responses/PaginatedVerifications'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/verifications/{id}:
-    get:
-      tags: [Admin]
-      summary: Détail d'un dossier (URL signée Cloudinary, 10 min)
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Détail + URL signée de courte durée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/VerificationDetail'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    patch:
-      tags: [Admin]
-      summary: Décision d'examen (APPROVE / REJECT)
-      description: |
-        APPROVE -> document VERIFIED, utilisateur VERIFIED si aucun document PENDING.
-        REJECT sans document VERIFIED -> utilisateur REJECTED. Audit dans la même transaction.
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [decision]
-              properties:
-                decision:
-                  type: string
-                  enum: [APPROVE, REJECT]
-                note:
-                  type: string
-                  maxLength: 2000
-                  nullable: true
-                  description: Obligatoire en cas de REJECT
-      responses:
-        '200':
-          description: Décision appliquée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/settings:
-    get:
-      tags: [Admin]
-      summary: Réglages de la plateforme (ADMIN et plus)
-      responses:
-        '200':
-          description: Settings de la plateforme (singleton id=1)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlatformSettings'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    patch:
-      tags: [Admin]
-      summary: Modifie les réglages (ROOT seul)
-      description: |
-        La commission fournisseur vaut 0 tant qu'elle n'est pas fixée par ROOT.
-        currency est en lecture seule. Au moins un champ obligatoire.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                supplierCommissionRate:
-                  type: number
-                  minimum: 0
-                  maximum: 0.5
-                buyerFeeType:
-                  type: string
-                  enum: [NONE, FIXED, PERCENT]
-                buyerFeeValue:
-                  type: number
-                  minimum: 0
-                  description: Taux (max 1) si PERCENT, sinon montant
-                transportMarkupRate:
-                  type: number
-                  minimum: 0
-                  maximum: 1
-                referralBuyerReward:
-                  type: number
-                  minimum: 0
-                referralSupplierReward:
-                  type: number
-                  minimum: 0
-                reservationHours:
-                  type: integer
-                  minimum: 1
-                  maximum: 168
-                expiryCompensationRate:
-                  type: number
-                  minimum: 0
-                  maximum: 1
-      responses:
-        '200':
-          description: Réglages mis à jour
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/PlatformSettings'
-        '400':
-          description: Corps vide ou champ hors bornes (currency fournie -> 400)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: ADMIN refusé ; ROOT seul
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/users:
-    get:
-      tags: [Admin]
-      summary: Liste des utilisateurs (ADMIN et plus)
-      parameters:
-        - in: query
-          name: profileVerificationStatus
-          schema:
-            type: string
-            enum: [UNVERIFIED, PENDING, VERIFIED, REJECTED]
-      responses:
-        '200':
-          description: Tableau d'utilisateurs
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Admin]
-      summary: Crée un compte staff (ADMIN, AGENT, DRIVER)
-      description: |
-        ADMIN réservé à ROOT (403 sinon). AGENT et DRIVER pour ADMIN et ROOT.
-        Unicité email ET téléphone (409). L'email de bienvenue n'est jamais bloquant.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [firstname, lastname, phone, email, password, role]
-              properties:
-                firstname:
-                  type: string
-                  minLength: 2
-                lastname:
-                  type: string
-                  minLength: 2
-                phone:
-                  type: string
-                  pattern: ^\+?[0-9]{8,15}$
-                email:
-                  type: string
-                  format: email
-                password:
-                  type: string
-                  description: Mêmes règles que l'inscription
-                role:
-                  type: string
-                  enum: [ADMIN, AGENT, DRIVER]
-                agent:
-                  type: object
-                  description: Obligatoire si role=AGENT, interdit sinon
-                  properties:
-                    displayName:
-                      type: string
-                      default: Équipe AgriConnect
-                    capabilities:
-                      type: array
-                      items:
-                        type: string
-                        enum: [BUYER_SUPPORT, SUPPLIER_SUPPORT, LISTING_MANAGEMENT, ORDER_PROCESSING, STOCK_VALIDATION, PAYMENT_FOLLOWUP, DISPATCH_COORDINATION, USER_VERIFICATION, DISPUTE_HANDLING]
-                driver:
-                  type: object
-                  description: Obligatoire si role=DRIVER, interdit sinon
-                  properties:
-                    agencyId:
-                      type: integer
-                      description: Agence existante et active (vérifiée en base)
-                    vehicleType:
-                      type: string
-                      maxLength: 50
-                      nullable: true
-                    plateNumber:
-                      type: string
-                      maxLength: 20
-                      nullable: true
-      responses:
-        '201':
-          description: Compte créé avec son profil
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: Création d'un ADMIN par un non-ROOT
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '409':
-          description: Email ou téléphone déjà utilisé (codes distincts)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/users/{id}/suspend:
-    patch:
-      tags: [Admin]
-      summary: Suspendre un compte
-      description: Ferme ses sessions et déconnecte ses websockets (session_revoked).
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Compte suspendu
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/users/{id}/reactivate:
-    patch:
-      tags: [Admin]
-      summary: Réactiver un compte suspendu
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Compte réactivé
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/legal/{code}/versions:
-    post:
-      tags: [Admin]
-      summary: Crée une version brouillon de CGU
-      description: "\"fr\" obligatoire, \"en\" facultatif. La version est DRAFT."
-      parameters:
-        - in: path
-          name: code
-          required: true
-          schema:
-            type: string
-            enum: [CGU, BUYER_TERMS, SUPPLIER_CONSIGNMENT_TERMS]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [version, translations]
-              properties:
-                version:
-                  type: string
-                  minLength: 1
-                  maxLength: 20
-                translations:
-                  type: array
-                  minItems: 1
-                  items:
-                    type: object
-                    required: [locale, title, content]
-                    properties:
-                      locale:
-                        type: string
-                        enum: [fr, en]
-                      title:
-                        type: string
-                        minLength: 1
-                        maxLength: 200
-                      content:
-                        type: string
-                        minLength: 1
-      responses:
-        '201':
-          description: Version DRAFT créée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: Code inconnu
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/legal/versions/{id}/publish:
-    patch:
-      tags: [Admin]
-      summary: Publie une version de CGU
-      description: Passe la version en PUBLISHED et archive la précédente du même document (transaction).
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Version publiée, ancienne archivée
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Version déjà publiée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/payouts:
-    get:
-      tags: [Admin]
-      summary: Reversements fournisseurs (ADMIN humain)
-      description: requireHumanActor — un agent IA ne peut pas déplacer de l'argent.
-      responses:
-        '200':
-          description: Liste des reversements (numéro de compte complet)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedPayouts'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/payouts/{id}/pay:
-    patch:
-      tags: [Admin]
-      summary: Marque un reversement comme payé
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [reference]
-              properties:
-                reference:
-                  type: string
-                  minLength: 1
-                  maxLength: 255
-                payoutAccountId:
-                  type: integer
-                  nullable: true
-                  description: Doit appartenir au fournisseur
-      responses:
-        '200':
-          description: Reversement payé
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/agents:
-    get:
-      tags: [Admin]
-      summary: Fiches d'agents (humains et IA)
-      responses:
-        '200':
-          description: Liste des agents
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Agent'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/agents/ai:
-    post:
-      tags: [Admin]
-      summary: Crée un agent IA (sans compte utilisateur)
-      description: autonomy par défaut SUGGEST_ONLY. Un IA ne peut jamais recevoir PAYMENT_FOLLOWUP (règle C6 — 400 si demandé).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [displayName, aiProvider, aiModel]
-              properties:
-                displayName:
-                  type: string
-                  minLength: 1
-                  maxLength: 120
-                aiProvider:
-                  type: string
-                  minLength: 1
-                  maxLength: 80
-                aiModel:
-                  type: string
-                  minLength: 1
-                  maxLength: 120
-                aiConfig:
-                  type: object
-                  nullable: true
-                autonomy:
-                  type: string
-                  enum: [SUGGEST_ONLY, ACT_WITH_APPROVAL, AUTONOMOUS]
-                  default: SUGGEST_ONLY
-      responses:
-        '201':
-          description: Agent IA créé
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Agent'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/agents/{id}:
-    patch:
-      tags: [Admin]
-      summary: Modifie une fiche d'agent
-      description: capabilities remplace TOUTES les capacités (liste complète).
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                displayName:
-                  type: string
-                  minLength: 1
-                  maxLength: 120
-                isActive:
-                  type: boolean
-                capabilities:
-                  type: array
-                  items:
-                    type: string
-                    enum: [BUYER_SUPPORT, SUPPLIER_SUPPORT, LISTING_MANAGEMENT, ORDER_PROCESSING, STOCK_VALIDATION, PAYMENT_FOLLOWUP, DISPATCH_COORDINATION, USER_VERIFICATION, DISPUTE_HANDLING]
-                autonomy:
-                  type: string
-                  enum: [SUGGEST_ONLY, ACT_WITH_APPROVAL, AUTONOMOUS]
-                  nullable: true
-      responses:
-        '200':
-          description: Fiche mise à jour
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Agent'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/categories:
-    get:
-      tags: [Admin]
-      summary: Catégories de produits
-      parameters:
-        - in: query
-          name: active
-          schema:
-            type: boolean
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200':
-          description: Liste paginée { items, page, limit, total }
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedCategories'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Admin]
-      summary: Crée une catégorie
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [code, label]
-              properties:
-                code:
-                  type: string
-                  pattern: ^[A-Z][A-Z0-9_]*$
-                  minLength: 2
-                  maxLength: 20
-                label:
-                  type: string
-                  minLength: 2
-                  maxLength: 80
-                isActive:
-                  type: boolean
-      responses:
-        '201':
-          description: Catégorie créée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          description: Code déjà utilisé
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/categories/{id}:
-    patch:
-      tags: [Admin]
-      summary: Modifie ou désactive une catégorie
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                code:
-                  type: string
-                  pattern: ^[A-Z][A-Z0-9_]*$
-                label:
-                  type: string
-                  minLength: 2
-                  maxLength: 80
-                isActive:
-                  type: boolean
-      responses:
-        '200':
-          description: Catégorie mise à jour
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/units:
-    get:
-      tags: [Admin]
-      summary: Unités de mesure
-      responses:
-        '200':
-          description: Liste des unités (pas de filtre ?active= — Unit n'a pas isActive)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedUnits'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Admin]
-      summary: Crée une unité
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [code, label]
-              properties:
-                code:
-                  type: string
-                  pattern: ^[A-Z][A-Z0-9_]*$
-                  example: KG
-                label:
-                  type: string
-                  minLength: 2
-                  maxLength: 80
-      responses:
-        '201':
-          description: Unité créée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          description: Code déjà utilisé
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/units/{id}:
-    patch:
-      tags: [Admin]
-      summary: Modifie une unité (code, label — pas d'isActive)
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                code:
-                  type: string
-                  pattern: ^[A-Z][A-Z0-9_]*$
-                label:
-                  type: string
-                  minLength: 2
-                  maxLength: 80
-      responses:
-        '200':
-          description: Unité mise à jour
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/products:
-    get:
-      tags: [Admin]
-      summary: Produits du catalogue
-      parameters:
-        - in: query
-          name: active
-          schema:
-            type: boolean
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200':
-          description: Liste paginée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedProducts'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Admin]
-      summary: Crée un produit
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [categoryId, unitId, name]
-              properties:
-                categoryId:
-                  type: integer
-                  description: Catégorie existante ET active (vérifiée en base)
-                unitId:
-                  type: integer
-                  description: Unité existante (vérifiée en base)
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                description:
-                  type: string
-                  maxLength: 500
-                  nullable: true
-                imageUrl:
-                  type: string
-                  format: uri
-                  maxLength: 500
-                  nullable: true
-                isPerishable:
-                  type: boolean
-                isActive:
-                  type: boolean
-      responses:
-        '201':
-          description: Produit créé
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/products/{id}:
-    patch:
-      tags: [Admin]
-      summary: Modifie ou désactive un produit
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                categoryId:
-                  type: integer
-                unitId:
-                  type: integer
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                description:
-                  type: string
-                  maxLength: 500
-                  nullable: true
-                imageUrl:
-                  type: string
-                  format: uri
-                  nullable: true
-                isPerishable:
-                  type: boolean
-                isActive:
-                  type: boolean
-      responses:
-        '200':
-          description: Produit mis à jour
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/zones:
-    get:
-      tags: [Admin]
-      summary: Zones
-      parameters:
-        - in: query
-          name: active
-          schema:
-            type: boolean
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200':
-          description: Liste paginée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedZones'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Admin]
-      summary: Crée une zone
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name]
-              properties:
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                city:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                region:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                isActive:
-                  type: boolean
-      responses:
-        '201':
-          description: Zone créée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          description: Nom déjà utilisé
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/zones/{id}:
-    patch:
-      tags: [Admin]
-      summary: Modifie ou désactive une zone
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                city:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                region:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                isActive:
-                  type: boolean
-      responses:
-        '200':
-          description: Zone mise à jour
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/hubs:
-    get:
-      tags: [Admin]
-      summary: Points de dépôt
-      parameters:
-        - in: query
-          name: active
-          schema:
-            type: boolean
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200':
-          description: Liste paginée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedHubs'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Admin]
-      summary: Crée un point de dépôt
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, address, latitude, longitude, zoneId]
-              properties:
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                address:
-                  type: string
-                  minLength: 3
-                  maxLength: 500
-                city:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                latitude:
-                  type: number
-                  minimum: -90
-                  maximum: 90
-                longitude:
-                  type: number
-                  minimum: -180
-                  maximum: 180
-                zoneId:
-                  type: integer
-                  description: Zone existante (vérifiée en base)
-                acceptsDropoff:
-                  type: boolean
-                acceptsPickup:
-                  type: boolean
-                isActive:
-                  type: boolean
-      responses:
-        '201':
-          description: Hub créé
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/hubs/{id}:
-    patch:
-      tags: [Admin]
-      summary: Modifie ou désactive un hub
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                address:
-                  type: string
-                  minLength: 3
-                  maxLength: 500
-                city:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                latitude:
-                  type: number
-                  minimum: -90
-                  maximum: 90
-                longitude:
-                  type: number
-                  minimum: -180
-                  maximum: 180
-                zoneId:
-                  type: integer
-                acceptsDropoff:
-                  type: boolean
-                acceptsPickup:
-                  type: boolean
-                isActive:
-                  type: boolean
-      responses:
-        '200':
-          description: Hub mis à jour
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/agencies:
-    get:
-      tags: [Admin]
-      summary: Agences de transport
-      parameters:
-        - in: query
-          name: active
-          schema:
-            type: boolean
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200':
-          description: Liste paginée
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedAgencies'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-    post:
-      tags: [Admin]
-      summary: Crée une agence de transport
-      description: L'unicité du nom est vérifiée dans le contrôleur (409).
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [name, phone]
-              properties:
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                contactName:
-                  type: string
-                  maxLength: 120
-                  nullable: true
-                phone:
-                  type: string
-                  minLength: 6
-                  maxLength: 20
-                email:
-                  type: string
-                  format: email
-                  nullable: true
-                insuranceProvider:
-                  type: string
-                  maxLength: 120
-                  nullable: true
-                insurancePolicyNumber:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                insuranceExpiresAt:
-                  type: string
-                  format: date-time
-                  nullable: true
-                isActive:
-                  type: boolean
-      responses:
-        '201':
-          description: Agence créée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '409':
-          description: Nom déjà utilisé
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/agencies/{id}:
-    patch:
-      tags: [Admin]
-      summary: Modifie ou désactive une agence
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              minProperties: 1
-              properties:
-                name:
-                  type: string
-                  minLength: 2
-                  maxLength: 120
-                contactName:
-                  type: string
-                  maxLength: 120
-                  nullable: true
-                phone:
-                  type: string
-                  minLength: 6
-                  maxLength: 20
-                email:
-                  type: string
-                  format: email
-                  nullable: true
-                insuranceProvider:
-                  type: string
-                  maxLength: 120
-                  nullable: true
-                insurancePolicyNumber:
-                  type: string
-                  maxLength: 80
-                  nullable: true
-                insuranceExpiresAt:
-                  type: string
-                  format: date-time
-                  nullable: true
-                isActive:
-                  type: boolean
-      responses:
-        '200':
-          description: Agence mise à jour
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/agencies/{id}/zones/{zoneId}:
-    put:
-      tags: [Admin]
-      summary: Couvre une zone avec tarifs (crée ou met à jour)
-      description: Tarifs arrondis au centime par le contrôleur.
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-        - in: path
-          name: zoneId
-          required: true
-          schema:
-            type: integer
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [baseFee, perKmFee]
-              properties:
-                baseFee:
-                  type: number
-                  minimum: 0
-                perKmFee:
-                  type: number
-                  minimum: 0
-                isActive:
-                  type: boolean
-      responses:
-        '200':
-          description: Couverture enregistrée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          description: Agence ou zone introuvable
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-    delete:
-      tags: [Admin]
-      summary: Retire la couverture d'une zone
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-        - in: path
-          name: zoneId
-          required: true
-          schema:
-            type: integer
-      responses:
-        '200':
-          description: Couverture retirée
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/agencies/{id}/drivers:
-    get:
-      tags: [Admin]
-      summary: Livreur rattachés à une agence
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Liste des livreurs de l'agence
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/User'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/referrals:
-    get:
-      tags: [Admin]
-      summary: Parrainages (ADMIN humain)
-      description: requireHumanActor — un agent IA ne peut pas déplacer de l'argent.
-      responses:
-        '200':
-          description: Liste des parrainages
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedReferrals'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/referrals/{id}/pay:
-    patch:
-      tags: [Admin]
-      summary: Paye une commission de parrainage
-      description: Référence de paiement obligatoire (traçabilité audit).
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [reference]
-              properties:
-                reference:
-                  type: string
-                  minLength: 1
-                  maxLength: 100
-      responses:
-        '200':
-          description: Parrainage payé
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Transition interdite (INVALID_STATE_TRANSITION)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/referrals/{id}/reject:
-    patch:
-      tags: [Admin]
-      summary: Rejette un parrainage
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [reason]
-              properties:
-                reason:
-                  type: string
-                  minLength: 1
-                  maxLength: 2000
-      responses:
-        '200':
-          description: Parrainage rejeté
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Transition interdite (INVALID_STATE_TRANSITION)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/compensations:
-    get:
-      tags: [Admin]
-      summary: Indemnisations fournisseurs (ADMIN humain)
-      description: La vue admin affiche le compte de paiement par défaut du fournisseur (numéro complet).
-      responses:
-        '200':
-          description: Liste des indemnisations
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedCompensations'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/compensations/{id}/approve:
-    patch:
-      tags: [Admin]
-      summary: Approuve une indemnisation
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      responses:
-        '200':
-          description: Indemnisation approuvée
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Transition interdite
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/compensations/{id}/reject:
-    patch:
-      tags: [Admin]
-      summary: Rejette une indemnisation (justification obligatoire)
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [note]
-              properties:
-                note:
-                  type: string
-                  minLength: 1
-                  maxLength: 500
-      responses:
-        '200':
-          description: Indemnisation rejetée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-  /admin/compensations/{id}/pay:
-    patch:
-      tags: [Admin]
-      summary: Paie une indemnisation (référence de virement obligatoire)
-      parameters:
-        - $ref: '#/components/parameters/IdParam'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [reference]
-              properties:
-                reference:
-                  type: string
-                  minLength: 1
-                  maxLength: 100
-      responses:
-        '200':
-          description: Indemnisation payée
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '409':
-          description: Transition interdite
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-  /admin/stats:
-    get:
-      tags: [Admin]
-      summary: Tableau de bord
-      responses:
-        '200':
-          description: Statistiques agrégées
-          content:
-            application/json:
-              schema:
-                type: object
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-  /admin/audit-logs:
-    get:
-      tags: [Admin]
-      summary: Journal d'audit
-      parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
-      responses:
-        '200':
-          description: Événements d'audit (actions MAJUSCULES_AVEC_UNDERSCORES)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedAuditLogs'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/Forbidden'
   /supplier/lots:
     post:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Déclare un lot (multipart)
-      description: |
-        Crée le lot en PENDING_VALIDATION (lotCode = 'LOT-' + id sur 6 chiffres)
-        et ses photos (ownerLotId). expiresAt obligatoire si le produit est
-        périssable (vérifié par le contrôleur). hubId obligatoire si HUB ;
-        pickupAddress + coordonnées obligatoires si SUPPLIER_SITE.
+      description: Crée le lot en PENDING_VALIDATION (lotCode = 'LOT-' + id sur 6 chiffres) et ses photos (ownerLotId). expiresAt obligatoire si le produit est périssable (vérifié par le contrôleur). hubId obligatoire si HUB ; pickupAddress + coordonnées obligatoires si SUPPLIER_SITE.
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [productId, zoneId, agreedUnitPrice, quantity, storageType]
               properties:
+                images:
+                  type: string
+                  format: binary
+                  description: 'Photos du lot, 5 maximum (au-delà : 400)'
                 productId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 zoneId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 agreedUnitPrice:
                   type: number
-                  description: Prix convenu promoteur, 2 décimales max
+                  minimum: 0
+                  exclusiveMinimum: true
                 quantity:
                   type: number
-                  description: 3 décimales max ; quantityInitial = quantityAvailable = quantity
+                  minimum: 0
+                  exclusiveMinimum: true
                 storageType:
                   type: string
-                  enum: [SUPPLIER_SITE, HUB]
+                  enum:
+                  - SUPPLIER_SITE
+                  - HUB
                 hubId:
                   type: integer
-                  description: Requis si HUB ; actif et acceptsDropoff (contrôleur)
+                  minimum: 0
+                  exclusiveMinimum: true
                 pickupAddress:
                   type: string
-                  description: Requis si SUPPLIER_SITE
                 pickupLatitude:
                   type: number
                   minimum: -90
@@ -2328,7 +2477,7 @@ paths:
                 expiresAt:
                   type: string
                   format: date-time
-                  description: Obligatoire si produit périssable ; date future
+                  nullable: true
                 harvestedAt:
                   type: string
                   format: date-time
@@ -2341,12 +2490,13 @@ paths:
                   type: string
                   maxLength: 500
                   nullable: true
-                images:
-                  type: array
-                  maxItems: 5
-                  items:
-                    type: string
-                    format: binary
+              required:
+              - images
+              - productId
+              - zoneId
+              - agreedUnitPrice
+              - quantity
+              - storageType
       responses:
         '201':
           description: Lot créé
@@ -2361,23 +2511,28 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
     get:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Lots du fournisseur connecté (paginé)
       parameters:
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [PENDING_VALIDATION, AVAILABLE, FULLY_RESERVED, SOLD_OUT, EXPIRED, RETURNED, REJECTED, WITHDRAWN]
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - PENDING_VALIDATION
+          - AVAILABLE
+          - FULLY_RESERVED
+          - SOLD_OUT
+          - EXPIRED
+          - RETURNED
+          - REJECTED
+          - WITHDRAWN
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Lots du fournisseur (DTO fournisseur — jamais de donnée acheteur)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedSupplierLots'
+          $ref: '#/components/responses/PaginatedSupplierLots'
         '400':
           description: Statut inconnu
           content:
@@ -2390,40 +2545,35 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /supplier/payouts:
     get:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Reversements du fournisseur connecté
       responses:
         '200':
-          description: Reversements reçus
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedPayouts'
+          $ref: '#/components/responses/PaginatedPayouts'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /supplier/compensations:
     get:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Indemnisations du fournisseur connecté
       responses:
         '200':
-          description: Indemnisations
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedSupplierCompensations'
+          $ref: '#/components/responses/PaginatedSupplierCompensations'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /supplier/lots/{id}:
     get:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Détail d'un lot (404 si le lot n'est pas à lui)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Lot
@@ -2438,28 +2588,31 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Modifie un lot (PENDING_VALIDATION uniquement)
       description: PATCH hors PENDING_VALIDATION -> 409 INVALID_STATE_TRANSITION.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              minProperties: 1
               properties:
                 agreedUnitPrice:
                   type: number
-                  description: 2 décimales max
+                  minimum: 0
+                  exclusiveMinimum: true
                 quantity:
                   type: number
-                  description: Réécrit quantityInitial et quantityAvailable
+                  minimum: 0
+                  exclusiveMinimum: true
                 expiresAt:
                   type: string
                   format: date-time
+                  nullable: true
                 harvestedAt:
                   type: string
                   format: date-time
@@ -2472,6 +2625,7 @@ paths:
                   type: string
                   maxLength: 500
                   nullable: true
+              minProperties: 1
       responses:
         '200':
           description: Lot mis à jour
@@ -2494,11 +2648,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     delete:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Supprime définitivement un lot
       description: Uniquement en PENDING_VALIDATION ou REJECTED (sinon 409 — utiliser le retrait).
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Lot et photos supprimés
@@ -2516,18 +2671,20 @@ paths:
                 $ref: '#/components/schemas/Error'
   /supplier/lots/{id}/withdraw:
     post:
-      tags: [Fournisseur]
+      tags:
+      - Fournisseur
       summary: Retire un lot (AVAILABLE sans réservation -> WITHDRAWN)
       description: Avec réservation -> 409 INVALID_STATE_TRANSITION.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [reason]
+              required:
+              - reason
               properties:
                 reason:
                   type: string
@@ -2552,7 +2709,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/lots:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Crée un lot au nom d'un fournisseur
       description: Mêmes champs que POST /supplier/lots + supplierUserId. STOCK_VALIDATION (AGENT) ou ADMIN/ROOT.
       requestBody:
@@ -2561,23 +2719,36 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [supplierUserId, productId, zoneId, agreedUnitPrice, quantity, storageType]
               properties:
-                supplierUserId:
-                  type: integer
+                images:
+                  type: string
+                  format: binary
+                  description: 'Photos du lot, 5 maximum (au-delà : 400)'
                 productId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 zoneId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 agreedUnitPrice:
                   type: number
+                  minimum: 0
+                  exclusiveMinimum: true
                 quantity:
                   type: number
+                  minimum: 0
+                  exclusiveMinimum: true
                 storageType:
                   type: string
-                  enum: [SUPPLIER_SITE, HUB]
+                  enum:
+                  - SUPPLIER_SITE
+                  - HUB
                 hubId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 pickupAddress:
                   type: string
                 pickupLatitude:
@@ -2591,6 +2762,7 @@ paths:
                 expiresAt:
                   type: string
                   format: date-time
+                  nullable: true
                 harvestedAt:
                   type: string
                   format: date-time
@@ -2603,12 +2775,18 @@ paths:
                   type: string
                   maxLength: 500
                   nullable: true
-                images:
-                  type: array
-                  maxItems: 5
-                  items:
-                    type: string
-                    format: binary
+                supplierUserId:
+                  type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+              required:
+              - images
+              - productId
+              - zoneId
+              - agreedUnitPrice
+              - quantity
+              - storageType
+              - supplierUserId
       responses:
         '201':
           description: Lot créé (PENDING_VALIDATION)
@@ -2627,41 +2805,47 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Lots de tous les fournisseurs (paginé)
       parameters:
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [PENDING_VALIDATION, AVAILABLE, FULLY_RESERVED, SOLD_OUT, EXPIRED, RETURNED, REJECTED, WITHDRAWN]
-        - in: query
-          name: supplierId
-          schema:
-            type: integer
-        - in: query
-          name: productId
-          schema:
-            type: integer
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - PENDING_VALIDATION
+          - AVAILABLE
+          - FULLY_RESERVED
+          - SOLD_OUT
+          - EXPIRED
+          - RETURNED
+          - REJECTED
+          - WITHDRAWN
+      - in: query
+        name: supplierId
+        schema:
+          type: integer
+      - in: query
+        name: productId
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Lots avec identité du fournisseur (DTO staff)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedStaffLots'
+          $ref: '#/components/responses/PaginatedStaffLots'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /staff/lots/{id}:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Détail d'un lot (DTO staff + fournisseur)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Lot
@@ -2677,13 +2861,12 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/lots/{id}/validate:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Valide un lot (PENDING_VALIDATION -> AVAILABLE)
-      description: |
-        Exige PENDING_VALIDATION et fournisseur VERIFIED (sinon 409 NOT_VERIFIED).
-        Écrit le mouvement RECEIVED de quantityInitial. Audit LOT_VALIDATED.
+      description: Exige PENDING_VALIDATION et fournisseur VERIFIED (sinon 409 NOT_VERIFIED). Écrit le mouvement RECEIVED de quantityInitial. Audit LOT_VALIDATED.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Lot validé (AVAILABLE)
@@ -2701,22 +2884,24 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/lots/{id}/reject:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Rejette un lot (PENDING_VALIDATION -> REJECTED)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [reason]
               properties:
                 reason:
                   type: string
                   minLength: 1
                   maxLength: 500
+              required:
+              - reason
       responses:
         '200':
           description: Lot rejeté
@@ -2736,22 +2921,24 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/lots/{id}/return:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Retourne un lot (AVAILABLE ou FULLY_RESERVED sans réservation -> RETURNED)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [reason]
               properties:
                 reason:
                   type: string
                   minLength: 1
                   maxLength: 500
+              required:
+              - reason
       responses:
         '200':
           description: Lot retourné
@@ -2771,48 +2958,56 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/stock-movements:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Journal des mouvements de stock (paginé)
       parameters:
-        - in: query
-          name: lotId
-          schema:
-            type: integer
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - in: query
+        name: lotId
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           description: Mouvements (RECEIVED, RESERVED, RESERVATION_RELEASED, SOLD, EXPIRED, RETURNED)
           content:
             application/json:
               schema:
-                $ref: '#/components/responses/PaginatedStockMovements'
+                type: array
+                items:
+                  type: object
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /staff/lots/{id}/quality-checks:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Note la qualité d'un lot (A, B ou C)
       description: Met à jour StockLot.qualityGrade avec la dernière note. Audit LOT_QUALITY_CHECKED.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [grade]
               properties:
                 grade:
                   type: string
-                  enum: [A, B, C]
+                  enum:
+                  - A
+                  - B
+                  - C
                 notes:
                   type: string
                   maxLength: 500
                   nullable: true
+              required:
+              - grade
       responses:
         '201':
           description: Contrôle créé
@@ -2825,10 +3020,11 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Historique des contrôles qualité d'un lot
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Contrôles qualité
@@ -2846,25 +3042,27 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/listings:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Publie une annonce à partir d'un lot validé
-      description: |
-        LISTING_MANAGEMENT (AGENT) ou ADMIN/ROOT. Au MVP une annonce = EXACTEMENT
-        UN lot (400 sinon). Lot déjà relié -> 409 LOT_ALREADY_LINKED. Prix public
-        par défaut = prix convenu. Référence 'ANN-' + id sur 6 chiffres.
+      description: LISTING_MANAGEMENT (AGENT) ou ADMIN/ROOT. Au MVP une annonce = EXACTEMENT UN lot (400 sinon). Lot déjà relié -> 409 LOT_ALREADY_LINKED. Prix public par défaut = prix convenu. Référence 'ANN-' + id sur 6 chiffres.
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
               type: object
-              required: [lotIds, title]
               properties:
+                images:
+                  type: string
+                  format: binary
+                  description: Photos de l'annonce, 5 maximum (absentes -> photos du lot copiées)
                 lotIds:
                   type: array
                   items:
                     type: integer
-                  description: Tableau d'identifiants de lot
+                    minimum: 0
+                    exclusiveMinimum: true
                 title:
                   type: string
                   minLength: 3
@@ -2875,17 +3073,16 @@ paths:
                   nullable: true
                 unitPrice:
                   type: number
-                  description: 2 décimales max ; défaut = prix convenu du lot
+                  minimum: 0
+                  exclusiveMinimum: true
                 zoneId:
                   type: integer
-                  description: Défaut = zone du lot
-                images:
-                  type: array
-                  maxItems: 5
-                  items:
-                    type: string
-                    format: binary
-                  description: Absentes -> photos du lot copiées
+                  minimum: 0
+                  exclusiveMinimum: true
+              required:
+              - images
+              - lotIds
+              - title
       responses:
         '201':
           description: Annonce créée (DRAFT)
@@ -2914,41 +3111,43 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Annonces de l'équipe (paginé)
       parameters:
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [DRAFT, ACTIVE, SOLD, INACTIVE]
-        - in: query
-          name: productId
-          schema:
-            type: integer
-        - in: query
-          name: supplierId
-          schema:
-            type: integer
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - DRAFT
+          - ACTIVE
+          - SOLD
+          - INACTIVE
+      - in: query
+        name: productId
+        schema:
+          type: integer
+      - in: query
+        name: supplierId
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Annonces avec lot et promoteur
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedStaffListings'
+          $ref: '#/components/responses/PaginatedStaffListings'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /staff/listings/{id}:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Détail d'une annonce (DTO staff)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Annonce avec lot et promoteur
@@ -2963,18 +3162,18 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     patch:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Modifie une annonce (DRAFT, ACTIVE ou INACTIVE)
       description: Changement de unitPrice tracé dans l'audit (ancienne et nouvelle valeur).
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              minProperties: 1
               properties:
                 title:
                   type: string
@@ -2986,8 +3185,13 @@ paths:
                   nullable: true
                 unitPrice:
                   type: number
+                  minimum: 0
+                  exclusiveMinimum: true
                 zoneId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
+              minProperties: 1
       responses:
         '200':
           description: Annonce mise à jour
@@ -3005,11 +3209,12 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/listings/{id}/publish:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Publie une annonce (DRAFT ou INACTIVE -> ACTIVE)
       description: Exige lot AVAILABLE avec stock > 0. Audit LISTING_PUBLISHED.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Annonce publiée
@@ -3027,11 +3232,12 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/listings/{id}/unpublish:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Masque une annonce (ACTIVE -> INACTIVE)
       description: Audit LISTING_UNPUBLISHED.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Annonce masquée
@@ -3049,29 +3255,27 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/conversations:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Conversations (BUYER_SUPPORT ou SUPPLIER_SUPPORT requis)
       description: Un agent n'agit ensuite que sur les conversations de son type (vérifié dans le contrôleur).
       parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Conversations
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedConversations'
+          $ref: '#/components/responses/PaginatedConversations'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /staff/conversations/{id}:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Détail d'une conversation
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Conversation
@@ -3087,10 +3291,11 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/conversations/{id}/messages:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Messages d'une conversation (fil public)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Messages
@@ -3107,18 +3312,18 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Envoie un message (interne ou public)
       description: isInternal=true n'est visible que par l'équipe.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [content]
               properties:
                 content:
                   type: string
@@ -3126,7 +3331,8 @@ paths:
                   maxLength: 5000
                 isInternal:
                   type: boolean
-                  default: false
+              required:
+              - content
       responses:
         '201':
           description: Message envoyé
@@ -3144,11 +3350,12 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/conversations/{id}/assign:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: S'assigne la conversation (ou la réassigne par agentId)
       description: Un agent s'assigne à lui-même ; un admin sans fiche d'agent fournit agentId.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: false
         content:
@@ -3158,6 +3365,8 @@ paths:
               properties:
                 agentId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
       responses:
         '200':
           description: Conversation assignée
@@ -3171,22 +3380,24 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/conversations/{id}/escalate:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Escalade une conversation (motif obligatoire)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [reason]
               properties:
                 reason:
                   type: string
                   minLength: 1
                   maxLength: 500
+              required:
+              - reason
       responses:
         '200':
           description: Conversation escaladée
@@ -3200,10 +3411,11 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/conversations/{id}/close:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Ferme une conversation
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Conversation fermée
@@ -3215,65 +3427,89 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/orders:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Émet un devis pour un acheteur
-      description: |
-        ORDER_PROCESSING (AGENT) ou ADMIN/ROOT. Réserve le stock et fige les prix.
-        HUB_PICKUP exige pickupHubId ; AGENCY_DELIVERY exige delivery.{zoneId, address,
-        latitude, longitude}. Lignes OrderItem : listingId + lotId + prix.
+      description: 'ORDER_PROCESSING (AGENT) ou ADMIN/ROOT. Réserve le stock et fige les prix. HUB_PICKUP exige pickupHubId ; AGENCY_DELIVERY exige delivery.{zoneId, address, latitude, longitude}. Lignes OrderItem : listingId + lotId + prix.'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [buyerId, items, deliveryMode]
               properties:
                 buyerId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 conversationId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 items:
                   type: array
-                  minItems: 1
                   items:
                     type: object
-                    required: [listingId, quantity]
                     properties:
                       listingId:
                         type: integer
-                        description: Annonce ACTIVE
+                        minimum: 0
+                        exclusiveMinimum: true
                       quantity:
                         type: number
-                        description: 3 décimales max
+                        minimum: 0
+                        exclusiveMinimum: true
                       unitPrice:
                         type: number
-                        description: Défaut = prix public de l'annonce
+                        minimum: 0
+                        exclusiveMinimum: true
+                    required:
+                    - listingId
+                    - quantity
+                  minItems: 1
                 deliveryMode:
                   type: string
-                  enum: [HUB_PICKUP, AGENCY_DELIVERY]
+                  enum:
+                  - HUB_PICKUP
+                  - AGENCY_DELIVERY
                 pickupHubId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 delivery:
                   type: object
                   properties:
                     zoneId:
                       type: integer
+                      minimum: 0
+                      exclusiveMinimum: true
                     address:
                       type: string
                       minLength: 3
                       maxLength: 500
                     latitude:
                       type: number
+                      minimum: -90
+                      maximum: 90
                     longitude:
                       type: number
+                      minimum: -180
+                      maximum: 180
+                  required:
+                  - zoneId
+                  - address
+                  - latitude
+                  - longitude
                 notes:
                   type: string
                   maxLength: 1000
                   nullable: true
                 force:
                   type: boolean
-                  description: Contournement du prix plancher — ADMIN/ROOT seulement, ignoré pour un agent
+              required:
+              - buyerId
+              - items
+              - deliveryMode
       responses:
         '201':
           description: Devis créé (QUOTED)
@@ -3304,28 +3540,26 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Commandes (paginé)
       parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Commandes
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedOrders'
+          $ref: '#/components/responses/PaginatedOrders'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /staff/orders/{id}:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Détail d'une commande
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Commande
@@ -3341,24 +3575,32 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/orders/{id}/status:
     patch:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Change le statut d'une commande (manuel)
       description: OUT_FOR_DELIVERY n'est posable que par le flux livraison. force = dérogation admin (paiement avant PREPARING).
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [status]
               properties:
                 status:
                   type: string
-                  enum: [CONFIRMED, PREPARING, READY_FOR_PICKUP, OUT_FOR_DELIVERY, COMPLETED, CANCELLED]
+                  enum:
+                  - CONFIRMED
+                  - PREPARING
+                  - READY_FOR_PICKUP
+                  - OUT_FOR_DELIVERY
+                  - COMPLETED
+                  - CANCELLED
                 force:
                   type: boolean
+              required:
+              - status
       responses:
         '200':
           description: Statut mis à jour
@@ -3382,10 +3624,11 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/orders/{id}/confirm:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Confirme une commande (flux livraison)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Commande confirmée
@@ -3407,10 +3650,11 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/orders/{id}/cancel:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Annule une commande (restitue le stock, transaction)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: false
         content:
@@ -3439,25 +3683,27 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/orders/{id}/payments:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Enregistre un paiement manuel (idempotent)
       description: PAYMENT_FOLLOWUP (AGENT humain) ou ADMIN/ROOT. En-tête Idempotency-Key obligatoire.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [amount, method]
               properties:
                 amount:
                   type: number
-                  description: Montant <= 0 -> 409 INVALID_AMOUNT (règle métier)
                 method:
                   type: string
-                  enum: [CASH, MOBILE_MONEY, BANK_TRANSFER]
+                  enum:
+                  - CASH
+                  - MOBILE_MONEY
+                  - BANK_TRANSFER
                 reference:
                   type: string
                   maxLength: 200
@@ -3465,6 +3711,9 @@ paths:
                 paidAt:
                   type: string
                   format: date-time
+              required:
+              - amount
+              - method
       responses:
         '201':
           description: Paiement enregistré
@@ -3487,10 +3736,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Paiements d'une commande
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Paiements
@@ -3508,11 +3758,12 @@ paths:
           $ref: '#/components/responses/NotFound'
   /staff/payments/{id}/refund:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Rembourse un paiement (ADMIN humain)
       description: force permet de rembourser même si un reversement fournisseur a été payé (le reversement n'est pas annulé). Un non-admin qui envoie force:true est ignoré (409).
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: false
         content:
@@ -3545,11 +3796,12 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/orders/{id}/deliveries:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Crée les livraisons d'une commande (par point d'enlèvement)
       description: DISPATCH_COORDINATION (AGENT) ou ADMIN/ROOT. Refus d'idempotence si au moins une livraison non annulée existe.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '201':
           description: Livraisons créées
@@ -3571,28 +3823,26 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/deliveries:
     get:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Livraisons (paginé)
       parameters:
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Livraisons
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedDeliveries'
+          $ref: '#/components/responses/PaginatedDeliveries'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /staff/deliveries/{id}/release:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Libère une course acceptée (ACCEPTED -> PENDING)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: false
         content:
@@ -3602,6 +3852,7 @@ paths:
               properties:
                 reason:
                   type: string
+                  minLength: 1
                   maxLength: 500
       responses:
         '200':
@@ -3624,10 +3875,11 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/deliveries/{id}/redispatch:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Redispatch une course échouée (FAILED -> PENDING)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Course redispatchée
@@ -3645,23 +3897,25 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/deliveries/{id}/cancel:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Annule une course (PENDING, ACCEPTED ou FAILED -> CANCELLED)
       description: La raison est obligatoire (audit DELIVERY_CANCELLED).
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [reason]
               properties:
                 reason:
                   type: string
                   minLength: 1
                   maxLength: 500
+              required:
+              - reason
       responses:
         '200':
           description: Course annulée
@@ -3681,7 +3935,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /staff/compensations:
     post:
-      tags: [Équipe]
+      tags:
+      - Équipe
       summary: Demande une indemnisation fournisseur (invendus ou pertes)
       description: DISPUTE_HANDLING (AGENT) ou ADMIN/ROOT. Quantité > lot -> 400 du service. Rate à 0 -> COMPENSATION_RATE_ZERO si non fixée.
       requestBody:
@@ -3690,23 +3945,34 @@ paths:
           application/json:
             schema:
               type: object
-              required: [lotId, reason, quantity]
               properties:
                 lotId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 reason:
                   type: string
-                  enum: [EXPIRED_UNSOLD, LOST_OR_DAMAGED, OTHER]
+                  enum:
+                  - EXPIRED_UNSOLD
+                  - LOST_OR_DAMAGED
+                  - OTHER
                 quantity:
                   type: number
-                  exclusiveMinimum: 0
+                  minimum: 0
+                  exclusiveMinimum: true
                 deliveryId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                   nullable: true
                 note:
                   type: string
                   maxLength: 500
                   nullable: true
+              required:
+              - lotId
+              - reason
+              - quantity
       responses:
         '201':
           description: Indemnisation créée (PENDING)
@@ -3726,7 +3992,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /catalog/categories:
     get:
-      tags: [Catalogue]
+      tags:
+      - Catalogue
       summary: Catégories (acheteur, équipe)
       description: BUYER, AGENT, ADMIN, ROOT. SUPPLIER et DRIVER exclus.
       responses:
@@ -3744,39 +4011,35 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /catalog/listings:
     get:
-      tags: [Catalogue]
+      tags:
+      - Catalogue
       summary: Annonces visibles (ACTIVE)
-      description: |
-        Le catalogue acheteur n'utilise PAS les lots : il utilise les annonces.
-        Une annonce SOLD ou INACTIVE n'y figure plus.
+      description: 'Le catalogue acheteur n''utilise PAS les lots : il utilise les annonces. Une annonce SOLD ou INACTIVE n''y figure plus.'
       parameters:
-        - in: query
-          name: categoryId
-          schema:
-            type: integer
-        - in: query
-          name: productId
-          schema:
-            type: integer
-        - $ref: '#/components/parameters/PageParam'
-        - $ref: '#/components/parameters/LimitParam'
+      - in: query
+        name: categoryId
+        schema:
+          type: integer
+      - in: query
+        name: productId
+        schema:
+          type: integer
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
-          description: Annonces paginées
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedCatalogListings'
+          $ref: '#/components/responses/PaginatedCatalogListings'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /catalog/listings/{id}:
     get:
-      tags: [Catalogue]
+      tags:
+      - Catalogue
       summary: Détail d'une annonce (DTO acheteur)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Annonce avec produit, photos et prix public
@@ -3796,25 +4059,31 @@ paths:
                 $ref: '#/components/schemas/Error'
   /conversations:
     post:
-      tags: [Conversations]
+      tags:
+      - Conversations
       summary: Ouvre une conversation avec son premier message
-      description: listingId ou lotId selon le rôle ; les deux sont refusés silencieusement non — le contrôleur refuse explicitement.
+      description: listingId ou lotId selon le rôle ; envoyer les deux est refusé explicitement par le contrôleur, pas ignoré en silence.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [content]
               properties:
                 listingId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 lotId:
                   type: integer
+                  minimum: 0
+                  exclusiveMinimum: true
                 content:
                   type: string
                   minLength: 1
                   maxLength: 5000
+              required:
+              - content
       responses:
         '201':
           description: Conversation créée
@@ -3833,7 +4102,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
     get:
-      tags: [Conversations]
+      tags:
+      - Conversations
       summary: Conversations du connecté
       responses:
         '200':
@@ -3848,10 +4118,11 @@ paths:
           $ref: '#/components/responses/Unauthorized'
   /conversations/{id}/messages:
     get:
-      tags: [Conversations]
+      tags:
+      - Conversations
       summary: Messages du fil public
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Messages (fil public)
@@ -3866,22 +4137,24 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
     post:
-      tags: [Conversations]
+      tags:
+      - Conversations
       summary: Répond au fil public
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [content]
               properties:
                 content:
                   type: string
                   minLength: 1
                   maxLength: 5000
+              required:
+              - content
       responses:
         '201':
           description: Message envoyé
@@ -3897,25 +4170,23 @@ paths:
           $ref: '#/components/responses/NotFound'
   /orders:
     get:
-      tags: [Commandes]
+      tags:
+      - Commandes
       summary: Commandes de l'acheteur connecté
       responses:
         '200':
-          description: Commandes (DUPLICATA de GET /api/v2/orders/ pour l'acheteur)
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/responses/PaginatedOrders'
+          $ref: '#/components/responses/PaginatedOrders'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
   /orders/{id}:
     get:
-      tags: [Commandes]
+      tags:
+      - Commandes
       summary: Détail d'une commande (404 si pas la sienne)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Commande
@@ -3931,10 +4202,11 @@ paths:
           $ref: '#/components/responses/NotFound'
   /orders/{id}/confirm:
     post:
-      tags: [Commandes]
+      tags:
+      - Commandes
       summary: Confirme un devis (QUOTED -> CONFIRMED)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Commande confirmée
@@ -3956,10 +4228,11 @@ paths:
                 $ref: '#/components/schemas/Error'
   /orders/{id}/cancel:
     post:
-      tags: [Commandes]
+      tags:
+      - Commandes
       summary: Annule un devis ou une commande (restitue le stock)
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: false
         content:
@@ -3988,7 +4261,8 @@ paths:
                 $ref: '#/components/schemas/Error'
   /driver/deliveries/available:
     get:
-      tags: [Livreur]
+      tags:
+      - Livreur
       summary: Courses disponibles (PENDING, non assignées)
       responses:
         '200':
@@ -4005,7 +4279,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /driver/deliveries/mine:
     get:
-      tags: [Livreur]
+      tags:
+      - Livreur
       summary: Courses du livreur connecté
       responses:
         '200':
@@ -4022,11 +4297,12 @@ paths:
           $ref: '#/components/responses/Forbidden'
   /driver/deliveries/{id}/accept:
     post:
-      tags: [Livreur]
+      tags:
+      - Livreur
       summary: Accepte une course (PENDING -> ACCEPTED)
       description: Premier arrivé, premier servi. Livreur déjà en course -> 409 DELIVERY_ALREADY_ACTIVE.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
           description: Course acceptée
@@ -4052,26 +4328,32 @@ paths:
                 $ref: '#/components/schemas/Error'
   /driver/deliveries/{id}/status:
     patch:
-      tags: [Livreur]
+      tags:
+      - Livreur
       summary: Fait avancer sa course
       description: FAILED exige failureReason.
       parameters:
-        - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/IdParam'
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [status]
               properties:
                 status:
                   type: string
-                  enum: [PICKED_UP, IN_TRANSIT, DELIVERED, FAILED]
+                  enum:
+                  - PICKED_UP
+                  - IN_TRANSIT
+                  - DELIVERED
+                  - FAILED
                 failureReason:
                   type: string
                   maxLength: 500
-                  description: Obligatoire si FAILED
+                  description: 'Conditionnel — si status vaut FAILED : requis, sinon optionnel'
+              required:
+              - status
       responses:
         '200':
           description: Statut mis à jour
@@ -4103,7 +4385,7 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-      description: "Access token JWT — en-tête Authorization: Bearer <token>"
+      description: 'Access token JWT — en-tête Authorization: Bearer <token>'
   parameters:
     IdParam:
       in: path
@@ -4112,6 +4394,24 @@ components:
       description: Identifiant entier (coerceIdParam convertit la chaîne)
       schema:
         type: integer
+    TokenParam:
+      in: query
+      name: token
+      required: true
+      description: Jeton à usage unique (hex de 80 caractères)
+      schema:
+        type: string
+        pattern: ^[a-f0-9]{80}$
+    LegalCodeParam:
+      in: path
+      name: code
+      required: true
+      schema:
+        type: string
+        enum:
+        - CGU
+        - BUYER_TERMS
+        - SUPPLIER_CONSIGNMENT_TERMS
     PageParam:
       in: query
       name: page
@@ -4218,12 +4518,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Paginated'
-    PaginatedStockMovements:
-      description: Mouvements de stock paginés
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Paginated'
     PaginatedStaffListings:
       description: Annonces paginées
       content:
@@ -4310,7 +4604,13 @@ components:
       properties:
         code:
           type: string
-          enum: [ROOT, ADMIN, AGENT, SUPPLIER, BUYER, DRIVER]
+          enum:
+          - ROOT
+          - ADMIN
+          - AGENT
+          - SUPPLIER
+          - BUYER
+          - DRIVER
         label:
           type: string
         level:
@@ -4347,7 +4647,11 @@ components:
           type: boolean
         profileVerificationStatus:
           type: string
-          enum: [UNVERIFIED, PENDING, VERIFIED, REJECTED]
+          enum:
+          - UNVERIFIED
+          - PENDING
+          - VERIFIED
+          - REJECTED
           description: Distinct de emailVerified — vérification du profil par l'équipe
         referralCode:
           type: string
@@ -4362,9 +4666,9 @@ components:
         profile:
           description: SupplierProfile, BuyerProfile ou DriverProfile selon le rôle ; sinon null
           oneOf:
-            - $ref: '#/components/schemas/SupplierProfile'
-            - $ref: '#/components/schemas/BuyerProfile'
-            - $ref: '#/components/schemas/DriverProfile'
+          - $ref: '#/components/schemas/SupplierProfile'
+          - $ref: '#/components/schemas/BuyerProfile'
+          - $ref: '#/components/schemas/DriverProfile'
     SupplierProfile:
       type: object
       properties:
@@ -4385,7 +4689,11 @@ components:
           type: integer
         buyerType:
           type: string
-          enum: [RETAILER, FARMER, WHOLESALER, OTHER]
+          enum:
+          - RETAILER
+          - FARMER
+          - WHOLESALER
+          - OTHER
         businessName:
           type: string
           nullable: true
@@ -4427,13 +4735,16 @@ components:
           type: integer
         method:
           type: string
-          enum: [MOBILE_MONEY, BANK_TRANSFER, CASH]
+          enum:
+          - MOBILE_MONEY
+          - BANK_TRANSFER
+          - CASH
         provider:
           type: string
           nullable: true
         accountNumberMasked:
           type: string
-          description: "••••1234 — le numéro complet n'est jamais renvoyé par l'API"
+          description: '"••••1234" — le numéro complet n''est jamais renvoyé par l''API'
         accountName:
           type: string
           nullable: true
@@ -4449,7 +4760,10 @@ components:
           description: 0 tant que ROOT ne l'a pas fixée
         buyerFeeType:
           type: string
-          enum: [NONE, FIXED, PERCENT]
+          enum:
+          - NONE
+          - FIXED
+          - PERCENT
         buyerFeeValue:
           type: number
         transportMarkupRate:
@@ -4472,7 +4786,9 @@ components:
           type: integer
         kind:
           type: string
-          enum: [HUMAN, AI]
+          enum:
+          - HUMAN
+          - AI
         displayName:
           type: string
         aiProvider:
@@ -4486,7 +4802,10 @@ components:
           nullable: true
         autonomy:
           type: string
-          enum: [SUGGEST_ONLY, ACT_WITH_APPROVAL, AUTONOMOUS]
+          enum:
+          - SUGGEST_ONLY
+          - ACT_WITH_APPROVAL
+          - AUTONOMOUS
         isActive:
           type: boolean
         capabilities:
@@ -4511,7 +4830,10 @@ components:
           type: integer
         grade:
           type: string
-          enum: [A, B, C]
+          enum:
+          - A
+          - B
+          - C
         notes:
           type: string
           nullable: true
@@ -4524,7 +4846,10 @@ components:
           type: string
         status:
           type: string
-          enum: [PENDING, VERIFIED, REJECTED]
+          enum:
+          - PENDING
+          - VERIFIED
+          - REJECTED
         note:
           type: string
           nullable: true
@@ -4556,7 +4881,15 @@ components:
           type: number
         status:
           type: string
-          enum: [PENDING_VALIDATION, AVAILABLE, FULLY_RESERVED, SOLD_OUT, EXPIRED, RETURNED, REJECTED, WITHDRAWN]
+          enum:
+          - PENDING_VALIDATION
+          - AVAILABLE
+          - FULLY_RESERVED
+          - SOLD_OUT
+          - EXPIRED
+          - RETURNED
+          - REJECTED
+          - WITHDRAWN
         rejectionReason:
           type: string
           nullable: true
@@ -4582,13 +4915,24 @@ components:
           type: string
         status:
           type: string
-          enum: [PENDING_VALIDATION, AVAILABLE, FULLY_RESERVED, SOLD_OUT, EXPIRED, RETURNED, REJECTED, WITHDRAWN]
+          enum:
+          - PENDING_VALIDATION
+          - AVAILABLE
+          - FULLY_RESERVED
+          - SOLD_OUT
+          - EXPIRED
+          - RETURNED
+          - REJECTED
+          - WITHDRAWN
         supplier:
           type: object
           description: Identité du fournisseur
         qualityGrade:
           type: string
-          enum: [A, B, C]
+          enum:
+          - A
+          - B
+          - C
           nullable: true
     StaffListing:
       type: object
@@ -4607,7 +4951,11 @@ components:
           type: number
         status:
           type: string
-          enum: [DRAFT, ACTIVE, SOLD, INACTIVE]
+          enum:
+          - DRAFT
+          - ACTIVE
+          - SOLD
+          - INACTIVE
         publishedAt:
           type: string
           format: date-time
@@ -4650,10 +4998,16 @@ components:
           type: integer
         type:
           type: string
-          enum: [BUYER, SUPPLIER]
+          enum:
+          - BUYER
+          - SUPPLIER
         status:
           type: string
-          enum: [OPEN, ASSIGNED, ESCALATED, CLOSED]
+          enum:
+          - OPEN
+          - ASSIGNED
+          - ESCALATED
+          - CLOSED
         assigneeAgentId:
           type: integer
           nullable: true
@@ -4679,7 +5033,14 @@ components:
           type: string
         status:
           type: string
-          enum: [QUOTED, CONFIRMED, PREPARING, READY_FOR_PICKUP, OUT_FOR_DELIVERY, COMPLETED, CANCELLED]
+          enum:
+          - QUOTED
+          - CONFIRMED
+          - PREPARING
+          - READY_FOR_PICKUP
+          - OUT_FOR_DELIVERY
+          - COMPLETED
+          - CANCELLED
         buyer:
           type: object
         items:
@@ -4697,7 +5058,9 @@ components:
                 type: number
         deliveryMode:
           type: string
-          enum: [HUB_PICKUP, AGENCY_DELIVERY]
+          enum:
+          - HUB_PICKUP
+          - AGENCY_DELIVERY
         totalPrice:
           type: number
         deliveryFee:
@@ -4712,7 +5075,10 @@ components:
           type: number
         method:
           type: string
-          enum: [CASH, MOBILE_MONEY, BANK_TRANSFER]
+          enum:
+          - CASH
+          - MOBILE_MONEY
+          - BANK_TRANSFER
         reference:
           type: string
           nullable: true
@@ -4726,7 +5092,14 @@ components:
           type: integer
         status:
           type: string
-          enum: [PENDING, ACCEPTED, PICKED_UP, IN_TRANSIT, DELIVERED, FAILED, CANCELLED]
+          enum:
+          - PENDING
+          - ACCEPTED
+          - PICKED_UP
+          - IN_TRANSIT
+          - DELIVERED
+          - FAILED
+          - CANCELLED
         failureReason:
           type: string
           nullable: true

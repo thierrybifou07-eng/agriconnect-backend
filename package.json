@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.0.0",
+    "@scalar/express-api-reference": "^0.10.29",
     "bcrypt": "^6.0.0",
     "cloudinary": "^2.4.0",
     "cors": "^2.8.6",
@@ -39,6 +40,7 @@
     "multer": "^2.4.0",
     "node-cron": "^4.6.0",
     "nodemailer": "^10.0.9",
+    "openapi-merge": "^2.0.2",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {
