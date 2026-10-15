@@ -93,6 +93,10 @@ export async function resetDatabase() {
   // exécuter un DELETE sur une autre connexion que celle du SET — le DELETE
   // échoue alors sur une contrainte, de façon non déterministe. La
   // transaction interactive garantit une seule connexion pour tout le reset.
+  //
+  // timeout 30 s / maxWait 10 s : la valeur par défaut de 5 s est dépassée sur
+  // une machine chargée (le DELETE de toutes les tables met plus de temps), et
+  // un reset échoué en milieu de suite contamine tous les tests suivants.
   await prisma.$transaction(async (tx) => {
     await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 0');
     try {
@@ -114,7 +118,7 @@ export async function resetDatabase() {
     } finally {
       await tx.$executeRawUnsafe('SET FOREIGN_KEY_CHECKS = 1');
     }
-  });
+  }, { timeout: 30000, maxWait: 10000 });
 }
 
 // Supprime les jetons de rafraîchissement expirés : le test de rotation en

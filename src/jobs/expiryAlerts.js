@@ -11,7 +11,13 @@ export async function expiryAlerts(db = prisma, now = new Date(), io = null) {
   const dans30j = new Date(now.getTime() + 30 * 24 * 3600 * 1000);
   const [lots, agences] = await Promise.all([
     db.stockLot.findMany({
-      where: { expiresAt: { gt: now, lte: dans48h } },
+      where: {
+        expiresAt: { gt: now, lte: dans48h },
+        // Un lot sans stock a perdre, ou deja vendu/rejete/retire/retourne, n'a
+        // rien a sauver : l'alerte ne doit pas declencher d'action inutile.
+        quantityAvailable: { gt: 0 },
+        status: { notIn: ['REJECTED', 'RETURNED', 'WITHDRAWN', 'SOLD_OUT'] },
+      },
       select: {
         id: true,
         lotCode: true,

@@ -31,18 +31,59 @@ const TRANSITIONS = {
 // FIGE sur la ligne : un changement ulterieur des parametres ne remet pas en
 // cause une indemnisation deja creee. Si le taux vaut 0, aucune indemnisation
 // n'est due : la fonction ne cree rien et renvoie null.
-export async function createForLoss(tx, { lot, quantity, reason, deliveryId = null, note = null }) {
+//
+// Plafond CUMUL : la quantite totale indemnisee sur un lot (indemnisations
+// dont le statut n'est pas REJECTED) ne peut pas depasser quantityInitial.
+// Sans ce plafond, une indemnisation automatique (expiration) plus une
+// indemnisation manuelle sur le meme lot paieraient deux fois la meme perte.
+// La ligne du lot est verrouillee (SELECT ... FOR UPDATE) avant le calcul du
+// reste : deux creations simultanees se serialisent au lieu de toutes les
+// deux passer.
+//
+// strict (vrai par défaut, appel manuel) : quantite > reste -> 409
+// COMPENSATION_QUANTITY_EXCEEDED. strict: false (job d'expiration) : indemnise
+// seulement le reste, la reduction etant tracee dans la note ; a reste nul,
+// ne cree rien.
+export async function createForLoss(tx, { lot, quantity, reason, deliveryId = null, note = null, strict = true }) {
   const quantite = asQuantity(quantity);
   if (!quantite.greaterThan(0)) {
     throw erreurCompensation('Quantité à indemniser doit être positive', 400, 'INVALID_QUANTITY');
   }
-  const quantiteLot = toDecimal(lot.quantityInitial);
-  if (quantite.greaterThan(quantiteLot)) {
-    throw erreurCompensation(
-      `La quantité à indemniser ne peut pas dépasser la quantité du lot (${quantiteLot})`,
-      400,
-      'QUANTITY_EXCEEDS_LOT'
-    );
+
+  // Verrouille la ligne du lot AVANT toute lecture : le calcul du reste et la
+  // creation doivent voir le meme etat, sinon deux appels concurrents (manuel
+  // + automatique) peuvent depasser le plafond cumul.
+  await tx.$queryRaw`SELECT id FROM StockLot WHERE id = ${lot.id} FOR UPDATE`;
+  const lotVerrou = await tx.stockLot.findUnique({ where: { id: lot.id } });
+  if (!lotVerrou) {
+    throw erreurCompensation(`Lot ${lot.id} introuvable`, 404, 'LOT_NOT_FOUND');
+  }
+
+  // Quantite deja indemnisee : toutes les indemnisations du lot sauf les
+  // REJECTES (une indemnisation refusee n'a rien paye).
+  const { _sum } = await tx.supplierCompensation.aggregate({
+    where: { lotId: lot.id, status: { not: 'REJECTED' } },
+    _sum: { quantity: true },
+  });
+  const deja = toDecimal(_sum.quantity ?? 0);
+  const reste = toDecimal(lotVerrou.quantityInitial).sub(deja);
+
+  let quantiteFinale = quantite;
+  let noteFinale = note;
+  if (quantite.greaterThan(reste)) {
+    if (strict) {
+      throw erreurCompensation(
+        'Quantité supérieure au reste indemnisable du lot',
+        409,
+        'COMPENSATION_QUANTITY_EXCEEDED'
+      );
+    }
+    if (!reste.greaterThan(0)) {
+      // Rien a indemniser : le lot est deja integralement couvert.
+      return null;
+    }
+    quantiteFinale = reste;
+    noteFinale = 'Quantité réduite au reste indemnisable';
   }
 
   const settings = await tx.platformSetting.findUnique({ where: { id: 1 } });
@@ -54,20 +95,20 @@ export async function createForLoss(tx, { lot, quantity, reason, deliveryId = nu
     return null;
   }
 
-  const montant = roundMoney(quantite.mul(toDecimal(lot.agreedUnitPrice)).mul(taux), settings.currency);
+  const montant = roundMoney(quantiteFinale.mul(toDecimal(lotVerrou.agreedUnitPrice)).mul(taux), settings.currency);
 
   const compensation = await tx.supplierCompensation.create({
     data: {
-      supplierId: lot.supplierId,
-      lotId: lot.id,
+      supplierId: lotVerrou.supplierId,
+      lotId: lotVerrou.id,
       deliveryId,
       reason,
-      quantity: quantite,
-      unitPrice: toDecimal(lot.agreedUnitPrice),
+      quantity: quantiteFinale,
+      unitPrice: toDecimal(lotVerrou.agreedUnitPrice),
       rate: taux,
       amount: montant,
       status: 'PENDING_APPROVAL',
-      note,
+      note: noteFinale,
     },
   });
 
@@ -76,10 +117,10 @@ export async function createForLoss(tx, { lot, quantity, reason, deliveryId = nu
     entityType: 'SupplierCompensation',
     entityId: compensation.id,
     metadata: {
-      supplierId: lot.supplierId,
-      lotId: lot.id,
+      supplierId: lotVerrou.supplierId,
+      lotId: lotVerrou.id,
       reason,
-      quantity: toNumber(quantite),
+      quantity: toNumber(quantiteFinale),
       amount: toNumber(montant),
     },
   });

@@ -50,7 +50,7 @@ export const getStats = async (req, res) => {
     commandesParStatut,
     livraisonsParStatut,
     stock,
-    encours,
+    commandesCreances,
     reversements,
     indemnisations,
     parrainages,
@@ -69,12 +69,20 @@ export const getStats = async (req, res) => {
         quantityLost: true,
       },
     }),
-    // Creances : commandes CONFIRMED dont le paiement n'est pas solde. Le
-    // montant est le total de la commande (prix + frais), pas le reste a
-    // payer : l'indicateur mesure l'argent que l'acheteur doit encore verser.
-    prisma.order.aggregate({
-      where: { status: 'CONFIRMED', paymentStatus: { not: 'PAID' } },
-      _sum: { total: true },
+    // Creances : solde restant du de chaque commande en cours (CONFIRMED a
+    // COMPLETED) dont le paiement n'est pas solde : total moins les paiements
+    // CONFIRMED. L'ancienne definition (somme des totaux des CONFIRMED non
+    // PAID) comptait deux fois une commande payee partiellement et ignorait
+    // les commandes en preparation.
+    prisma.order.findMany({
+      where: {
+        status: { in: ['CONFIRMED', 'PREPARING', 'READY_FOR_PICKUP', 'OUT_FOR_DELIVERY', 'COMPLETED'] },
+        paymentStatus: { in: ['UNPAID', 'PARTIALLY_PAID'] },
+      },
+      select: {
+        total: true,
+        payments: { where: { status: 'CONFIRMED' }, select: { amount: true } },
+      },
     }),
     prisma.supplierPayout.aggregate({
       where: { status: { in: ['READY', 'ON_HOLD'] } },
@@ -97,8 +105,10 @@ export const getStats = async (req, res) => {
         buyerFee: true,
         deliveryFee: true,
         // Une commande peut avoir plusieurs livraisons : l'agencyCost n'est pas
-        // sur Order mais sur chaque Delivery.
-        deliveries: { select: { agencyCost: true } },
+        // sur Order mais sur chaque Delivery. Les livraisons CANCELLED sont
+        // exclues : une livraison annulee puis recreee (P5.4) ne doit pas
+        // compter son cout deux fois.
+        deliveries: { where: { status: { not: 'CANCELLED' } }, select: { agencyCost: true } },
       },
     }),
   ]);
@@ -113,6 +123,16 @@ export const getStats = async (req, res) => {
 
   const comptageParStatut = (groupes) =>
     Object.fromEntries(groupes.map((g) => [g.status, g._count._all]));
+
+  // Creances : solde restant du = total - paiements CONFIRMED, commande par
+  // commande. Le nombre de commandes concernees est expose a cote du solde :
+  // un tableau de bord sert aussi a piloter le nombre de dossiers a relancer.
+  let creances = new Decimal(0);
+  for (const commande of commandesCreances) {
+    const paye = sommeDecimal(commande.payments.map((paiement) => paiement.amount));
+    creances = creances.add(toDecimal(commande.total).sub(paye));
+  }
+  const creancesCount = commandesCreances.length;
 
   // Revenu brut AgriConnect : commission + frais acheteur + marge de livraison
   // (ce que l'acheteur a paye pour la livraison moins ce que l'agence coute).
@@ -138,7 +158,8 @@ export const getStats = async (req, res) => {
       sold: stock._sum.quantitySold ?? new Decimal(0),
       lost: stock._sum.quantityLost ?? new Decimal(0),
     },
-    receivables: encours._sum.total ?? new Decimal(0),
+    receivables: creances,
+    receivablesCount: creancesCount,
     pendingPayouts: reversements._sum.netAmount ?? new Decimal(0),
     pendingCompensations: {
       count: indemnisations._count._all,

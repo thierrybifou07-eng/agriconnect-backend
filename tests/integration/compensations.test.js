@@ -6,6 +6,7 @@ import { api, authHeader } from '../helpers/app.js';
 import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { assertNoLeak } from '../helpers/assertNoLeak.js';
+import { expireLots } from '../../src/jobs/expireLots.js';
 
 const Decimal = Prisma.Decimal;
 
@@ -42,7 +43,7 @@ async function zone() {
   return prisma.zone.create({ data: { name: identifiant('Zone') } });
 }
 
-async function creerLot({ quantity = '100', agreedUnitPrice = '1000.00', fournisseur: f } = {}) {
+async function creerLot({ quantity = '100', agreedUnitPrice = '1000.00', fournisseur: f, expiresAt } = {}) {
   const { profile } = f ?? (await fournisseur());
   const product = await produit();
   const zoneTest = await zone();
@@ -59,7 +60,7 @@ async function creerLot({ quantity = '100', agreedUnitPrice = '1000.00', fournis
       pickupAddress: '12 route de la ferme',
       pickupLatitude: 12.34,
       pickupLongitude: -5.67,
-      expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000),
+      expiresAt: expiresAt ?? new Date(Date.now() + 7 * 24 * 3600 * 1000),
       status: 'AVAILABLE',
     },
   });
@@ -167,15 +168,110 @@ describe('Indemnisations fournisseurs (P6.2)', () => {
       });
     });
 
-    it('quantité > quantité du lot -> 400', async () => {
+    it('quantité > reste indemnisable du lot -> 409', async () => {
       const f = await fournisseur();
       const lot = await creerLot({ quantity: '100', agreedUnitPrice: '1000.00', fournisseur: f });
       const { user: agentUser } = await agentAvecCapacite(['DISPUTE_HANDLING']);
 
       const res = await demanderIndemnisation(lot.id, 101, tokenPour(agentUser));
-      expect(res.status, res.text).toBe(400);
-      expect(res.body.code).toBe('QUANTITY_EXCEEDS_LOT');
+      expect(res.status, res.text).toBe(409);
+      expect(res.body.code).toBe('COMPENSATION_QUANTITY_EXCEEDED');
       expect(await prisma.supplierCompensation.count()).toBe(0);
+    });
+
+    it('indemnisation manuelle après une automatique du même lot : bornée au reste, 409 au-delà', async () => {
+      const f = await fournisseur();
+      // Lot expiré : le job a déjà indemnisé 6 sur 10.
+      const lot = await creerLot({
+        quantity: '10',
+        agreedUnitPrice: '1000.00',
+        fournisseur: f,
+        expiresAt: new Date(Date.now() - 24 * 3600 * 1000),
+      });
+      await prisma.supplierCompensation.create({
+        data: {
+          supplierId: f.profile.id,
+          lotId: lot.id,
+          reason: 'EXPIRED_UNSOLD',
+          quantity: '6',
+          unitPrice: '1000',
+          rate: '1',
+          amount: '6000',
+          status: 'PENDING_APPROVAL',
+        },
+      });
+      const { user: agentUser } = await agentAvecCapacite(['DISPUTE_HANDLING']);
+
+      // 4 = le reste : passe.
+      const res = await demanderIndemnisation(lot.id, 4, tokenPour(agentUser));
+      expect(res.status, res.text).toBe(201);
+      expect(res.body.quantity.toString()).toBe('4');
+
+      // Le lot est désormais intégralement indemnisé : 409.
+      const trop = await demanderIndemnisation(lot.id, 1, tokenPour(agentUser));
+      expect(trop.status, trop.text).toBe(409);
+      expect(trop.body.code).toBe('COMPENSATION_QUANTITY_EXCEEDED');
+    });
+
+    it('indemnisation manuelle après le job d expiration : le reste est nul -> 409', async () => {
+      const f = await fournisseur();
+      const lot = await creerLot({
+        quantity: '10',
+        agreedUnitPrice: '1000.00',
+        fournisseur: f,
+        expiresAt: new Date(Date.now() - 24 * 3600 * 1000),
+      });
+      const resultats = await expireLots(prisma, new Date());
+      expect(resultats).toHaveLength(1);
+
+      const { user: agentUser } = await agentAvecCapacite(['DISPUTE_HANDLING']);
+      const res = await demanderIndemnisation(lot.id, 1, tokenPour(agentUser));
+      expect(res.status, res.text).toBe(409);
+      expect(res.body.code).toBe('COMPENSATION_QUANTITY_EXCEEDED');
+    });
+
+    it('une indemnisation REJECTED ne consomme pas le reste indemnisable', async () => {
+      const f = await fournisseur();
+      const lot = await creerLot({ quantity: '100', agreedUnitPrice: '1000.00', fournisseur: f });
+      await prisma.supplierCompensation.create({
+        data: {
+          supplierId: f.profile.id,
+          lotId: lot.id,
+          reason: 'LOST_OR_DAMAGED',
+          quantity: '60',
+          unitPrice: '1000',
+          rate: '1',
+          amount: '60000',
+          status: 'REJECTED',
+        },
+      });
+      const { user: agentUser } = await agentAvecCapacite(['DISPUTE_HANDLING']);
+
+      // Les 60 de la indemnisation rejetée ne comptent pas : 100 reste.
+      const res = await demanderIndemnisation(lot.id, 100, tokenPour(agentUser));
+      expect(res.status, res.text).toBe(201);
+      expect(res.body.quantity.toString()).toBe('100');
+    });
+
+    it('deux créations simultanées dont la somme dépasse le lot : une seule réussit', async () => {
+      const f = await fournisseur();
+      const lot = await creerLot({ quantity: '100', agreedUnitPrice: '1000.00', fournisseur: f });
+      const { user: agentUser } = await agentAvecCapacite(['DISPUTE_HANDLING']);
+      const token = tokenPour(agentUser);
+
+      const [res1, res2] = await Promise.all([
+        demanderIndemnisation(lot.id, 60, token),
+        demanderIndemnisation(lot.id, 60, token),
+      ]);
+
+      expect([res1.status, res2.status].sort()).toEqual([201, 409]);
+      const refusee = res1.status === 409 ? res1 : res2;
+      expect(refusee.body.code).toBe('COMPENSATION_QUANTITY_EXCEEDED');
+
+      // Une seule indemnisation créée, de 60 : le plafond cumul est respecté.
+      const indemnisations = await prisma.supplierCompensation.findMany({ where: { lotId: lot.id } });
+      expect(indemnisations).toHaveLength(1);
+      expect(indemnisations[0].quantity.toString()).toBe('60');
     });
 
     it('lot introuvable -> 404', async () => {

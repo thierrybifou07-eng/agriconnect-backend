@@ -250,6 +250,72 @@ describe('Tâches planifiées (P6.3)', () => {
     expect(indemnisation.status).toBe('PENDING_APPROVAL');
   });
 
+  it('reduit l indemnisation au reste indemnisable quand une indemnisation existe deja', async () => {
+    const lot = await creerLot({
+      quantity: '10',
+      expiresAt: new Date('2026-10-14T11:00:00.000Z'), // expiré
+    });
+    // Indemnisation antérieure : 6 sur 10 déjà indemnisés.
+    await prisma.supplierCompensation.create({
+      data: {
+        supplierId: lot.supplierId,
+        lotId: lot.id,
+        reason: 'LOST_OR_DAMAGED',
+        quantity: '6',
+        unitPrice: '1000',
+        rate: '1',
+        amount: '6000',
+        status: 'PENDING_APPROVAL',
+      },
+    });
+
+    const resultats = await expireLots(prisma, NOW);
+
+    expect(resultats).toHaveLength(1);
+    expect(resultats[0].lotId).toBe(lot.id);
+    // resultats[0].quantite est la quantite perdue (10), pas la quantite
+    // indemisee : lire l indemnisation en base.
+    expect(toNumber(resultats[0].quantite)).toBe(10);
+
+    const indemnisation = await prisma.supplierCompensation.findFirst({
+      where: { lotId: lot.id, reason: 'EXPIRED_UNSOLD' },
+    });
+    expect(indemnisation).not.toBeNull();
+    expect(toNumber(indemnisation.quantity)).toBe(4);
+    expect(indemnisation.note).toBe('Quantité réduite au reste indemnisable');
+  });
+
+  it('ne cree rien quand le lot est deja integralement indemnise', async () => {
+    const lot = await creerLot({
+      quantity: '10',
+      expiresAt: new Date('2026-10-14T11:00:00.000Z'),
+    });
+    await prisma.supplierCompensation.create({
+      data: {
+        supplierId: lot.supplierId,
+        lotId: lot.id,
+        reason: 'LOST_OR_DAMAGED',
+        quantity: '10',
+        unitPrice: '1000',
+        rate: '1',
+        amount: '10000',
+        status: 'PENDING_APPROVAL',
+      },
+    });
+
+    const resultats = await expireLots(prisma, NOW);
+
+    // Le lot est expiré (quantité en perte) mais le plafond cumul est déjà
+    // atteint : aucune indemnisation ajoutée.
+    expect(resultats).toHaveLength(1);
+    expect(resultats[0].lotId).toBe(lot.id);
+    expect(resultats[0].compensationId).toBeNull();
+    const lotMaj = await prisma.stockLot.findUnique({ where: { id: lot.id } });
+    expect(toNumber(lotMaj.quantityLost)).toBe(10);
+    const indemnisations = await prisma.supplierCompensation.count({ where: { lotId: lot.id } });
+    expect(indemnisations).toBe(1);
+  });
+
   it('ne fait rien lors d une seconde exécution (idempotence)', async () => {
     const { order, lot } = await creerDevis({
       quantity: '5',
@@ -320,5 +386,25 @@ describe('Tâches planifiées (P6.3)', () => {
     expect(await prisma.auditLog.count()).toBe(avant.audits);
     expect(await prisma.supplierCompensation.count()).toBe(avant.compensations);
     expect(await prisma.stockMovement.count()).toBe(avant.mouvements);
+  });
+
+  it('n alerte pas sur un lot SOLD_OUT', async () => {
+    // Un lot SOLD_OUT avec du disponible (compteurs incohérents) ne doit pas
+    // déclencher d'alerte : il n'y a plus rien à sauver.
+    await creerLot({
+      quantity: '10',
+      expiresAt: new Date('2026-10-15T12:00:00.000Z'), // dans 24 h
+      status: 'SOLD_OUT',
+      overrides: { quantityAvailable: new Decimal(10) },
+    });
+
+    const emit = vi.fn();
+    const io = { to: vi.fn(() => ({ emit })) };
+
+    const { lots } = await expiryAlerts(prisma, NOW, io);
+
+    expect(lots).toHaveLength(0);
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit.mock.calls[0][1].lots).toHaveLength(0);
   });
 });

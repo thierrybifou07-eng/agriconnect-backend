@@ -36,6 +36,9 @@ export async function expireLots(db = prisma, now = new Date()) {
         quantity: perdue,
         reason: 'EXPIRED_UNSOLD',
         note: 'Invendus périmés',
+        // Appel automatique : borne au reste indemnisable au lieu d'echouer —
+        // une indemnisation manuelle anterieure a pu reduire le reste.
+        strict: false,
       });
       return { lotId: lot.id, quantite: perdue, compensationId: indemnisation?.id ?? null };
     });

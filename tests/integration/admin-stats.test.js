@@ -210,8 +210,9 @@ describe('GET /api/v2/admin/stats', () => {
       livraison: { status: 'DELIVERED', agencyCost: 9999 },
     });
 
-    // Creances : 2 commandes CONFIRMED non PAID (6000 + 4000). La QUOTED ne
-    // compte pas.
+    // Creances : 2 commandes CONFIRMED non soldées. La QUOTED ne compte pas.
+    // Un paiement CONFIRMED de 1500 a déjà recouvré la seconde : son solde
+    // est de 2500, pas 4000.
     await creerCommande({
       buyer,
       lignes: [
@@ -221,13 +222,16 @@ describe('GET /api/v2/admin/stats', () => {
       paymentStatus: 'UNPAID',
       livraison: { status: 'PENDING', agencyCost: 0 },
     });
-    await creerCommande({
+    const commandePartielle = await creerCommande({
       buyer,
       lignes: [
         { lot: lot2, quantity: '4', unitPrice: '1000', supplierUnitPrice: '800', lineTotal: '4000', commissionRate: '0.1', commissionAmount: '320', supplierNetAmount: '3280' },
       ],
       status: 'CONFIRMED',
       paymentStatus: 'PARTIALLY_PAID',
+    });
+    await prisma.payment.create({
+      data: { orderId: commandePartielle.id, amount: '1500', method: 'MOBILE_MONEY', status: 'CONFIRMED' },
     });
     await creerCommande({
       buyer,
@@ -291,8 +295,9 @@ describe('GET /api/v2/admin/stats', () => {
     // Stock : instantane courant.
     expect(res.body.stock).toEqual({ available: 150, reserved: 10, sold: 30, lost: 20 });
 
-    // Creances : 6000 + 4000 (la QUOTED est exclue).
-    expect(res.body.receivables).toBe(10000);
+    // Creances : solde restant dû = 6000 (UNPAID) + 2500 (4000 - 1500 payés).
+    expect(res.body.receivables).toBe(8500);
+    expect(res.body.receivablesCount).toBe(2);
 
     // Reversements en attente : READY + ON_HOLD.
     expect(res.body.pendingPayouts).toBe(6300);
@@ -352,6 +357,90 @@ describe('GET /api/v2/admin/stats', () => {
     const sansPeriode = await api().get('/api/v2/admin/stats').set(authHeader(tokenPour(admin, 'ADMIN')));
     expect(sansPeriode.status, sansPeriode.text).toBe(200);
     expect(sansPeriode.body.grossRevenue).toBe(990);
+  });
+
+  it('grossRevenue ne compte pas les livraisons CANCELLED', async () => {
+    const f1 = await fournisseur();
+    const buyer = await createUser({ role: 'BUYER' });
+    const admin = await createUser({ role: 'ADMIN' });
+    const lot1 = await creerLot({ quantity: '100', available: '100', fournisseur: f1 });
+
+    // Livraison annulée puis recréée (P5.4) : seul le coût de la livraison
+    // non annulée compte dans la marge de livraison.
+    const commande = await creerCommande({
+      buyer,
+      lignes: [
+        { lot: lot1, quantity: '10', unitPrice: '1000', supplierUnitPrice: '900', lineTotal: '10000', commissionRate: '0.1', commissionAmount: '1000', supplierNetAmount: '9000' },
+      ],
+      status: 'COMPLETED',
+      paymentStatus: 'PAID',
+      completedAt: new Date(),
+      livraison: { status: 'CANCELLED', agencyCost: '2000' },
+    });
+    const agence = await prisma.transportAgency.create({
+      data: { name: identifiant('Agence'), phone: '+33600000000' },
+    });
+    await prisma.delivery.create({
+      data: {
+        orderId: commande.id,
+        agencyId: agence.id,
+        dropoffAddress: '1 rue du Test',
+        status: 'DELIVERED',
+        agencyCost: '500',
+      },
+    });
+
+    const res = await api().get('/api/v2/admin/stats').set(authHeader(tokenPour(admin, 'ADMIN')));
+    expect(res.status, res.text).toBe(200);
+    // commission 1000 + frais 0 + (deliveryFee 0 - 500) = 500.
+    // L'ancienne définition comptait aussi les 2000 de la livraison annulée.
+    expect(res.body.grossRevenue).toBe(500);
+  });
+
+  it('creances : solde restant du (paiements CONFIRMED déduits), commandes en cours incluses', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const admin = await createUser({ role: 'ADMIN' });
+    const f1 = await fournisseur();
+    const lot1 = await creerLot({ quantity: '100', available: '100', fournisseur: f1 });
+
+    // CONFIRMED partiellement payée : 4000 - 1500 = 2500 dus.
+    const commandePartielle = await creerCommande({
+      buyer,
+      lignes: [
+        { lot: lot1, quantity: '4', unitPrice: '1000', supplierUnitPrice: '800', lineTotal: '4000', commissionRate: '0.1', commissionAmount: '400', supplierNetAmount: '3200' },
+      ],
+      status: 'CONFIRMED',
+      paymentStatus: 'PARTIALLY_PAID',
+    });
+    await prisma.payment.create({
+      data: { orderId: commandePartielle.id, amount: '1500', method: 'MOBILE_MONEY', status: 'CONFIRMED' },
+    });
+
+    // PREPARING impayée : 3000 dus.
+    await creerCommande({
+      buyer,
+      lignes: [
+        { lot: lot1, quantity: '3', unitPrice: '1000', supplierUnitPrice: '800', lineTotal: '3000', commissionRate: '0.1', commissionAmount: '300', supplierNetAmount: '2400' },
+      ],
+      status: 'PREPARING',
+      paymentStatus: 'UNPAID',
+    });
+
+    // COMPLETED soldée : ne compte plus dans les créances.
+    await creerCommande({
+      buyer,
+      lignes: [
+        { lot: lot1, quantity: '2', unitPrice: '1000', supplierUnitPrice: '800', lineTotal: '2000', commissionRate: '0.1', commissionAmount: '200', supplierNetAmount: '1600' },
+      ],
+      status: 'COMPLETED',
+      paymentStatus: 'PAID',
+      completedAt: new Date(),
+    });
+
+    const res = await api().get('/api/v2/admin/stats').set(authHeader(tokenPour(admin, 'ADMIN')));
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.receivables).toBe(5500);
+    expect(res.body.receivablesCount).toBe(2);
   });
 
   it('refuse un AGENT (403) et un appel non authentifie (401)', async () => {
