@@ -11,22 +11,22 @@ import { httpCorsOptions } from './utils/cors.js';
 
 const app = express();
 export const docsCsp = helmet.contentSecurityPolicy({
-    directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
-        styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
-        fontSrc: ["'self'", "data:", "https://fonts.gstatic.com", "https://fonts.scalar.com"],
-        imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "https://proxy.scalar.com"],
-        workerSrc: ["'self'", "blob:"],
-    },
+  directives: {
+    defaultSrc: ["'self'"],
+    scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+    styleSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net", "https://fonts.googleapis.com"],
+    fontSrc: ["'self'", "data:", "https://fonts.gstatic.com", "https://fonts.scalar.com"],
+    imgSrc: ["'self'", "data:", "https:"],
+    connectSrc: ["'self'", "https://proxy.scalar.com"],
+    workerSrc: ["'self'", "blob:"],
+  },
 });
 
 // En-têtes de sécurité HTTP (CSP, HSTS, X-Content-Type-Options, ...) :
 // helmet pose par défaut un socle de protections sans casser les clients
 // existants. La CSP par défaut est stricte mais n'interdit ni les scripts
 // ni les styles inline du serveur de pages (renderPage sert du HTML fixe).
- app.use(helmet());
+app.use(helmet());
 // Avant toute route : les montants stockes en Decimal doivent partir en nombres.
 app.use(decimalAsNumber);
 
