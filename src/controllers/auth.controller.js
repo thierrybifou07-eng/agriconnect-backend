@@ -451,10 +451,18 @@ export const verifyEmail = async (req, res) => {
 export const resendVerification = async (req, res) => {
     if (req.user.emailVerified === true) return res.status(409).json({error: 'L\'email de l\'utilisateur à déjà ete vérifiée'})
 
-    //Me: Ici j'empeche le client de demander sans cesse un
-    //email de verification tant que l'ancien est toujours valide
-    const token = await prisma.emailVerificationToken.findFirst({where: {userId: req.user.id}});
-    if (token.expiresAt > new Date()) return res.status(409).json({error: 'Le precedent lien de verification est toujours valide, veuillez verifier votre boite mail ou ressayer apres expiration de ce dernier'})
+    // Dernier jeton NON utilise : c'est le seul qui puisse encore servir, donc
+    // le seul qui ait un sens de bloquer un renvoi. Deux corrections par la
+    // meme occasion : `usedAt` ignorait qu'un lien deja consomme ne fonctionne
+    // plus (l'utilisateur demande precisement de le remplacer), et sans tri le
+    // refus dependait d'une ligne arbitraire parmi celles du compte.
+    const token = await prisma.emailVerificationToken.findFirst({
+        where: {userId: req.user.id, usedAt: null},
+        orderBy: {createdAt: 'desc'},
+    });
+    // Aucun jeton du tout : rien ne peut fonctionner, le renvoi est toujours
+    // justifie. Lire `token.expiresAt` ici leverait un TypeError (500).
+    if (token !== null && token.expiresAt > new Date()) return res.status(409).json({error: 'Le precedent lien de verification est toujours valide, veuillez verifier votre boite mail ou ressayer apres expiration de ce dernier'})
 
     // force : l'utilisateur vient d'appeler explicitement, le cooldown protege la
     // boite mais ne doit pas transformer un renvoi manuel en echec.

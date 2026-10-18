@@ -1,13 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
-import { registerViaApi } from '../helpers/factory.js';
+import { registerViaApi, createUser } from '../helpers/factory.js';
 import {
   issueVerificationToken,
   dispatchVerificationEmail,
   consumeVerificationToken,
 } from '../../src/utils/emailVerification.js';
 import { backendUrl, appUrl } from '../../src/utils/links.js';
+import { generateToken } from '../../src/utils/jwt.js';
 import { renderTemplate } from '../../src/config/email/sendMail.js';
 
 // User.emailVerified existait depuis la premiere migration sans jamais etre
@@ -366,6 +367,95 @@ describe('Renvoi du lien', () => {
     await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
 
     expect((await prisma.user.findUnique({ where: { id: user.id } })).emailVerified).toBe(true);
+  });
+});
+
+// Le renvoi decide de refuser (409) ou d'emettre (202) en regardant le DERNIER
+// jeton non utilise. Ces quatre cas ferment les etats possibles de ce jeton :
+// avant, l'absence de jeton levait un TypeError (500) et un jeton deja consomme
+// bloquait l'utilisateur sur un lien qui ne fonctionne plus.
+describe('Renvoi du lien — etat du dernier jeton non utilise', () => {
+  // Compte cree en base : aucun jeton, donc aucune possibilite de 409.
+  async function inscritSansJeton() {
+    const user = await createUser({ role: 'BUYER' });
+    const jetons = await prisma.emailVerificationToken.findMany({ where: { userId: user.id } });
+    expect(jetons).toHaveLength(0);
+    return { user, accessToken: generateToken({ id: user.id, role: 'BUYER' }) };
+  }
+
+  // C'est le bug d'origine : `token.expiresAt` sur un findFirst qui ne renvoie
+  // rien. Le client recevait un 500 au lieu d'un simple renvoi.
+  it('renvoie 202 quand aucun jeton n existe', async () => {
+    const { user, accessToken } = await inscritSansJeton();
+
+    const res = await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
+
+    expect(res.status, res.text).toBe(202);
+    expect((await jetonValide(user.id))).toBeTruthy();
+  });
+
+  it('renvoie 409 quand un jeton valide non utilise existe encore', async () => {
+    const { user, accessToken } = await inscrit();
+
+    const res = await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
+
+    expect(res.status).toBe(409);
+    // Aucun jeton supplementaire : le refus est bien la regle, pas un accident.
+    expect((await jetonsDe(user.id)).filter((j) => j.usedAt === null)).toHaveLength(1);
+  });
+
+  it('renvoie 202 quand le dernier jeton est expire', async () => {
+    const { user, accessToken } = await inscrit();
+    await prisma.emailVerificationToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+
+    const res = await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
+
+    expect(res.status, res.text).toBe(202);
+    expect(await jetonValide(user.id)).toBeTruthy();
+  });
+
+  // usedAt ignore : un lien deja consomme ne fonctionne plus, et c'est
+  // precisement celui-la que l'utilisateur veut remplacer.
+  it('renvoie 202 quand le dernier jeton est deja utilise', async () => {
+    const { user, accessToken } = await inscrit();
+    await prisma.emailVerificationToken.updateMany({
+      where: { userId: user.id, usedAt: null },
+      data: { usedAt: new Date() },
+    });
+
+    const res = await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
+
+    expect(res.status, res.text).toBe(202);
+    // Le renvoi marque l'ancien comme utilise et cree un lien neuf.
+    const restants = await jetonsDe(user.id);
+    expect(restants.filter((j) => j.usedAt === null)).toHaveLength(1);
+    expect(await jetonValide(user.id)).toBeTruthy();
+  });
+
+  // findFirst sans tri renvoyait une ligne au hasard : avec un jeton expire et un
+  // jeton valide, la reponse pouvait changer d'un appel a l'autre. Seul le
+  // DERNIER non utilise compte, donc ici le refus est stable.
+  it('regarde le dernier jeton non utilise, pas un autre', async () => {
+    const { user, accessToken } = await inscrit();
+    const [jeton] = await jetonsDe(user.id);
+    await prisma.emailVerificationToken.updateMany({
+      where: { userId: user.id },
+      data: { createdAt: new Date(Date.now() - 60_000) },
+    });
+    await prisma.emailVerificationToken.update({
+      where: { id: jeton.id },
+      data: { expiresAt: new Date(Date.now() - 1000) },
+    });
+    await issueVerificationToken(user, { force: true });
+
+    const res = await client.post('/api/v2/auth/resend-verification').set(authHeader(accessToken));
+
+    // Le plus ancien est expire mais inutilise, le plus recent est valide :
+    // seul le plus recent doit etre pris en compte, donc 409.
+    expect(res.status).toBe(409);
   });
 });
 
