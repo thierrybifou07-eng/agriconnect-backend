@@ -1,8 +1,16 @@
 import Joi from 'joi';
 
+// Type de document déposé (enum DocumentType). Exporté seul parce que le
+// fragment OpenAPI (openapi/auth.openapi.js) en a besoin pour décrire le champ
+// `type` d'un corps multipart : passer submitDocumentSchema produirait un
+// OBJET imbriqué là où la valeur est une chaîne.
+export const documentTypeField = Joi.string()
+  .valid('ID_CARD', 'BUSINESS_REGISTRATION', 'FARM_PROOF', 'OTHER')
+  .required();
+
 // POST /api/v2/auth/me/documents — type de document déposé (enum DocumentType).
 export const submitDocumentSchema = Joi.object({
-  type: Joi.string().valid('ID_CARD', 'BUSINESS_REGISTRATION', 'FARM_PROOF', 'OTHER').required(),
+  type: documentTypeField,
 });
 
 // GET /api/v2/admin/verifications — filtres de la file de revue.

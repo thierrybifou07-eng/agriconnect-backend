@@ -12,11 +12,14 @@ La spécification complète de l'API est **générée depuis le code** : les fra
 Joi par domaine vivent dans [`openapi/`](openapi) (`openapi.config.js` assemble le
 document, `openapi.helpers.js` convertit les schémas Joi 18 en JSON Schema), et le
 serveur les expose sur **`http://localhost:${PORT}/agriconnect-openapi`** (interface
-Scalar, OpenAPI 3.0). [`docs/openapi.yaml`](docs/openapi.yaml) en reste un export
-statique, vérifié comme le document généré par les tests. Une route de `src/routes`
-= une entrée.
+Scalar, OpenAPI 3.0). [`docs/openapi.yaml`](docs/openapi.yaml) en est l'export
+statique : il se régénère avec `npm run docs:openapi`, ne s'édite pas à la main,
+et un test compare son contenu **entier** au document généré (une dérive échoue
+avec le rappel de cette commande). Une route de `src/routes` = une entrée.
 Historique v1 → v2 : [`docs/CHANGELOG_V2.md`](docs/CHANGELOG_V2.md).
 Plan d'implémentation : [`docs/PLAN_IMPLEMENTATION_V2.md`](docs/PLAN_IMPLEMENTATION_V2.md).
+Correctif upload et vérification de profil :
+[`docs/PLAN_CORRECTIF_UPLOAD.md`](docs/PLAN_CORRECTIF_UPLOAD.md).
 
 ## Stack
 
@@ -24,7 +27,7 @@ Plan d'implémentation : [`docs/PLAN_IMPLEMENTATION_V2.md`](docs/PLAN_IMPLEMENTA
 - MySQL + Prisma **6.x** (ORM, migrations)
 - JWT (access token courte durée + refresh token à rotation)
 - Socket.io (messagerie temps réel, salle `user:{id}`)
-- Cloudinary (média ; documents d'identité en mode privé, URL signée)
+- Stockage **local** des fichiers (multer + disque local ; voir « Stockage des fichiers »)
 - Joi (validation d'entrée) + express-rate-limit (anti brute-force)
 - OpenAPI généré depuis Joi : `openapi-merge` (assemblage des fragments) +
   `@scalar/express-api-reference` (interface servie par l'API)
@@ -36,7 +39,7 @@ Plan d'implémentation : [`docs/PLAN_IMPLEMENTATION_V2.md`](docs/PLAN_IMPLEMENTA
 ```bash
 npm install
 cp .env.example .env
-# -> renseigner DATABASE_URL (mysql://...), JWT_SECRET, identifiants Cloudinary
+# -> renseigner DATABASE_URL (mysql://...), JWT_SECRET et SECRET_FILE_TOKEN
 
 npm run prisma:generate   # si le client Prisma n'est pas déjà à jour
 npm run prisma:migrate    # applique les migrations
@@ -58,6 +61,8 @@ Voir `.env.example` (copie commentée). Les principales :
 |---|---|---|
 | `DATABASE_URL` | — | MySQL, obligatoire |
 | `JWT_SECRET` | — | Signature des JWT, obligatoire en production |
+| `SECRET_FILE_TOKEN` | — | Signature des jetons d'accès aux fichiers privés, **obligatoire en production** et **distinct de `JWT_SECRET`** (le serveur refuse de démarrer sinon) |
+| `UPLOADS_DIR` | `<racine>/uploads` | Dossier racine des fichiers téléversés (voir « Stockage des fichiers ») |
 | `JWT_EXPIRES_IN` | `1h` | Durée de l'access token |
 | `REFRESH_TOKEN_TTL_DAYS` | `30` | Durée de vie d'un refresh token |
 | `SESSION_MAX_PER_USER` | `5` | Sessions simultanées par compte (appareils) |
@@ -69,7 +74,6 @@ Voir `.env.example` (copie commentée). Les principales :
 | `PORT` | `4000` | Port HTTP |
 | `CORS_IO` | — | Origines CORS séparées par des virgules ; vide = ouvert à tout |
 | `APP_URL` | — | Adresse publique du front (liens d'email) |
-| `CLOUDINARY_*` | — | Médias (avatars, photos, documents) |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASSWORD` | — | Emails ; sans `SMTP_HOST`, envoi no-op journalisé |
 | `EMAIL_SENDER` | — | Adresse d'expédition (forme `"Nom <adresse@domaine>"`) |
 | `SHADOW_DATABASE_URL` | — | Base vide dédiée au contrôle de dérive (`npm run db:drift`) |
@@ -87,6 +91,8 @@ npm run seed:dev         # + zone pilote, agence pilote, hub (développement seu
 npm run create:root      # compte ROOT en interactif (jamais via l'API)
 npm run backfill:profiles # PROFILE_MISSING : crée les profils manquants
 npm run db:drift         # contrôle de schéma (base shadow dédiée)
+npm run docs:openapi     # régénère docs/openapi.yaml depuis openapi/openapi.config.js
+npm run uploads:cleanup  # fichiers orphelins dans uploads/ (dry-run ; --apply pour supprimer)
 npm test                 # tout (vitest run)
 npm run test:watch       # vitest en mode watch
 npm run test:unit        # tests purs, aucune base
@@ -105,7 +111,9 @@ métier vides ; les tables de référence sont conservées.
 `prisma/schema.prisma` identique à `docs/schema.v2.target.prisma`, et
 **couverture OpenAPI** (`tests/unit/openapi-routes.test.js` : toute route de
 `src/routes` figure dans le document généré `openapi/openapi.config.js`, et
-inversement ; `docs/openapi.yaml` est l'export statique de ce document).
+inversement ; `docs/openapi.yaml` doit être **rigoureusement identique** à ce
+document — liste des routes ET contenu complet. Après toute modification d'un
+fragment `openapi/*.openapi.js`, lancer `npm run docs:openapi`).
 
 MySQL doit tourner. Les tests n'utilisent aucun SMTP (`SMTP_DISABLED`) et
 l'anti-brute-force est neutralisé, sauf dans `rate-limit.test.js` qui le
@@ -158,7 +166,7 @@ de requête, schémas de corps Joi, codes d'erreur) est dans l'interface
 | `PAYMENT_FOLLOWUP` | `POST/GET /staff/orders/:id/payments` |
 | `DISPATCH_COORDINATION` | `POST /staff/orders/:id/deliveries`, `GET /staff/deliveries`, `POST /staff/deliveries/:id/{release,redispatch,cancel}` |
 | `DISPUTE_HANDLING` | `POST /staff/compensations` |
-| `USER_VERIFICATION` | `GET /admin/verifications[/:id]`, `PATCH /admin/verifications/:id` |
+| `USER_VERIFICATION` | `GET /admin/verifications[/:id]`, `PATCH /admin/verifications/:id`, `GET /admin/files/:token` (voir « Vérification de profil ») |
 
 `ADMIN` et `ROOT` (niveau ≥ 50) passent toujours, capability ou non.
 
@@ -269,7 +277,8 @@ au client, jamais à autoriser : un jeton émis avant une suspension est refusé
 
 **La vérification d'adresse ne bloque rien** — elle sert à l'affichage.
 `profileVerificationStatus` est **distinct** : c'est la vérification du profil
-par l'équipe (documents, P1.6), indépendante de l'email.
+par l'équipe (documents), indépendante de l'email — voir
+« Vérification de profil ».
 
 **Récupération de compte.** `POST /auth/forgot-password` répond de la même façon
 que l'adresse existe ou non (anti-énumération). Jetons hachés, usage unique,
@@ -286,10 +295,12 @@ websockets (`session_revoked`).
   (création mise à jour, liste). Seul le masque `accountNumberMasked`
   («••••1234») sort. La vue admin des reversements et des indemnisations est
   l'exception (numéro complet, ADMIN humain).
-- **Documents de vérification** : uploadés sur Cloudinary en mode **privé**
-  (`authenticated`). La liste `GET /auth/me/documents` ne renvoie jamais d'URL ;
-  seul le staff obtient une URL **signée de 10 minutes** via
-  `GET /admin/verifications/:id`.
+- **Documents de vérification** : écrits sur le disque local dans un dossier
+  **privé**, jamais monté en statique (voir « Stockage des fichiers »). La liste
+  `GET /auth/me/documents` ne renvoie jamais d'URL ; seul le staff autorisé
+  obtient un **lien signé de 10 minutes**, lié à son propre compte et journalisé
+  dans l'audit, via `GET /admin/verifications/:id` puis
+  `GET /admin/files/:token`.
 - **Parrainage** : le parrain ne voit que le **prénom** de ses filleuls.
 - **Mots de passe** : `password` n'est jamais sélectionné dans `protect` (select
   explicite) ; le hash ne sort de nulle part.
@@ -317,7 +328,9 @@ websockets (`session_revoked`).
   colonne `fullName`.
 - **Erreurs** : `{ error }`, ou `{ error, code }` quand l'erreur en porte un
   (`INSUFFICIENT_STOCK`, `INVALID_STATE_TRANSITION`, …). Codes d'erreur HTTP
-  usuels : 400 (Joi), 401 (token), 403 (rôle/capacité/suspension), 404, 409.
+  usuels : 400 (Joi, upload), 401 (token), 403 (rôle/capacité/suspension/profil
+  non vérifié), 404, 409, 413 (upload). Voir « Client mobile » pour les codes
+  d'upload.
 - **Une annonce = un lot au MVP** (règle de code). `ListingLot` permet d'en
   agréger plusieurs plus tard sans migration.
 - **Les emails ne font jamais échouer une requête** : envoi en arrière-plan,
@@ -359,14 +372,172 @@ ne la reconnaît pas et répond 500 au lieu de 400.
   MailDev : SMTP sur **1025**, interface web sur **1080**.
 - `EMAIL_SENDER` doit être une adresse complète (`"AgriConnect <no-reply@…>"`).
 
+## Stockage des fichiers
+
+Les avatars, photos de lots, photos d'annonces et documents de vérification sont
+écrits sur le **disque local** par `src/services/storage.service.js` (multer ne
+garde les fichiers qu'en mémoire). La racine est `UPLOADS_DIR`, ou
+`<racine du projet>/uploads` si la variable est absente.
+
+```
+uploads/
+├── AVATAR/                 # public  → servi sur /uploads/AVATAR
+├── LOT_PHOTO/              # public  → servi sur /uploads/LOT_PHOTO
+├── LISTING_PHOTO/          # public  → servi sur /uploads/LISTING_PHOTO
+├── ID_CARD/                # PRIVÉ   ← jamais servi statiquement
+├── BUSINESS_REGISTRATION/  # PRIVÉ
+├── FARM_PROOF/             # PRIVÉ
+└── OTHER/                  # PRIVÉ
+```
+
+- **Publics** : seuls `AVATAR`, `LOT_PHOTO` et `LISTING_PHOTO` sont montés par
+  `express.static` dans `src/app.js` (source unique : `PUBLIC_KINDS`). L'API
+  renvoie des URL **relatives** (`/uploads/AVATAR/…`) : le client préfixe avec
+  son URL de base.
+- **Privés** : un dossier par type de document (`ID_CARD`,
+  `BUSINESS_REGISTRATION`, `FARM_PROOF`, `OTHER`). Aucun n'est servi
+  statiquement — l'accès passe uniquement par
+  `GET /api/v2/admin/files/:token` (jeton signé, 10 min, lié au compte du staff
+  qui l'a demandé). Toute tentative de remonter un chemin (`../`) est refusée par
+  le service.
+- **Nom des fichiers** : `{AAAAMMJJ}T{HHMMSS}_{userId}_{8 caractères aléatoires}{extension}`,
+  extension déduite du mimetype (`.jpg`, `.png`, `.webp`, `.pdf`). Un nom fixe ne
+  rend donc pas le contenu accessible : c'est le nom, jamais le chemin, qui est
+  stocké en base (`Media.publicId`).
+- **Remplacement d'avatar** : l'ancien fichier est supprimé du disque une fois la
+  transaction validée — sauf s'il est encore référencé par une autre ligne
+  `Media` (une annonce peut partager la photo d'un lot). Un document de
+  vérification n'est jamais touché par un changement d'avatar.
+- **Nettoyage** : les écritures qui échouent et les suppressions d'entités
+  déclenchent la suppression des fichiers devenus inutiles.
+  `npm run uploads:cleanup` liste les orphelins et leur volume (dry-run par
+  défaut) ; `--apply` les supprime, en ignorant tout fichier de moins de 24 h
+  (un upload en cours serait pris pour un orphelin).
+- **Format réellement livré** : au-delà du mimetype annoncé par le client, les
+  octets de tête sont contrôlés (JPEG/PNG/WEBP/PDF) avant écriture —
+  400 `FILE_CONTENT_MISMATCH` en cas d'écart.
+
+> ⚠️ **Production : le dossier `uploads/` doit être un volume persistant, et
+> sauvegardé.** Les fichiers vivent sur le disque de l'instance, pas dans MySQL.
+> Sur une plateforme au système de fichiers éphémère (redéploiement, scale,
+> conteneur jetable), un redéploiement suffit à perdre avatars, photos et
+> documents de vérification. Il faut donc monter `UPLOADS_DIR` sur un volume
+> persistant partagé par toutes les instances, l'inclure dans les sauvegardes
+> (avec la base), et surveiller son espace disque.
+
 ## Médias
 
 Table `Media` (`ownerUserId` avatar, `ownerListingId` photos d'annonce,
 `ownerLotId` photos de lot, `ownerVerificationDocumentId` documents privés ;
-plus `mediaType`, `mimeType`, `publicId`, `isPrivate`, `position`).
-Changer d'avatar ne supprime jamais un document de vérification (propriétaires
-distincts). Les documents vont sur Cloudinary en privé ; le staff y accède par
-URL signée de courte durée.
+plus `mediaType`, `mimeType`, `publicId`, `isPrivate`, `position`). Voir
+« Stockage des fichiers » pour l'arborescence sur disque.
+
+## Vérification de profil
+
+`profileVerificationStatus` (`UNVERIFIED`, `PENDING`, `VERIFIED`, `REJECTED`)
+décrit la vérification du **profil** par l'équipe. Elle est distincte de
+`emailVerified`, qui ne porte que sur l'adresse et ne bloque rien.
+
+### Séquence
+
+1. **Inscription** → compte `UNVERIFIED`.
+2. **Dépôt de documents** : `POST /auth/me/documents`, **un fichier par requête**
+   dans le champ `file`, avec le champ texte `type`
+   (`ID_CARD` | `BUSINESS_REGISTRATION` | `FARM_PROOF` | `OTHER`). Chaque dépôt
+   crée un document `PENDING` et fait passer le compte de `UNVERIFIED` ou
+   `REJECTED` à `PENDING` (un compte déjà `VERIFIED` n'est pas dévérifié).
+   `GET /auth/me/documents` liste les siens — **sans URL**.
+3. **Revue staff** : la file est filtrée et triée, le dossier est ouvert, le
+   relecteur consulte la pièce, puis tranche `APPROVE` ou `REJECT` (note
+   obligatoire en cas de rejet). L'utilisateur reçoit un email après la décision.
+4. **Effets** : `VERIFIED` débloque la validation de ses lots par l'équipe
+   (`POST /staff/lots/:id/validate` refuse sinon avec 409 `NOT_VERIFIED`) et le
+   parrainage (`Referral` → `ELIGIBLE`). Les actions réservées aux profils
+   vérifiés deviennent accessibles ; `REJECTED` laisse redéposer.
+
+### Qui peut appeler quoi
+
+| Route | Qui | Objet |
+|---|---|---|
+| `POST /auth/me/documents` | SUPPLIER, BUYER | Déposer une pièce (1 fichier / requête) |
+| `GET /auth/me/documents` | SUPPLIER, BUYER | Ses dossiers, sans URL |
+| `GET /admin/verifications` | ADMIN, ROOT · AGENT avec `USER_VERIFICATION` | File de revue paginée et filtrable (voir les paramètres dans l'OpenAPI) |
+| `GET /admin/verifications/:id` | idem | Détail du dossier + **lien signé de 10 min** |
+| `PATCH /admin/verifications/:id` | idem | Décision `APPROVE` / `REJECT` (`{ decision, note }`) |
+| `GET /admin/files/:token` | idem, **porteur du jeton** | Lire la pièce privée elle-même |
+
+`ADMIN` et `ROOT` passent toujours ; un `AGENT` doit porter la capacité
+`USER_VERIFICATION`. Le jeton de fichier est signé avec `SECRET_FILE_TOKEN` :
+un jeton d'accès ordinaire ne fonctionne pas (401), un jeton émis pour un autre
+compte non plus (403). **Chaque consultation est tracée** dans l'audit
+(`PROFILE_DOCUMENT_VIEWED`) — c'est l'émission du lien qui est journalisée,
+donc une lecture sans lien ne laisse pas de trace.
+
+### Règle de calcul du statut du compte
+
+Elle porte sur **tous** les dépôts du compte, pas sur le seul document examiné :
+
+| Décision | Document | Compte |
+|---|---|---|
+| `APPROVE` | `VERIFIED` | `VERIFIED` s'il a ≥ 1 document `VERIFIED` **et** 0 `PENDING` ; sinon inchangé (il reste en attente) |
+| `REJECT` | `REJECTED` | `REJECTED` s'il n'a **aucun** document `VERIFIED` ; sinon inchangé |
+
+La décision est atomique (`updateMany` conditionnel sur `PENDING`) : deux
+relecteurs simultanés obtiennent un `200` et un `409` « Ce document a déjà été
+examiné ». Un compte ne peut pas non plus empiler plus de **5 documents
+`PENDING`** : le dépôt suivant est refusé en `409 TOO_MANY_PENDING_DOCUMENTS`.
+
+### Routes protégées par `PROFILE_NOT_VERIFIED`
+
+Tant que `profileVerificationStatus ≠ VERIFIED`, ces routes répondent **403**
+`PROFILE_NOT_VERIFIED` avec le statut courant dans le corps (le client affiche
+« en attente » ou « rejetez, redéposez ») :
+
+- `POST /supplier/lots`
+- `PATCH /supplier/lots/:id`
+- `POST /supplier/lots/:id/withdraw`
+- `POST /orders/:id/confirm`
+
+Le catalogue, la messagerie, le profil, les comptes de paiement et le dépôt de
+documents restent accessibles à un compte non vérifié : sans cela il ne pourrait
+jamais le devenir. Les comptes d'équipe (`ADMIN`, `ROOT`, `AGENT`) ne sont
+jamais concernés.
+
+## Client mobile (Flutter) : envois de fichiers
+
+Toutes les routes d'upload sont en `multipart/form-data`. Le nom du champ
+fichier est **strict** : un mauvais nom de champ est refusé en `400`, et le
+corps de la réponse rappelle le champ attendu (`expectedField`).
+
+| Route | Champ fichier | Nombre | Formats | Taille max / fichier |
+|---|---|---|---|---|
+| `POST /auth/me/avatar` | `avatar` | 1 | jpeg, png, webp | 5 Mo |
+| `POST /auth/me/documents` | `file` | 1 | jpeg, png, webp, pdf | 8 Mo |
+| `POST /supplier/lots` | `images` | 5 | jpeg, png, webp | 5 Mo |
+| `POST /staff/lots` | `images` | 5 | jpeg, png, webp | 5 Mo |
+| `POST /staff/listings` | `images` | 5 | jpeg, png, webp | 5 Mo |
+
+- **Un seul fichier par requête** pour un document : recto et verso sont **deux
+  requêtes**. C'est volontaire — c'est plus fiable sur un réseau mobile instable
+  que de poser plusieurs pièces jointes en une seule requête.
+- Le champ texte qui accompagne l'upload est `type` pour les documents
+  (`ID_CARD` | `BUSINESS_REGISTRATION` | `FARM_PROOF` | `OTHER`) ; les lots et
+  annonces portent leurs champs habituels dans la même requête multipart.
+- Les URL d'images reçues sont **relatives** (`/uploads/…`) : le client les
+  préfixe avec l'URL de base de l'API.
+
+### Codes d'erreur d'upload
+
+| Statut | `code` | Signification |
+|---|---|---|
+| 400 | `UNEXPECTED_FILE_FIELD` | Mauvais nom de champ, ou plus de fichiers que la limite. `expectedField` donne le champ attendu |
+| 400 | `INVALID_MULTIPART` | Requête multipart mal formée |
+| 400 | `UNSUPPORTED_MEDIA_TYPE` | Format non accepté |
+| 400 | `FILE_REQUIRED` | Aucun fichier reçu |
+| 400 | `FILE_CONTENT_MISMATCH` | Les octets ne correspondent pas au format annoncé |
+| 403 | `PROFILE_NOT_VERIFIED` | Compte non vérifié (`profileVerificationStatus` dans le corps) |
+| 409 | `TOO_MANY_PENDING_DOCUMENTS` | 5 documents `PENDING` déjà déposés |
+| 413 | `FILE_TOO_LARGE` | Fichier au-delà de la taille maximale du champ |
 
 ## Architecture des rôles et tables de référence
 

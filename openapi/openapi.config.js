@@ -43,6 +43,7 @@ const document = {
   tags: [
     { name: 'Auth', description: 'Authentification, sessions et récupération de compte' },
     { name: 'Utilisateur', description: 'Profil, comptes de paiement, documents et parrainage de l\'utilisateur connecté' },
+    { name: 'Staff — Vérification de profil', description: 'File de revue des documents d\'identité déposés par les comptes SUPPLIER et BUYER, et lecture des pièces privées. Réservée aux ADMIN et ROOT, et aux AGENT porteurs de la capacité USER_VERIFICATION.\n\nFlux : l\'utilisateur dépose un ou plusieurs documents (`POST /auth/me/documents`, un fichier par requête dans le champ `file`) ; chaque dépôt passe le compte en PENDING. Le staff filtre la file (`GET /admin/verifications`, tri FIFO sur PENDING), ouvre un dossier (`GET /admin/verifications/{id}`) qui lui renvoie un lien signé de 10 minutes — chaque émission est journalisée dans l\'audit `PROFILE_DOCUMENT_VIEWED` — puis tranche (`PATCH /admin/verifications/{id}`).\n\nRègle de calcul du statut du compte : APPROVE met le document VERIFIED et le compte VERIFIED s\'il possède au moins un document VERIFIED et aucun PENDING ; REJECT met le document REJECTED et ne rejette le compte (REJECTED) que s\'il n\'a aucun document VERIFIED. La décision est atomique : deux relecteurs simultanés obtiennent un 200 et un 409. Une fois VERIFIED, le compte peut déclarer un lot ou confirmer un devis (sinon 403 PROFILE_NOT_VERIFIED).' },
     { name: 'Admin', description: 'Administration (ADMIN et ROOT, capacités agent)' },
     { name: 'CGU', description: 'Conditions d\'utilisation versionnées, publiques' },
     { name: 'Fournisseur', description: 'Lots déclarés par le promoteur connecté' },
@@ -117,6 +118,23 @@ const document = {
       },
       NotFound: {
         description: 'Ressource introuvable',
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+      },
+      // 400 commun aux routes d'upload. Toutes les routes multipart partagent
+      // le même wrapper (src/middlewares/uploadHandler.middleware.js) : une
+      // erreur de champ, de format ou de contenu y porte le même statut, et
+      // le corps nomme le champ attendu (voir UploadError).
+      UploadBadRequest: {
+        description:
+          'Requête d\'upload refusée : UNEXPECTED_FILE_FIELD (mauvais nom de champ ou trop de fichiers — expectedField renseigne le champ attendu), INVALID_MULTIPART (requête mal formée), UNSUPPORTED_MEDIA_TYPE (format refusé), FILE_REQUIRED (aucun fichier) ou FILE_CONTENT_MISMATCH (les octets ne correspondent pas au format annoncé).',
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/UploadError' } } },
+      },
+      FileTooLarge: {
+        description: 'FILE_TOO_LARGE — fichier au-delà de la taille maximale du champ attendu',
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/UploadError' } } },
+      },
+      TooManyPendingDocuments: {
+        description: 'TOO_MANY_PENDING_DOCUMENTS — 5 documents au statut PENDING pour ce compte',
         content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
       },
       PaginatedVerifications: {
@@ -219,6 +237,30 @@ const document = {
           profileVerificationStatus: {
             type: 'string',
             enum: ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'],
+          },
+        },
+      },
+      // Erreur d'upload : Error + le champ fichier attendu, que le client peut
+      // corriger sans analyser le message en français.
+      UploadError: {
+        type: 'object',
+        properties: {
+          error: { type: 'string', description: 'Message en français nommant le champ attendu' },
+          code: {
+            type: 'string',
+            enum: [
+              'UNEXPECTED_FILE_FIELD',
+              'INVALID_MULTIPART',
+              'UNSUPPORTED_MEDIA_TYPE',
+              'FILE_REQUIRED',
+              'FILE_CONTENT_MISMATCH',
+              'FILE_TOO_LARGE',
+            ],
+            example: 'UNEXPECTED_FILE_FIELD',
+          },
+          expectedField: {
+            type: 'string',
+            description: 'Champ multipart attendu (avatar, file ou images) — renvoyé avec UNEXPECTED_FILE_FIELD',
           },
         },
       },
@@ -388,7 +430,12 @@ const document = {
           type: { type: 'string' },
           status: { type: 'string', enum: ['PENDING', 'VERIFIED', 'REJECTED'] },
           note: { type: 'string', nullable: true },
-          signedUrl: { type: 'string', description: 'URL signée Cloudinary, valable 10 minutes (staff uniquement)' },
+          signedUrl: {
+            type: 'string',
+            nullable: true,
+            description:
+              'Lien signé vers le fichier privé (GET /admin/files/{token}), valable 10 minutes, lié au compte du staff qui l\'a demandé. Son émission est journalisée dans l\'audit.',
+          },
         },
       },
       SupplierLot: {

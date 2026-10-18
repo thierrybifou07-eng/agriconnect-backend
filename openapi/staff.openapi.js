@@ -50,7 +50,7 @@ const staffLotFields = Object.fromEntries(staffLotCreateSchema.$_terms.keys.map(
 
 function staffLotMultipart() {
   return multipartBody({
-    file: { name: 'images', description: 'Photos du lot, 5 maximum (au-delà : 400)' },
+    file: { name: 'images', description: 'Jusqu\'à 5 photos dans le champ "images" : jpeg, png ou webp, 5 Mo max par photo' },
     fields: staffLotFields,
   });
 }
@@ -69,9 +69,10 @@ export default {
             description: 'Lot créé (PENDING_VALIDATION)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/StaffLot' } } },
           },
-          '400': R('BadRequest'),
+          '400': R('UploadBadRequest'),
           '401': R('Unauthorized'),
           '403': { description: 'AGENT sans STOCK_VALIDATION', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '413': R('FileTooLarge'),
         },
       },
       get: {
@@ -218,7 +219,7 @@ export default {
         description:
           'LISTING_MANAGEMENT (AGENT) ou ADMIN/ROOT. Au MVP une annonce = EXACTEMENT UN lot (400 sinon). Lot déjà relié -> 409 LOT_ALREADY_LINKED. Prix public par défaut = prix convenu. Référence \'ANN-\' + id sur 6 chiffres.',
         requestBody: multipartBody({
-          file: { name: 'images', description: 'Photos de l\'annonce, 5 maximum (absentes -> photos du lot copiées)' },
+          file: { name: 'images', description: 'Jusqu\'à 5 photos dans le champ "images" : jpeg, png ou webp, 5 Mo max par photo. Absentes -> photos du lot copiées' },
           fields: Object.fromEntries(listingCreateSchema.$_terms.keys.map((k) => [k.key, k.schema])),
         }),
         responses: {
@@ -226,10 +227,11 @@ export default {
             description: 'Annonce créée (DRAFT)',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/StaffListing' } } },
           },
-          '400': { description: 'Plusieurs lots ou champ invalide', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '400': { description: 'Plusieurs lots, champ invalide, ou upload refusé (UNEXPECTED_FILE_FIELD, INVALID_MULTIPART, UNSUPPORTED_MEDIA_TYPE, FILE_REQUIRED, FILE_CONTENT_MISMATCH)', content: { 'application/json': { schema: { $ref: '#/components/schemas/UploadError' } } } },
           '401': R('Unauthorized'),
           '403': { description: 'AGENT sans LISTING_MANAGEMENT', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
           '409': { description: 'Lot déjà relié (LOT_ALREADY_LINKED) ou indisponible (LOT_NOT_AVAILABLE)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+          '413': R('FileTooLarge'),
         },
       },
       get: {

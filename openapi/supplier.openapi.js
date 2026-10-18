@@ -25,7 +25,7 @@ const lotFields = Object.fromEntries(lotCreateSchema.$_terms.keys.map((k) => [k.
 
 function lotMultipart() {
   return multipartBody({
-    file: { name: 'images', description: 'Photos du lot, 5 maximum (au-delà : 400)' },
+    file: { name: 'images', description: 'Jusqu\'à 5 photos dans le champ "images" : jpeg, png ou webp, 5 Mo max par photo' },
     fields: lotFields,
   });
 }
@@ -45,9 +45,10 @@ export default {
             description: 'Lot créé',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/SupplierLot' } } },
           },
-          '400': R('BadRequest'),
+          '400': R('UploadBadRequest'),
           '401': R('Unauthorized'),
           '403': R('ForbiddenProfileNotVerified'),
+          '413': R('FileTooLarge'),
         },
       },
       get: {

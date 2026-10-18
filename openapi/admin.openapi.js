@@ -39,15 +39,35 @@ export default {
   paths: {
     '/admin/verifications': {
       get: {
-        tags: ['Admin'],
+        tags: ['Staff — Vérification de profil'],
         summary: 'Dossiers de vérification des profils (paginé)',
         description:
-          'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Tri FIFO (le plus ancien d\'abord) quand status=PENDING, antéchronologique sinon. La liste n\'expose ni URL ni publicId du fichier.',
+          'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. File de revue des documents d\'identité : chaque ligne porte le statut du compte (user.profileVerificationStatus) et les caractéristiques de la pièce (media.mimeType, media.fileSize) — jamais d\'URL ni de publicId, la pièce ne s\'ouvre que par le lien signé de GET /admin/verifications/{id}. Tri FIFO (le plus ancien d\'abord) quand status=PENDING, antéchronologique sinon. Les paramètres invalides sont rejetés en 400.',
         parameters: [
-          { in: 'query', name: 'status', schema: { type: 'string', enum: ['PENDING', 'VERIFIED', 'REJECTED'] } },
-          { in: 'query', name: 'type', schema: { type: 'string', enum: ['ID_CARD', 'BUSINESS_REGISTRATION', 'FARM_PROOF', 'OTHER'] } },
-          { in: 'query', name: 'role', schema: { type: 'string', enum: ['SUPPLIER', 'BUYER'] } },
-          { in: 'query', name: 'userId', schema: { type: 'integer', minimum: 1 } },
+          {
+            in: 'query',
+            name: 'status',
+            description: 'Statut du DOCUMENT examiné (pas celui du compte). Sans filtre : tous les dossiers.',
+            schema: { type: 'string', enum: ['PENDING', 'VERIFIED', 'REJECTED'] },
+          },
+          {
+            in: 'query',
+            name: 'type',
+            description: 'Type de document déposé (enum DocumentType).',
+            schema: { type: 'string', enum: ['ID_CARD', 'BUSINESS_REGISTRATION', 'FARM_PROOF', 'OTHER'] },
+          },
+          {
+            in: 'query',
+            name: 'role',
+            description: 'Rôle du compte concerné. Seuls SUPPLIER et BUYER déposent des documents.',
+            schema: { type: 'string', enum: ['SUPPLIER', 'BUYER'] },
+          },
+          {
+            in: 'query',
+            name: 'userId',
+            description: 'Identifiant du compte concerné (entier positif).',
+            schema: { type: 'integer', minimum: 1 },
+          },
           { $ref: '#/components/parameters/PageParam' },
           { $ref: '#/components/parameters/LimitParam' },
         ],
@@ -62,12 +82,14 @@ export default {
 
     '/admin/verifications/{id}': {
       get: {
-        tags: ['Admin'],
-        summary: 'Détail d\'un dossier (URL signée Cloudinary, 10 min)',
+        tags: ['Staff — Vérification de profil'],
+        summary: 'Détail d\'un dossier (lien signé vers le fichier privé, 10 min)',
+        description:
+          'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Renvoie le dossier et un lien de lecture du fichier privé, valable 10 minutes et lié au compte du relecteur : le transmettre à un autre compte donne 403. Chaque émission d\'un lien est journalisée dans l\'audit (PROFILE_DOCUMENT_VIEWED).',
         parameters: [{ $ref: '#/components/parameters/IdParam' }],
         responses: {
           '200': {
-            description: 'Détail + URL signée de courte durée',
+            description: 'Détail + lien signé de courte durée',
             content: { 'application/json': { schema: { $ref: '#/components/schemas/VerificationDetail' } } },
           },
           '401': R('Unauthorized'),
@@ -76,7 +98,7 @@ export default {
         },
       },
       patch: {
-        tags: ['Admin'],
+        tags: ['Staff — Vérification de profil'],
         summary: 'Décision d\'examen (APPROVE / REJECT)',
         description:
           'APPROVE -> document VERIFIED, utilisateur VERIFIED si aucun document PENDING. REJECT sans document VERIFIED -> utilisateur REJECTED. Audit dans la même transaction. Décision atomique : deux relecteurs simultanés obtiennent un 200 et un 409. L\'utilisateur est prévenu par email après la décision.',
@@ -95,16 +117,17 @@ export default {
 
     '/admin/files/{token}': {
       get: {
-        tags: ['Admin'],
-        summary: 'Télécharge ou affiche un document privé sécurisé',
-        description: 'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Accès via token JWT signé (10 min).',
+        tags: ['Staff — Vérification de profil'],
+        summary: 'Affiche un document privé sécurisé',
+        description:
+          'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Le jeton est émis par GET /admin/verifications/{id}, valable 10 minutes, et porte l\'identifiant du Media (jamais un chemin disque) ainsi que le compte du staff qui l\'a demandé : un jeton d\'accès ordinaire utilisé ici donne 401, et un jeton d\'un autre membre du staff donne 403. Réponse en no-store + nosniff, nom de fichier neutre.',
         parameters: [
           {
             in: 'path',
             name: 'token',
             required: true,
             schema: { type: 'string' },
-            description: 'Token JWT signé encodant le chemin relatif du document',
+            description: 'Jeton de fichier signé (10 min) portant { purpose: private-file, mediaId, sub }',
           },
         ],
         responses: {
@@ -119,7 +142,10 @@ export default {
           '400': R('BadRequest'),
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
-          '404': R('NotFound'),
+          '404': {
+            description: 'Document inconnu, média non privé (404) ou fichier absent du disque (404 FILE_MISSING)',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
+          },
         },
       },
     },

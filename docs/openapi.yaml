@@ -2,13 +2,12 @@ openapi: 3.0.0
 info:
   title: AgriConnect API v2
   version: 2.0.0
-  description: 'API REST + WebSocket AgriConnect — consignation de lots agricoles.
+  description: |-
+    API REST + WebSocket AgriConnect — consignation de lots agricoles.
 
+    Trois couches : le promoteur (SUPPLIER) déclare des **lots** (StockLot, interne), l'équipe (AGENT/ADMIN) publie des **annonces** (Listing, prix public) et l'acheteur (BUYER) ne voit que les annonces. Le lot relié à une annonce est figé dans ListingLot ; une ligne de commande (OrderItem) reprend les deux identifiants et les prix au moment de la vente.
 
-    Trois couches : le promoteur (SUPPLIER) déclare des **lots** (StockLot, interne), l''équipe (AGENT/ADMIN) publie des **annonces** (Listing, prix public) et l''acheteur (BUYER) ne voit que les annonces. Le lot relié à une annonce est figé dans ListingLot ; une ligne de commande (OrderItem) reprend les deux identifiants et les prix au moment de la vente.
-
-
-    Montants et quantités : `Decimal` Prisma, convertis en nombre JSON par decimal-json.middleware.js. Identifiants : entiers (`Int @id`).'
+    Montants et quantités : `Decimal` Prisma, convertis en nombre JSON par decimal-json.middleware.js. Identifiants : entiers (`Int @id`).
   contact:
     name: AgriConnect
 servers:
@@ -19,6 +18,13 @@ tags:
   description: Authentification, sessions et récupération de compte
 - name: Utilisateur
   description: Profil, comptes de paiement, documents et parrainage de l'utilisateur connecté
+- name: Staff — Vérification de profil
+  description: |-
+    File de revue des documents d'identité déposés par les comptes SUPPLIER et BUYER, et lecture des pièces privées. Réservée aux ADMIN et ROOT, et aux AGENT porteurs de la capacité USER_VERIFICATION.
+
+    Flux : l'utilisateur dépose un ou plusieurs documents (`POST /auth/me/documents`, un fichier par requête dans le champ `file`) ; chaque dépôt passe le compte en PENDING. Le staff filtre la file (`GET /admin/verifications`, tri FIFO sur PENDING), ouvre un dossier (`GET /admin/verifications/{id}`) qui lui renvoie un lien signé de 10 minutes — chaque émission est journalisée dans l'audit `PROFILE_DOCUMENT_VIEWED` — puis tranche (`PATCH /admin/verifications/{id}`).
+
+    Règle de calcul du statut du compte : APPROVE met le document VERIFIED et le compte VERIFIED s'il possède au moins un document VERIFIED et aucun PENDING ; REJECT met le document REJECTED et ne rejette le compte (REJECTED) que s'il n'a aucun document VERIFIED. La décision est atomique : deux relecteurs simultanés obtiennent un 200 et un 409. Une fois VERIFIED, le compte peut déclarer un lot ou confirmer un devis (sinon 403 PROFILE_NOT_VERIFIED).
 - name: Admin
   description: Administration (ADMIN et ROOT, capacités agent)
 - name: CGU
@@ -132,6 +138,7 @@ paths:
               properties:
                 email:
                   type: string
+                  format: email
                 password:
                   type: string
               required:
@@ -470,7 +477,7 @@ paths:
       tags:
       - Utilisateur
       summary: Téléverse un avatar (multipart)
-      description: Remplace l'avatar ; ne supprime jamais un document de vérification.
+      description: Remplace l'avatar ; ne supprime jamais un document de vérification (propriétaires distincts). L'ancien fichier est supprimé du disque une fois la transaction validée.
       requestBody:
         required: true
         content:
@@ -481,22 +488,24 @@ paths:
                 avatar:
                   type: string
                   format: binary
-                  description: Image du profil
+                  description: 'UN SEUL fichier dans le champ "avatar" : jpeg, png ou webp, 5 Mo max'
               required:
               - avatar
       responses:
         '200':
           description: Avatar remplacé
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/UploadBadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
   /auth/me/profile:
     patch:
       tags:
       - Utilisateur
       summary: Modifie le profil du rôle (SUPPLIER, BUYER, DRIVER)
-      description: 'Le contrôleur sélectionne le schéma du rôle de l''appelant : un SUPPLIER n''a pas à connaître les champs BUYER. Les trois formes acceptées sont listées ci-dessous (celle du rôle de l''appelant fait foi).'
+      description: "Le contrôleur sélectionne le schéma du rôle de l'appelant : un SUPPLIER n'a pas à connaître les champs BUYER. Les trois formes acceptées sont listées ci-dessous (celle du rôle de l'appelant fait foi)."
       requestBody:
         required: true
         content:
@@ -698,7 +707,7 @@ paths:
       tags:
       - Utilisateur
       summary: Dépose un document de vérification (multipart)
-      description: SUPPLIER et BUYER. Crée VerificationDocument (PENDING) + Media privé (Cloudinary authenticated). Si profileVerificationStatus vaut UNVERIFIED ou REJECTED, il passe à PENDING. La liste ne renvoie jamais d'URL.
+      description: SUPPLIER et BUYER. Crée VerificationDocument (PENDING) + Media privé stocké dans uploads/<type>/, hors du chemin servi statiquement. Si profileVerificationStatus vaut UNVERIFIED ou REJECTED, il passe à PENDING. Plafond de 5 documents PENDING par compte (409 TOO_MANY_PENDING_DOCUMENTS). La liste ne renvoie jamais d'URL.
       requestBody:
         required: true
         content:
@@ -709,30 +718,30 @@ paths:
                 file:
                   type: string
                   format: binary
-                  description: jpeg, png, webp ou pdf, 8 Mo max
+                  description: 'UN SEUL fichier dans le champ "file" : jpeg, png, webp ou pdf, 8 Mo max'
                 type:
-                  type: object
-                  properties:
-                    type:
-                      type: string
-                      enum:
-                      - ID_CARD
-                      - BUSINESS_REGISTRATION
-                      - FARM_PROOF
-                      - OTHER
-                  required:
-                  - type
+                  type: string
+                  enum:
+                  - ID_CARD
+                  - BUSINESS_REGISTRATION
+                  - FARM_PROOF
+                  - OTHER
               required:
               - file
+              - type
       responses:
         '201':
           description: Document déposé
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/UploadBadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/TooManyPendingDocuments'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
     get:
       tags:
       - Utilisateur
@@ -811,12 +820,13 @@ paths:
   /admin/verifications:
     get:
       tags:
-      - Admin
+      - Staff — Vérification de profil
       summary: Dossiers de vérification des profils (paginé)
-      description: ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Tri FIFO (le plus ancien d'abord) quand status=PENDING, antéchronologique sinon. La liste n'expose ni URL ni publicId du fichier.
+      description: "ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. File de revue des documents d'identité : chaque ligne porte le statut du compte (user.profileVerificationStatus) et les caractéristiques de la pièce (media.mimeType, media.fileSize) — jamais d'URL ni de publicId, la pièce ne s'ouvre que par le lien signé de GET /admin/verifications/{id}. Tri FIFO (le plus ancien d'abord) quand status=PENDING, antéchronologique sinon. Les paramètres invalides sont rejetés en 400."
       parameters:
       - in: query
         name: status
+        description: 'Statut du DOCUMENT examiné (pas celui du compte). Sans filtre : tous les dossiers.'
         schema:
           type: string
           enum:
@@ -825,6 +835,7 @@ paths:
           - REJECTED
       - in: query
         name: type
+        description: Type de document déposé (enum DocumentType).
         schema:
           type: string
           enum:
@@ -834,6 +845,7 @@ paths:
           - OTHER
       - in: query
         name: role
+        description: Rôle du compte concerné. Seuls SUPPLIER et BUYER déposent des documents.
         schema:
           type: string
           enum:
@@ -841,6 +853,7 @@ paths:
           - BUYER
       - in: query
         name: userId
+        description: Identifiant du compte concerné (entier positif).
         schema:
           type: integer
           minimum: 1
@@ -858,13 +871,14 @@ paths:
   /admin/verifications/{id}:
     get:
       tags:
-      - Admin
-      summary: Détail d'un dossier (URL signée Cloudinary, 10 min)
+      - Staff — Vérification de profil
+      summary: Détail d'un dossier (lien signé vers le fichier privé, 10 min)
+      description: "ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Renvoie le dossier et un lien de lecture du fichier privé, valable 10 minutes et lié au compte du relecteur : le transmettre à un autre compte donne 403. Chaque émission d'un lien est journalisée dans l'audit (PROFILE_DOCUMENT_VIEWED)."
       parameters:
       - $ref: '#/components/parameters/IdParam'
       responses:
         '200':
-          description: Détail + URL signée de courte durée
+          description: Détail + lien signé de courte durée
           content:
             application/json:
               schema:
@@ -877,9 +891,9 @@ paths:
           $ref: '#/components/responses/NotFound'
     patch:
       tags:
-      - Admin
+      - Staff — Vérification de profil
       summary: Décision d'examen (APPROVE / REJECT)
-      description: APPROVE -> document VERIFIED, utilisateur VERIFIED si aucun document PENDING. REJECT sans document VERIFIED -> utilisateur REJECTED. Audit dans la même transaction. Décision atomique : deux relecteurs simultanés obtiennent un 200 et un 409. L'utilisateur est prévenu par email après la décision.
+      description: "APPROVE -> document VERIFIED, utilisateur VERIFIED si aucun document PENDING. REJECT sans document VERIFIED -> utilisateur REJECTED. Audit dans la même transaction. Décision atomique : deux relecteurs simultanés obtiennent un 200 et un 409. L'utilisateur est prévenu par email après la décision."
       parameters:
       - $ref: '#/components/parameters/IdParam'
       requestBody:
@@ -925,16 +939,16 @@ paths:
   /admin/files/{token}:
     get:
       tags:
-      - Admin
-      summary: Télécharge ou affiche un document privé sécurisé
-      description: ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Accès via token JWT signé (10 min).
+      - Staff — Vérification de profil
+      summary: Affiche un document privé sécurisé
+      description: "ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Le jeton est émis par GET /admin/verifications/{id}, valable 10 minutes, et porte l'identifiant du Media (jamais un chemin disque) ainsi que le compte du staff qui l'a demandé : un jeton d'accès ordinaire utilisé ici donne 401, et un jeton d'un autre membre du staff donne 403. Réponse en no-store + nosniff, nom de fichier neutre."
       parameters:
       - in: path
         name: token
         required: true
         schema:
           type: string
-        description: Token JWT signé encodant le chemin relatif du document
+        description: 'Jeton de fichier signé (10 min) portant { purpose: private-file, mediaId, sub }'
       responses:
         '200':
           description: Fichier privé streamé (image ou PDF)
@@ -950,7 +964,11 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: Document inconnu, média non privé (404) ou fichier absent du disque (404 FILE_MISSING)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
   /admin/settings:
     get:
       tags:
@@ -2441,7 +2459,7 @@ paths:
       tags:
       - CGU
       summary: Contenu d'une version publiée, FR ou EN
-      description: '''?lang='' ou en-tête Accept-Language > fr. Repli sur fr si la langue manque ; le champ locale donne la langue réelle.'
+      description: "'?lang=' ou en-tête Accept-Language > fr. Repli sur fr si la langue manque ; le champ locale donne la langue réelle."
       security: []
       parameters:
       - $ref: '#/components/parameters/LegalCodeParam'
@@ -2485,7 +2503,7 @@ paths:
       tags:
       - Fournisseur
       summary: Déclare un lot (multipart)
-      description: Crée le lot en PENDING_VALIDATION (lotCode = 'LOT-' + id sur 6 chiffres) et ses photos (ownerLotId). expiresAt obligatoire si le produit est périssable (vérifié par le contrôleur). hubId obligatoire si HUB ; pickupAddress + coordonnées obligatoires si SUPPLIER_SITE.
+      description: "Crée le lot en PENDING_VALIDATION (lotCode = 'LOT-' + id sur 6 chiffres) et ses photos (ownerLotId). expiresAt obligatoire si le produit est périssable (vérifié par le contrôleur). hubId obligatoire si HUB ; pickupAddress + coordonnées obligatoires si SUPPLIER_SITE. Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED (renvoyé avant l'écriture des fichiers) tant que profileVerificationStatus n'est pas VERIFIED."
       requestBody:
         required: true
         content:
@@ -2496,7 +2514,7 @@ paths:
                 images:
                   type: string
                   format: binary
-                  description: 'Photos du lot, 5 maximum (au-delà : 400)'
+                  description: 'Jusqu''à 5 photos dans le champ "images" : jpeg, png ou webp, 5 Mo max par photo'
                 productId:
                   type: integer
                   minimum: 0
@@ -2563,11 +2581,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/SupplierLot'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/UploadBadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ForbiddenProfileNotVerified'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
     get:
       tags:
       - Fournisseur
@@ -2649,7 +2669,7 @@ paths:
       tags:
       - Fournisseur
       summary: Modifie un lot (PENDING_VALIDATION uniquement)
-      description: PATCH hors PENDING_VALIDATION -> 409 INVALID_STATE_TRANSITION.
+      description: 'PATCH hors PENDING_VALIDATION -> 409 INVALID_STATE_TRANSITION. Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED.'
       parameters:
       - $ref: '#/components/parameters/IdParam'
       requestBody:
@@ -2696,7 +2716,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ForbiddenProfileNotVerified'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -2732,7 +2752,7 @@ paths:
       tags:
       - Fournisseur
       summary: Retire un lot (AVAILABLE sans réservation -> WITHDRAWN)
-      description: Avec réservation -> 409 INVALID_STATE_TRANSITION.
+      description: 'Avec réservation -> 409 INVALID_STATE_TRANSITION. Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED.'
       parameters:
       - $ref: '#/components/parameters/IdParam'
       requestBody:
@@ -2756,7 +2776,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ForbiddenProfileNotVerified'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -2781,7 +2801,7 @@ paths:
                 images:
                   type: string
                   format: binary
-                  description: 'Photos du lot, 5 maximum (au-delà : 400)'
+                  description: 'Jusqu''à 5 photos dans le champ "images" : jpeg, png ou webp, 5 Mo max par photo'
                 productId:
                   type: integer
                   minimum: 0
@@ -2853,7 +2873,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/StaffLot'
         '400':
-          $ref: '#/components/responses/BadRequest'
+          $ref: '#/components/responses/UploadBadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -2862,6 +2882,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
     get:
       tags:
       - Équipe
@@ -3114,7 +3136,7 @@ paths:
                 images:
                   type: string
                   format: binary
-                  description: Photos de l'annonce, 5 maximum (absentes -> photos du lot copiées)
+                  description: 'Jusqu''à 5 photos dans le champ "images" : jpeg, png ou webp, 5 Mo max par photo. Absentes -> photos du lot copiées'
                 lotIds:
                   type: array
                   items:
@@ -3149,11 +3171,11 @@ paths:
               schema:
                 $ref: '#/components/schemas/StaffListing'
         '400':
-          description: Plusieurs lots ou champ invalide
+          description: Plusieurs lots, champ invalide, ou upload refusé (UNEXPECTED_FILE_FIELD, INVALID_MULTIPART, UNSUPPORTED_MEDIA_TYPE, FILE_REQUIRED, FILE_CONTENT_MISMATCH)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
+                $ref: '#/components/schemas/UploadError'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3168,6 +3190,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '413':
+          $ref: '#/components/responses/FileTooLarge'
     get:
       tags:
       - Équipe
@@ -4072,7 +4096,7 @@ paths:
       tags:
       - Catalogue
       summary: Annonces visibles (ACTIVE)
-      description: 'Le catalogue acheteur n''utilise PAS les lots : il utilise les annonces. Une annonce SOLD ou INACTIVE n''y figure plus.'
+      description: "Le catalogue acheteur n'utilise PAS les lots : il utilise les annonces. Une annonce SOLD ou INACTIVE n'y figure plus."
       parameters:
       - in: query
         name: categoryId
@@ -4263,6 +4287,7 @@ paths:
       tags:
       - Commandes
       summary: Confirme un devis (QUOTED -> CONFIRMED)
+      description: "Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED tant que profileVerificationStatus n'est pas VERIFIED (le corps renvoie le statut courant)."
       parameters:
       - $ref: '#/components/parameters/IdParam'
       responses:
@@ -4275,7 +4300,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          $ref: '#/components/responses/Forbidden'
+          $ref: '#/components/responses/ForbiddenProfileNotVerified'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -4504,8 +4529,32 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
+    ForbiddenProfileNotVerified:
+      description: Rôle insuffisant, ou profil non vérifié (PROFILE_NOT_VERIFIED)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ProfileNotVerifiedError'
     NotFound:
       description: Ressource introuvable
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    UploadBadRequest:
+      description: "Requête d'upload refusée : UNEXPECTED_FILE_FIELD (mauvais nom de champ ou trop de fichiers — expectedField renseigne le champ attendu), INVALID_MULTIPART (requête mal formée), UNSUPPORTED_MEDIA_TYPE (format refusé), FILE_REQUIRED (aucun fichier) ou FILE_CONTENT_MISMATCH (les octets ne correspondent pas au format annoncé)."
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UploadError'
+    FileTooLarge:
+      description: FILE_TOO_LARGE — fichier au-delà de la taille maximale du champ attendu
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/UploadError'
+    TooManyPendingDocuments:
+      description: TOO_MANY_PENDING_DOCUMENTS — 5 documents au statut PENDING pour ce compte
       content:
         application/json:
           schema:
@@ -4635,6 +4684,41 @@ components:
           type: string
           description: Code MAJUSCULES_AVEC_UNDERSCORES quand l'erreur en porte un
           example: INSUFFICIENT_STOCK
+    ProfileNotVerifiedError:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Message en français
+        code:
+          type: string
+          example: PROFILE_NOT_VERIFIED
+        profileVerificationStatus:
+          type: string
+          enum:
+          - UNVERIFIED
+          - PENDING
+          - VERIFIED
+          - REJECTED
+    UploadError:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Message en français nommant le champ attendu
+        code:
+          type: string
+          enum:
+          - UNEXPECTED_FILE_FIELD
+          - INVALID_MULTIPART
+          - UNSUPPORTED_MEDIA_TYPE
+          - FILE_REQUIRED
+          - FILE_CONTENT_MISMATCH
+          - FILE_TOO_LARGE
+          example: UNEXPECTED_FILE_FIELD
+        expectedField:
+          type: string
+          description: Champ multipart attendu (avatar, file ou images) — renvoyé avec UNEXPECTED_FILE_FIELD
     Paginated:
       type: object
       properties:
@@ -4913,7 +4997,8 @@ components:
           nullable: true
         signedUrl:
           type: string
-          description: URL signée Cloudinary, valable 10 minutes (staff uniquement)
+          nullable: true
+          description: Lien signé vers le fichier privé (GET /admin/files/{token}), valable 10 minutes, lié au compte du staff qui l'a demandé. Son émission est journalisée dans l'audit.
     SupplierLot:
       type: object
       description: DTO fournisseur — jamais de donnée acheteur

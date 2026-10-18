@@ -34,7 +34,29 @@ Validation : Joi. Préfixe d'API : `/api/v2`.
 | `GET /api/v2/auth/me/referral` | tout connecté | Code de parrainage + filleuls (prénom seulement pour le parrain) |
 | `POST /api/v2/admin/users` | ADMIN+ (ADMIN par ROOT seul) | `createStaffUser` : ADMIN, AGENT, DRIVER + profil |
 | `GET/PATCH /api/v2/admin/agents` · `POST /api/v2/admin/agents/ai` | ADMIN+ | Capacités, autonomie ; agent IA sans compte (C6 : jamais PAYMENT_FOLLOWUP) |
-| `GET /api/v2/admin/verifications` · `GET/PATCH /:id` | ADMIN+ ou AGENT(USER_VERIFICATION) | Dossiers + URL signée Cloudinary (10 min) ; décision APPROVE/REJECT |
+| `GET /api/v2/admin/verifications` · `GET/PATCH /:id` | ADMIN+ ou AGENT(USER_VERIFICATION) | Dossiers (liste filtrable, sans URL) + lien signé de 10 min pour lire la pièce ; décision APPROVE/REJECT |
+
+### Correctif upload et vérification de profil (phases U1 à U7)
+
+Le stockage des médias est **local** (`uploads/`), et le circuit de vérification
+de profil est complet et documenté. Détail du plan :
+[`PLAN_CORRECTIF_UPLOAD.md`](PLAN_CORRECTIF_UPLOAD.md).
+
+| Phase | Changement | Client |
+|---|---|---|
+| U1 | Les erreurs d'upload ne sont plus des 500 : un wrapper commun traduit les `MulterError` en 400/413 avec un `code` et le champ attendu | `UNEXPECTED_FILE_FIELD` (+`expectedField`), `INVALID_MULTIPART`, `UNSUPPORTED_MEDIA_TYPE`, `FILE_REQUIRED`, `FILE_TOO_LARGE` |
+| U2 | Un seul service de stockage (`services/storage.service.js`) : `saveFile` retourne toujours `{ url, publicId, isPrivate, size }`, écritures asynchrones, `UPLOADS_DIR` configurable, garde anti-remontée de chemin. Fin du service de médias externe et de sa dépendance | `publicId` désormais enregistré pour **tous** les médias ; les URL restent relatives (`/uploads/…`) |
+| U3 | Remplacer son avatar supprime l'ancien fichier (uniquement s'il n'est plus référencé) ; le nouveau fichier est effacé si la transaction échoue | — |
+| U4 | Aucun fichier orphelin : compensation si la transaction échoue, nettoyage après suppression d'un lot / d'une annonce / d'un document | `npm run uploads:cleanup` (dry-run, `--apply`) |
+| U5 | Accès aux pièces privées durci : jeton dédié (`SECRET_FILE_TOKEN`) portant `{ purpose, mediaId, sub }` — plus aucun chemin disque dans un jeton, obligatoire et distinct de `JWT_SECRET` en production ; réponse `no-store` + `nosniff` + nom neutre ; **chaque consultation est auditée** ; plafond de 5 documents `PENDING` ; contrôle des octets de tête avant écriture | 409 `TOO_MANY_PENDING_DOCUMENTS`, 400 `FILE_CONTENT_MISMATCH`, 404 `FILE_MISSING`, 403 si le jeton vient d'un autre compte |
+| U6 | File de revue utilisable : filtres validés (`status`, `type`, `role`, `userId`, `page`, `limit`), tri **FIFO** sur `PENDING`, statut du compte dans la liste, décision atomique (deux relecteurs simultanés → 200 + 409), email de décision non bloquant | `GET /admin/verifications?status=PENDING&page=1` |
+| U7 | Le statut de vérification **conditionne** des actions : middleware `requireVerifiedProfile` | 403 `PROFILE_NOT_VERIFIED` + `profileVerificationStatus` sur `POST /supplier/lots`, `PATCH /supplier/lots/:id`, `POST /supplier/lots/:id/withdraw`, `POST /orders/:id/confirm` |
+
+Conséquence pour le client mobile : **un seul fichier par requête** pour un
+document de vérification (champ `file`, recto et verso = deux requêtes), champ
+`avatar` pour l'avatar, champ `images` (5 maximum) pour les lots et les
+annonces. Le détail figure dans le README (« Client mobile » et « Stockage des
+fichiers ») et dans l'OpenAPI.
 
 ### CGU (P1.1)
 
@@ -151,6 +173,12 @@ Codes principaux : `INSUFFICIENT_STOCK`, `INVALID_STATE_TRANSITION`,
 `PRICE_BELOW_SUPPLIER`, `DELIVERIES_ALREADY_CREATED`, `INVALID_DELIVERY_MODE`,
 `INVALID_ORDER_STATUS`, `COMPENSATION_RATE_ZERO`.
 
+Ajouts des phases U1 à U7 : `UNEXPECTED_FILE_FIELD` (avec `expectedField`),
+`INVALID_MULTIPART`, `UNSUPPORTED_MEDIA_TYPE`, `FILE_REQUIRED`,
+`FILE_CONTENT_MISMATCH`, `FILE_TOO_LARGE` (413), `TOO_MANY_PENDING_DOCUMENTS`
+(409), `FILE_MISSING` (404), `PROFILE_NOT_VERIFIED` (403, avec
+`profileVerificationStatus` dans le corps).
+
 ## 6. Autres changements cassants
 
 - Préfixe `/api` → `/api/v2` partout.
@@ -160,3 +188,8 @@ Codes principaux : `INSUFFICIENT_STOCK`, `INVALID_STATE_TRANSITION`,
 - Tâches planifiées dans le processus serveur (`node-cron`), neutralisées par
   `NODE_ENV=test` ou `DISABLE_JOBS=true` — avec plusieurs instances, une seule doit
   les exécuter.
+- **Stockage des médias local** : plus d'hébergeur externe. Les fichiers vivent
+  sous `UPLOADS_DIR` (défaut `<racine>/uploads`), les URL sont **relatives**
+  (`/uploads/…`) et les documents d'identité ne sont plus servis
+  statiquement. Deux nouvelles variables : `UPLOADS_DIR` et `SECRET_FILE_TOKEN`
+  (obligatoire en production, distinct de `JWT_SECRET`).

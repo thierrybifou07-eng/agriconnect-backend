@@ -19,7 +19,7 @@ import {
   payoutAccountCreateSchema,
   payoutAccountUpdateSchema,
 } from '../src/validators/auth.validator.js';
-import { submitDocumentSchema } from '../src/validators/verification.validator.js';
+import { documentTypeField } from '../src/validators/verification.validator.js';
 import { jsonBody, jsonSchema, multipartBody } from './openapi.helpers.js';
 
 const R = (ref) => ({ $ref: `#/components/responses/${ref}` });
@@ -294,12 +294,14 @@ export default {
       post: {
         tags: ['Utilisateur'],
         summary: 'Téléverse un avatar (multipart)',
-        description: 'Remplace l\'avatar ; ne supprime jamais un document de vérification.',
-        requestBody: multipartBody({ file: { name: 'avatar', description: 'Image du profil' } }),
+        description:
+          'Remplace l\'avatar ; ne supprime jamais un document de vérification (propriétaires distincts). L\'ancien fichier est supprimé du disque une fois la transaction validée.',
+        requestBody: multipartBody({ file: { name: 'avatar', description: 'UN SEUL fichier dans le champ "avatar" : jpeg, png ou webp, 5 Mo max' } }),
         responses: {
           '200': { description: 'Avatar remplacé' },
-          '400': R('BadRequest'),
+          '400': R('UploadBadRequest'),
           '401': R('Unauthorized'),
+          '413': R('FileTooLarge'),
         },
       },
     },
@@ -396,16 +398,20 @@ export default {
         tags: ['Utilisateur'],
         summary: 'Dépose un document de vérification (multipart)',
         description:
-          'SUPPLIER et BUYER. Crée VerificationDocument (PENDING) + Media privé (Cloudinary authenticated). Si profileVerificationStatus vaut UNVERIFIED ou REJECTED, il passe à PENDING. La liste ne renvoie jamais d\'URL.',
+          'SUPPLIER et BUYER. Crée VerificationDocument (PENDING) + Media privé stocké dans uploads/<type>/, hors du chemin servi statiquement. Si profileVerificationStatus vaut UNVERIFIED ou REJECTED, il passe à PENDING. Plafond de 5 documents PENDING par compte (409 TOO_MANY_PENDING_DOCUMENTS). La liste ne renvoie jamais d\'URL.',
         requestBody: multipartBody({
-          file: { name: 'file', description: 'jpeg, png, webp ou pdf, 8 Mo max' },
-          fields: { type: submitDocumentSchema },
+          file: { name: 'file', description: 'UN SEUL fichier dans le champ "file" : jpeg, png, webp ou pdf, 8 Mo max' },
+          // Le type est une CHAÎNE (enum DocumentType), pas un objet : on passe
+          // le champ Joi seul, sinon multipartBody le convertirait en objet.
+          fields: { type: documentTypeField },
         }),
         responses: {
           '201': { description: 'Document déposé' },
-          '400': R('BadRequest'),
+          '400': R('UploadBadRequest'),
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
+          '409': R('TooManyPendingDocuments'),
+          '413': R('FileTooLarge'),
         },
       },
       get: {

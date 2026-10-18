@@ -76,7 +76,7 @@ Principe : **modifier le strict nécessaire**. Tout ce qui n'est pas dans ce tab
 | C2 | `location`, `latitude`, `longitude` | Restent sur `User` (v1). Les profils ne dupliquent pas l'adresse |
 | C3 | Référentiels v2 | Tables lookup : `ListingStatus` (**conservée** de la v1, codes `DRAFT`, `ACTIVE`, `SOLD`, `INACTIVE`), `ProductCategory` (remplace `ListingCategory`), `Unit`, `AgentCapability` (MySQL n'a pas de liste d'enums). `DeliveryMode` est conservée avec les codes `HUB_PICKUP` / `AGENCY_DELIVERY`. Les statuts de lot, commande et livraison restent des enums |
 | C4 | Données v1 | La migration **supprime** les tables marketplace (`Listing`, `Order`, `Delivery`, `Conversation`, `Message` v1). Les comptes, sessions et jetons sont **préservés**. On suppose qu'il n'y a **que des données de test** à perdre |
-| C5 | Documents d'identité | Envoyés sur Cloudinary en mode **privé** ; le staff y accède par URL signée de courte durée |
+| C5 | Documents d'identité | Stockés sur disque dans un dossier **privé** sous `uploads/<type>/`, jamais servi statiquement ; le staff y accède par un lien signé de courte durée, lié à son compte et journalisé dans l'audit |
 | C6 | Charge de l'agent `AI` | Un agent IA ne peut jamais avoir la capacité `PAYMENT_FOLLOWUP` ni agir sur l'argent |
 | C7 | Annonce et lot | **Une annonce = un lot** au MVP (règle de code). La table `ListingLot` permet d'en agréger plusieurs plus tard sans migration. Le prix public est fixé par l'équipe ; par défaut il égale le prix convenu avec le promoteur. Nouvelle capacité d'agent : `LISTING_MANAGEMENT` (publication des annonces) |
 | C8 | **À TRANCHER** : écart de prix | Si l'équipe fixe un prix public supérieur au prix convenu, qui garde l'écart ? Les deux prix sont figés sur chaque ligne de commande. Par défaut : le promoteur est payé sur le prix convenu moins la commission, et l'écart éventuel est un revenu AgriConnect |
@@ -88,7 +88,7 @@ Principe : **modifier le strict nécessaire**. Tout ce qui n'est pas dans ce tab
 ```
 CONTEXTE
 Projet : agriconnect-backend, branche feature/dev-v2.
-Stack : Node.js ESM, Express 5, Prisma 6 + MySQL, Joi 18, Socket.io, Cloudinary, Vitest + supertest.
+Stack : Node.js ESM, Express 5, Prisma 6 + MySQL, Joi 18, Socket.io, stockage local des fichiers, Vitest + supertest.
 Source de vérité du schéma : prisma/schema.prisma ET docs/schema.v2.target.prisma, toujours IDENTIQUES.
 
 RÈGLES ABSOLUES
@@ -531,15 +531,16 @@ Commit: feat(profile): expose and edit the role profile and manage payout accoun
 Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
 
 Objectif : dépôt de documents et validation du profil par l'équipe.
-Lis d'abord : src/middlewares/upload.middleware.js, src/utils/cloudinaryUpload.js,
-src/config/cloudinary.js, src/controllers/user.controller.js (uploadAvatar),
+Lis d'abord : src/middlewares/upload.middleware.js, src/utils/localUpload.js,
+src/controllers/user.controller.js (uploadAvatar),
 src/middlewares/capability.middleware.js, src/utils/audit.js.
 
 1. Upload : crée src/middlewares/uploadDocument.middleware.js (multer mémoire, 8 Mo, types
    image/jpeg, image/png, image/webp, application/pdf — tous doivent exister dans MimeType).
-   Étends uploadBufferToCloudinary(buffer, options = {}) de façon RÉTROCOMPATIBLE : sans options,
-   comportement identique à aujourd'hui ; avec { folder, type: 'authenticated' } l'envoi est privé et
-   la fonction renvoie aussi public_id. Ne modifie pas upload.middleware.js (avatars).
+   Étends uploadFileLocally(buffer, options = {}) de façon RÉTROCOMPATIBLE : sans options,
+   comportement identique à aujourd'hui ; avec { documentType } l'écriture est privée (sous-dossier
+   uploads/<documentType>) et la fonction renvoie aussi publicId. Ne modifie pas
+   upload.middleware.js (avatars).
 2. POST /api/auth/me/documents (protect, SUPPLIER ou BUYER) : champ fichier `file`, champ `type`
    (DocumentType). Crée VerificationDocument (PENDING) et Media (ownerVerificationDocumentId, isPrivate
    true, publicId, mediaType IMAGE ou DOCUMENT selon le mime). Si profileVerificationStatus vaut
@@ -547,8 +548,9 @@ src/middlewares/capability.middleware.js, src/utils/audit.js.
    note, createdAt — SANS URL.
 3. Staff (ADMIN et plus, ou AGENT avec USER_VERIFICATION) :
    GET /api/admin/verifications?status=PENDING (paginé) ;
-   GET /api/admin/verifications/:id : détail + URL SIGNÉE valable 10 minutes (utilise l'API du SDK
-   Cloudinary v2 ; si tu n'es pas certain de la bonne fonction, ARRÊTE-TOI et demande) ;
+   GET /api/admin/verifications/:id : détail + lien SIGNÉ valable 10 minutes vers
+   GET /api/admin/files/:token (le jeton porte l'identifiant du Media et le compte du relecteur ;
+   si tu n'es pas certain de la forme attendue, ARRÊTE-TOI et demande) ;
    PATCH /api/admin/verifications/:id { decision: 'APPROVE'|'REJECT', note } (note obligatoire pour
    REJECT).
 4. Règle : APPROVE -> document VERIFIED. L'utilisateur devient VERIFIED (profileVerifiedAt,
@@ -558,9 +560,9 @@ src/middlewares/capability.middleware.js, src/utils/audit.js.
 5. Le changement d'avatar (uploadAvatar) ne doit JAMAIS supprimer un document de vérification : ajoute un
    test qui le prouve.
 
-Tests : dépôt valide ; mime refusé ; GET /me/documents sans URL ; staff voit l'URL signée, un BUYER non ;
-transitions PENDING -> VERIFIED / REJECTED ; avatar remplacé sans toucher aux documents ;
-AGENT sans USER_VERIFICATION -> 403 (mocker Cloudinary comme les tests existants).
+Tests : dépôt valide ; mime refusé ; GET /me/documents sans URL ; le staff obtient le lien signé, un
+BUYER non ; transitions PENDING -> VERIFIED / REJECTED ; avatar remplacé sans toucher aux documents ;
+AGENT sans USER_VERIFICATION -> 403 (mocker le service de stockage comme les tests existants).
 Commit: feat(verification): let users submit profile documents and staff review them
 ```
 
@@ -597,7 +599,7 @@ Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
 
 Objectif : le promoteur (SUPPLIER) déclare et gère ses lots avec photos (création, lecture, modification,
 suppression). L'équipe l'aide ensuite par les routes staff.
-Lis d'abord : src/middlewares/upload.middleware.js, src/utils/cloudinaryUpload.js, src/utils/money.js,
+Lis d'abord : src/middlewares/upload.middleware.js, src/utils/localUpload.js, src/utils/money.js,
 modèles StockLot, Media, Product.
 
 À CRÉER : src/controllers/supplierLot.controller.js, src/routes/supplier.routes.js (monté sur
@@ -620,7 +622,7 @@ Routes :
 - DTO fournisseur : lotCode, produit, les quatre quantités, prix, statut, rejectionReason, images, dates.
   JAMAIS de donnée acheteur.
 Ne pas créer de StockMovement ici (la réception est tracée à la validation, P2.4).
-Tests : création complète (Cloudinary mocké), règles conditionnelles (HUB sans hubId -> 400, périssable sans
+Tests : création complète (service de stockage mocké), règles conditionnelles (HUB sans hubId -> 400, périssable sans
 expiresAt -> 400), lotCode au bon format, PATCH refusé après validation, lot d'un autre fournisseur -> 404,
 BUYER -> 403.
 Commit: feat(lots): let suppliers declare and edit consigned lots with photos
@@ -706,7 +708,7 @@ acheteurs ; le lot reste interne.
 Modèle : StockLot = déclaration interne du promoteur (prix convenu, quantités). Listing = offre publique avec un prix
 public fixé par l'équipe (c'est ainsi que les prix sont contrôlés). ListingLot relie l'annonce à son lot.
 Lis d'abord : src/services/stock.service.js, src/utils/dto/lot.dto.js, src/controllers/staffLot.controller.js,
-src/utils/audit.js, src/utils/lookupCache.js, src/utils/cloudinaryUpload.js, modèles Listing, ListingLot,
+src/utils/audit.js, src/utils/lookupCache.js, src/utils/localUpload.js, modèles Listing, ListingLot,
 ListingStatus, StockLot, Media.
 
 À CRÉER : src/services/listing.service.js, src/controllers/staffListing.controller.js,
@@ -1597,7 +1599,7 @@ Les cahiers publiés plus tôt contiennent des hypothèses que le dépôt contre
 |---|---|
 | Modèles gratuits qui dérivent ou inventent | Prompts courts, périmètre de fichiers fermé, clause « ARRÊTE-TOI et demande », une session par prompt |
 | Migration destructive (C4) | Faite sur une base de développement ; sauvegarde avant P0.4 si la base contient autre chose que des tests |
-| Documents d'identité exposés | Cloudinary mode privé, URL signée 10 minutes, jamais d'URL dans les listes (P1.6) |
+| Documents d'identité exposés | Stockage disque privé hors `express.static`, lien signé 10 minutes lié au relecteur et journalisé dans l'audit, jamais d'URL dans les listes (P1.6) |
 | Survente et double clic | Mise à jour conditionnelle + tests de concurrence (P2.3, P5.3) |
 | Double paiement | `Idempotency-Key` + contrainte unique (P4.1) |
 | Fuite d'identité acheteur / fournisseur | DTO par rôle + `assertNoLeak` partout + revue finale (P7.1) |
@@ -1605,3 +1607,24 @@ Les cahiers publiés plus tôt contiennent des hypothèses que le dépôt contre
 | Écart entre prix public et prix convenu (C8) | À trancher avant la production ; les deux prix sont figés par ligne de commande et tout changement de prix d'annonce est tracé dans l'audit |
 | Garantie de prix = risque d'invendu porté par AgriConnect | Taux d'indemnisation configurable (`expiryCompensationRate`), approbation humaine obligatoire |
 | MySQL : `prisma migrate dev` exige le droit de créer une base fantôme | L'utilisateur MySQL de développement doit avoir ce droit (déjà le cas pour la base de test) |
+
+---
+
+## 8. Phase U — correctif upload et vérification de profil
+
+Cette phase est décrite **en détail et phase par phase** dans un document
+dédié : [`PLAN_CORRECTIF_UPLOAD.md`](PLAN_CORRECTIF_UPLOAD.md). Les
+constats, les décisions à trancher (D1 à D4) et un prompt autonome par phase
+y figurent ; s'y reporter plutôt que de dupliquer ici le détail.
+
+Ce que la phase U change par rapport aux phases 1 à 6 :
+
+| Point | Avant | Après |
+|---|---|---|
+| Stockage des médias | Service externe, via un shim qui gardait le vocabulaire et le contrat de retour hérités | **Local** : `src/services/storage.service.js`, retour unique `{ url, publicId, isPrivate, size }`, écritures asynchrones, `UPLOADS_DIR` configurable, garde anti-remontée de chemin |
+| Erreurs d'upload | `MulterError` non interceptée → **HTTP 500** avec un message anglais | 400/413 typés : `UNEXPECTED_FILE_FIELD` (+ `expectedField`), `INVALID_MULTIPART`, `UNSUPPORTED_MEDIA_TYPE`, `FILE_REQUIRED`, `FILE_CONTENT_MISMATCH`, `FILE_TOO_LARGE` |
+| Fichiers orphelins | Aucun nettoyage | Compensation si la transaction échoue, suppression après suppression d'entité, `npm run uploads:cleanup` |
+| Jeton de fichier privé | Secret des jetons d'accès en repli, chemin disque dans le jeton, non lié au relecteur, **non audité** | `SECRET_FILE_TOKEN` (obligatoire en production, distinct de `JWT_SECRET`), `{ purpose, mediaId, sub }`, réponse `no-store` + `nosniff`, audit `PROFILE_DOCUMENT_VIEWED` |
+| File de revue | Tri antichronologique, pas de filtres, double décision concurrente possible, aucune notification | Filtres validés (`status`, `type`, `role`, `userId`, `page`, `limit`), tri FIFO sur `PENDING`, `updateMany` conditionnel (200 + 409), email de décision non bloquant |
+| Contrôle d'accès du profil | `profileVerificationStatus` informatif | `requireVerifiedProfile` sur `POST /supplier/lots`, `PATCH /supplier/lots/:id`, `POST /supplier/lots/:id/withdraw`, `POST /orders/:id/confirm` → 403 `PROFILE_NOT_VERIFIED` |
+| Documentation OpenAPI | `docs/openapi.yaml` non régénéré, test ne comparant que la liste des routes ; champ `type` des documents décrit comme un objet | `npm run docs:openapi` + test de cohérence sur le **contenu complet** ; flux de vérification et codes d'upload documentés |

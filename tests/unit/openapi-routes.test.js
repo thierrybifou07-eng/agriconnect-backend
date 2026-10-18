@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import YAML from 'yaml';
 import { PROJECT_ROOT } from '../setup/env.js';
 import openapiDocument from '../../openapi/openapi.config.js';
 
@@ -78,10 +79,10 @@ function documentRoutes() {
   return found.sort();
 }
 
-// docs/openapi.yaml est l'export statique du document genere (utile aux editeurs
-// qui rendent le YAML). Il n'est pas regenere par les tests : on lit donc ses
-// chemins a la main (chemin a 2 espaces, methode a 4 espaces) pour verifier
-// qu'ils correspondent bien au document genere.
+// docs/openapi.yaml est l'export statique du document genere (scripts/export-openapi.js,
+// utile aux editeurs qui rendent le YAML). On lit donc ses chemins a la main
+// (chemin a 2 espaces, methode a 4 espaces) pour verifier qu'ils correspondent
+// bien au document genere.
 function yamlRoutes() {
   const code = readFileSync(path.join(PROJECT_ROOT, 'docs', 'openapi.yaml'), 'utf8');
   const found = [];
@@ -126,6 +127,32 @@ describe('Couverture OpenAPI', () => {
 
   it('docs/openapi.yaml correspond au document genere', () => {
     expect(yamlRoutes()).toEqual(documentRoutes());
+  });
+
+  it('docs/openapi.yaml a le meme CONTENU que le document genere', () => {
+    // La liste des routes ne suffit pas : un YAML derivait sur les schemas,
+    // les descriptions et les codes d' erreur sans qu'aucun test ne le voie.
+    // On compare donc le document entier : YAML parse contre objet genere.
+    const brut = readFileSync(path.join(PROJECT_ROOT, 'docs', 'openapi.yaml'), 'utf8');
+    const depuisYaml = YAML.parse(brut);
+
+    if (depuisYaml === null || typeof depuisYaml !== 'object') {
+      throw new Error(
+        'docs/openapi.yaml ne contient pas un document OpenAPI. ' +
+          'Lance npm run docs:openapi pour le regenerer depuis openapi/openapi.config.js.'
+      );
+    }
+
+    try {
+      expect(depuisYaml).toEqual(openapiDocument);
+    } catch (erreur) {
+      // toEqual sur un document de plusieurs milliers de lignes produit un diff
+      // illisible : on renvoie vers la commande qui regenere le fichier.
+      throw new Error(
+        `docs/openapi.yaml a derive du document genere (${erreur.message}). ` +
+          'Lance npm run docs:openapi pour le regenerer depuis openapi/openapi.config.js.'
+      );
+    }
   });
 
   it('le document genere ne contient aucun residu de schema Joi', () => {
