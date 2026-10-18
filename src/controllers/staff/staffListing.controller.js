@@ -2,6 +2,7 @@ import { randomInt } from 'node:crypto';
 import prisma from '../../config/prisma.js';
 import { saveFile, deleteFile, StorageKind } from '../../services/storage.service.js';
 import { getLookupId } from '../../utils/lookupCache.js';
+import { assertFileSignature } from '../../utils/fileSignature.js';
 import { asMoney, toDecimal, toNumber } from '../../utils/money.js';
 import { listingToStaffDto } from '../../utils/dto/listing.dto.js';
 import { recordAudit } from '../../utils/audit.js';
@@ -92,6 +93,10 @@ export const createListing = async (req, res) => {
     if (!mimeTypeIdParCode.has(file.mimetype)) {
       return res.status(400).json({ error: `Type de fichier non supporté : ${file.mimetype}` });
     }
+    // MIME déclaré par le client : on vérifie les octets de tête avant
+    // d'écrire, sinon un fichier renommé (.txt en .jpg) atterrit dans
+    // LISTING_PHOTO sous une extension fausse (400 FILE_CONTENT_MISMATCH).
+    assertFileSignature(file.buffer, file.mimetype);
   }
 
   // La création tient en une transaction. La reference dépend de l'id

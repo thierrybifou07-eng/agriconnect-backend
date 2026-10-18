@@ -13,7 +13,10 @@ function tokenPour(user, role) {
 
 // Buffers minimaux : multer ne regarde que le mimetype déclaré, pas le contenu.
 const FAKE_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
-const FAKE_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+// Signature PNG complète : les huit octets 89 50 4E 47 0D 0A 1A 0A sont
+// contrôlés avant écriture (utils/fileSignature.js), un fragment de quatre
+// octets ne suffirait pas.
+const FAKE_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 // --- Fixtures ---
 

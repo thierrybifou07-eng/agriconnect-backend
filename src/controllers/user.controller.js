@@ -7,6 +7,7 @@ import {
   StorageKind,
 } from '../services/storage.service.js';
 import { getLookupId } from '../utils/lookupCache.js';
+import { assertFileSignature } from '../utils/fileSignature.js';
 import { userToApi, payoutAccountToApi } from '../utils/userApi.js';
 import { resetVerificationForNewEmail } from '../utils/emailVerification.js';
 import { ensureProfile } from '../utils/profile.js';
@@ -82,11 +83,16 @@ export const updateMe = async (req, res) => {
 // ligne part dans la transaction, avec la création de la nouvelle ; le fichier,
 // lui, ne peut être supprimé qu'APRÈS le commit — le faire avant exposerait
 // l'utilisateur à une image cassée si la transaction échouait. D'où cet ordre :
-// écriture, transaction, puis nettoyage au mieux.
+// contrôle du contenu, écriture, transaction, puis nettoyage au mieux.
 export const uploadAvatar = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Aucune image fournie (champ "avatar")', code: 'FILE_REQUIRED' });
   }
+
+  // Le type MIME est déclaré par le client : un .txt renommé en .jpg
+  // passerait le filtre du middleware. On compare les octets de tête au type
+  // déclaré avant toute écriture (FILE_CONTENT_MISMATCH, 400).
+  assertFileSignature(req.file.buffer, req.file.mimetype);
 
   const [mediaTypeId, mimeTypeId] = await Promise.all([
     getLookupId('mediaType', 'IMAGE'),
@@ -273,17 +279,41 @@ export const deletePayoutAccount = async (req, res) => {
   res.status(204).send();
 };
 
+// Nombre maximum de documents de vérification qu'un compte peut avoir en
+// attente d'examen à la fois. Au-delà, les dépôts sont refusés (409) : la
+// file de revue doit rester lisible par l'administrateur, et le plafond
+// empêche de la noyer de dépôts redondants. Constante nommée : le nombre
+// n'apparaît qu'ici et dans le message d'erreur.
+const MAX_PENDING_VERIFICATION_DOCUMENTS = 5;
+
 // POST /api/auth/me/documents
 //
 // Dépôt d'un document de vérification du profil. Le fichier est stocké en
 // mode privé (hors du chemin express.static) : il n'est jamais servi
-// publiquement, seul un token JWT de courte durée le rend lisible par le staff.
+// publiquement, seul un jeton de courte durée le rend lisible par le staff.
 export const submitDocument = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Aucun fichier fourni (champ "file")', code: 'FILE_REQUIRED' });
   }
 
   const { type } = req.body; // validé par submitDocumentSchema en amont
+
+  // Même raison que pour l'avatar : le MIME est déclaré par le client, les
+  // octets de tête ne mentent pas. Contrôle avant l'écriture du fichier.
+  assertFileSignature(req.file.buffer, req.file.mimetype);
+
+  // Plafond de la file de revue : sans borne, un compte peut noyer
+  // l'administrateur de dépôts identiques. Le refus précède l'écriture du
+  // fichier : un dépôt refusé ne laisse rien sur le disque.
+  const pending = await prisma.verificationDocument.count({
+    where: { userId: req.user.id, status: 'PENDING' },
+  });
+  if (pending >= MAX_PENDING_VERIFICATION_DOCUMENTS) {
+    return res.status(409).json({
+      error: `Vous avez déjà ${MAX_PENDING_VERIFICATION_DOCUMENTS} documents en attente d'examen`,
+      code: 'TOO_MANY_PENDING_DOCUMENTS',
+    });
+  }
 
   // Le mimeType doit exister en base (clé étrangère) : le middleware ne laisse
   // passer que les 4 types seedés, mais la lecture du mediaTypeId évite une

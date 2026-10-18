@@ -10,7 +10,8 @@ function tokenFor(user, role) {
   return generateToken({ id: user.id, role });
 }
 
-// Buffers minimaux : multer ne regarde que le mimetype déclaré, pas le contenu.
+// Buffers minimaux portant une signature de tête valide : l'API compare les
+// octets de tête au type MIME déclaré (utils/fileSignature.js).
 const FAKE_PDF = Buffer.from('%PDF-1.4 factice');
 const FAKE_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 

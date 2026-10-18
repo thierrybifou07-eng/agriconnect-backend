@@ -8,6 +8,12 @@ import initChatSocket from './sockets/chat.socket.js';
 import { socketCorsOptions } from './utils/cors.js';
 import { startJobs } from './jobs/index.js';
 import openapiDocument from '../openapi/openapi.config.js';
+import { assertFileTokenSecret } from './utils/fileToken.js';
+
+// Garde de démarrage : un secret de fichier absent, ou égal à JWT_SECRET,
+// rendrait les jetons de fichiers échangeables avec les jetons d'accès. En
+// production on refuse de démarrer plutôt que de l'exposer silencieusement.
+assertFileTokenSecret();
 
 const PORT = process.env.PORT || 4000;
 

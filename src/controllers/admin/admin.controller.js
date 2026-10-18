@@ -1,7 +1,5 @@
 import bcrypt from 'bcrypt';
-import { createReadStream, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { Prisma } from '@prisma/client';
 import prisma from '../../config/prisma.js';
 import { getLookupId } from '../../utils/lookupCache.js';
@@ -11,17 +9,16 @@ import { asMoney, toDecimal, toNumber } from '../../utils/money.js';
 // Meme pile que l inscription (src/config/email) : un seul moteur de rendu,
 // une seule configuration SMTP.
 import { sendTemplateEmail } from '../../config/email/sendMail.js';
-// jsonwebtoken est déjà dans les dépendances du projet (src/utils/jwt.js).
-// On l'utilise pour générer un token signé de courte durée qui donne accès
-// aux documents privés, signés par ce jeton.
-import jwt from 'jsonwebtoken';
+// Jeton de fichier : signature, audience, finalité et secret sont regroupés
+// dans un seul module (le secret est aussi validé au démarrage, server.js).
+import { signFileToken, verifyFileToken } from '../../utils/fileToken.js';
 import { recordAudit } from '../../utils/audit.js';
 import {
   onProfileVerified,
   payReferral,
   rejectReferral,
 } from '../../services/referral.service.js';
-import { UPLOADS_ROOT } from '../../services/storage.service.js';
+import { resolvePrivateFile } from '../../services/storage.service.js';
 import {UserStatusCode} from "../../utils/enums/enums.helpers.js";
 
 const userSafeSelect = {
@@ -334,10 +331,12 @@ export const listVerifications = async (req, res) => {
 
 // GET /api/v2/admin/verifications/:id
 //
-// Détail d'un document + token JWT signé de courte durée (10 minutes) pour
-// accéder au fichier privé. Le token encode le chemin relatif du fichier
-// (Media.publicId) et expire dans 10 minutes : passé ce délai,
-// GET /api/v2/admin/files/:token rejettera la demande.
+// Détail d'un document + jeton de courte durée (10 minutes) donnant accès au
+// fichier privé. Le jeton ne contient AUCUN chemin disque : il porte
+// l'identifiant du Media (`mediaId`) et le compte du membre du staff qui le
+// demande (`sub`). Le chemin est résolu au moment du service, depuis la base
+// (resolvePrivateFile) — un jeton ne peut donc pas désigner un fichier
+// arbitraire, et un lien ne vaut que pour le compte qui l'a demandé.
 export const getVerification = async (req, res) => {
   const document = await prisma.verificationDocument.findUnique({
     where: { id: req.params.id },
@@ -363,14 +362,22 @@ export const getVerification = async (req, res) => {
   const media = document.media[0] ?? null;
   let urlSignee = null;
   if (media?.publicId) {
-    // Génère un token JWT signé avec le chemin relatif du fichier.
-    // Durée de vie : 10 minutes.
-    // SECRET_FILE_TOKEN : clé dédiée aux tokens de fichiers privés.
-    // Fallback sur JWT_SECRET si non définie (compatibilité environnements existants).
-    const secret = process.env.SECRET_FILE_TOKEN ?? process.env.JWT_SECRET;
-    const token = jwt.sign({ filePath: media.publicId }, secret, { expiresIn: '10m' });
+    const token = signFileToken({ mediaId: media.id, staffUserId: req.user.id });
     // L'URL est relative au serveur : le client frontal la préfixe avec l'URL de base.
     urlSignee = `/api/v2/admin/files/${token}`;
+
+    // Consulter une pièce d'identité est un accès à une donnée sensible : il
+    // est journalisé au même titre qu'une décision d'examen. L'audit est lié
+    // à l'émission du lien — sans lien, aucune consultation n'a eu lieu.
+    // recordAudit ne masque jamais ses erreurs : un audit impossible doit
+    // faire échouer la requête plutôt que de laisser une lecture non tracée.
+    await recordAudit(prisma, {
+      actorUser: req.user,
+      action: 'PROFILE_DOCUMENT_VIEWED',
+      entityType: 'VerificationDocument',
+      entityId: document.id,
+      metadata: { userId: document.userId },
+    });
   }
 
   res.json({
@@ -594,47 +601,80 @@ export const rejectReferralController = async (req, res) => {
 // GET /api/v2/admin/files/:token
 // ---------------------------------------------------------------------------
 //
-// Streaming sécurisé d'un fichier privé (document de vérification).
-// Le token JWT (généré par getVerification, exp. 10 min) est validé ici.
-// Le fichier est lu sur disque et streamé directement vers le client sans
-// passer par express.static (les dossiers de documents ne sont pas montés
-// statiquement).
+// Lecture d'un fichier privé (document de vérification), servie depuis le
+// disque. Le jeton (émis par getVerification, valable 10 min) ne porte qu'un
+// identifiant de Media et l'identifiant du membre du staff qui l'a demandé.
 //
 // Sécurité :
-//  - Seuls les membres du staff (protect + requireCapability) peuvent appeler
-//    GET /verifications/:id, qui génère le token. Le token expire rapidement.
-//  - path.resolve + vérification préfixe UPLOADS_ROOT : empêche toute
-//    traversée de répertoire (/files/../../etc/passwd).
-export const servePrivateFile = (req, res) => {
+//  - la route est protégée (protect + requireCapability) : seul un membre du
+//    staff autorisé l'atteint, et le jeton est de surcroît lié à son compte ;
+//  - audience, finalité et signature sont vérifiées avant toute lecture ;
+//  - le chemin vient de la base et passe par resolvePrivateFile, qui refuse
+//    un dossier public comme toute remontée de chemin ;
+//  - la réponse n'est ni mise en cache ni sniffable, et le nom servi est
+//    neutre : le nom d'origine du document ne doit pas fuiter.
+export const servePrivateFile = async (req, res) => {
   const { token } = req.params;
-  const secret = process.env.SECRET_FILE_TOKEN ?? process.env.JWT_SECRET;
 
   let payload;
   try {
-    payload = jwt.verify(token, secret);
+    payload = verifyFileToken(token);
   } catch {
-    // Token expiré, invalide ou altéré : on répond 401.
+    // Jeton expiré, altéré, ou jeton d'accès utilisé comme jeton de fichier :
+    // la réponse ne distingue pas ces cas (rien ne doit être apprenable sur
+    // la cryptographie employée).
     return res.status(401).json({ error: 'Token de fichier invalide ou expiré' });
   }
 
-  // payload.filePath est un chemin relatif du type "ID_CARD/20261018T142300_42_aB3x.jpg"
-  const absPath = resolve(join(UPLOADS_ROOT, payload.filePath));
-
-  // Protection contre la traversée de répertoire : le chemin résolu doit
-  // rester dans UPLOADS_ROOT.
-  const uploadsResolved = resolve(UPLOADS_ROOT);
-  if (!absPath.startsWith(uploadsResolved + '/') && !absPath.startsWith(uploadsResolved + '\\')) {
-    return res.status(400).json({ error: 'Chemin de fichier invalide' });
+  // Le lien a été délivré à un membre du staff précis : le transmettre à un
+  // autre compte ne donne rien. 403 (et non 404) parce que le jeton, lui, est
+  // parfaitement valide — c'est son porteur qui n'a pas droit à ce document.
+  if (payload.sub !== String(req.user.id)) {
+    return res.status(403).json({ error: "Ce lien a été émis pour un autre compte" });
   }
 
-  if (!existsSync(absPath)) {
+  const media = await prisma.media.findUnique({
+    where: { id: payload.mediaId },
+    include: { mimeType: { select: { extension: true } } },
+  });
+  // Un Media public, ou sans document de vérification propriétaire, n'est pas
+  // servi ici : 404, comme s'il n'existait pas.
+  if (!media?.isPrivate || !media.ownerVerificationDocumentId) {
     return res.status(404).json({ error: 'Fichier introuvable' });
   }
 
-  // Le Content-Type est déduit de l'extension par Express/Node ; res.download()
-  // forcerait un Content-Disposition: attachment, on préfère sendFile() pour
-  // que le navigateur puisse afficher le PDF ou l'image en ligne.
-  res.sendFile(absPath);
+  let absPath;
+  try {
+    absPath = resolvePrivateFile(media.publicId);
+  } catch {
+    // publicId hors dossier privé (ou chemin invalide) : fichier non servi.
+    return res.status(404).json({ error: 'Fichier introuvable' });
+  }
+
+  // La ligne Media existe mais le fichier a disparu (nettoyage manuel, volume
+  // non monté). Le code FILE_MISSING distingue ce cas d'un document inconnu.
+  if (!existsSync(absPath)) {
+    return res.status(404).json({ error: 'Fichier introuvable', code: 'FILE_MISSING' });
+  }
+
+  // Une pièce d'identité ne doit ni être conservée par un proxy ou le
+  // navigateur, ni être reinterpretée par le navigateur sur la base de son
+  // contenu (nosniff). Le nom servi est neutre : 'document.pdf' ne révèle ni
+  // le nom du fichier déposé, ni le type exact au-delà de ce qu'il faut pour
+  // l'afficher.
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('Content-Disposition', `inline; filename="document${extensionMime(media.mimeType?.extension)}"`);
+
+  return res.sendFile(absPath);
 };
+
+// Extension du nom servi, déduite du mimetype en base (stockée avec son point
+// initial : '.pdf'). Repli '.bin' si la ligne Media n'a pas de type connu : le
+// nom reste neutre, et le navigateur n'a rien à interpréter.
+function extensionMime(extension) {
+  if (typeof extension !== 'string' || !/^\.[a-z0-9]+$/i.test(extension)) return '.bin';
+  return extension;
+}
 
 

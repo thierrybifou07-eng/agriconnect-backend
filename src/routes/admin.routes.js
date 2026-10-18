@@ -102,8 +102,9 @@ router.get('/verifications/:id', protect, requireCapability('USER_VERIFICATION')
 router.patch('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), validate(reviewVerificationSchema), reviewVerification);
 
 // Accès sécurisé aux fichiers privés (documents de vérification).
-// Le token JWT est généré par GET /verifications/:id (exp. 10 min).
-// Même garde d'accès que les routes de vérification : USER_VERIFICATION ou ADMIN+.
+// Le jeton de fichier est émis par GET /verifications/:id (exp. 10 min) : il
+// n'est valable que pour le compte qui l'a demandé. Même garde d'accès que les
+// routes de vérification : USER_VERIFICATION ou ADMIN+.
 router.get('/files/:token', protect, requireCapability('USER_VERIFICATION'), servePrivateFile);
 
 router.use(protect, requireMinLevel(50));
