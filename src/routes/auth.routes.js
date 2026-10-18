@@ -35,6 +35,7 @@ import {
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
+import { handleUpload } from '../middlewares/uploadHandler.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import {
   registerSchema,
@@ -106,7 +107,7 @@ router.post('/logout-all', protect, logoutAll);
 // Elles partagent la forme de reponse unique userToApi (voir utils/userApi.js).
 router.get('/me', protect, getMe);
 router.patch('/me', protect, updateMe);
-router.post('/me/avatar', protect, upload.single('avatar'), uploadAvatar);
+router.post('/me/avatar', protect, handleUpload(upload.single('avatar'), { field: 'avatar', maxSizeMb: 5 }), uploadAvatar);
 
 // Profil du role. GET /me expose deja le profil (voir getMe) ; cette route le
 // modifie. Le schema Joi depend du role — un SUPPLIER n a pas a connaitre les
@@ -135,7 +136,7 @@ router.delete('/me/payout-accounts/:id', protect, requireRole('SUPPLIER', 'BUYER
 // les deux rôles dont le profil est vérifié par l'équipe (plan v2, P1.6).
 // multer parse d'abord le multipart (champ fichier + champ texte "type"),
 // puis validate controle le corps : l'ordre des middlewares est important.
-router.post('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), uploadDocument.single('file'), validate(submitDocumentSchema), submitDocument);
+router.post('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), handleUpload(uploadDocument.single('file'), { field: 'file', maxSizeMb: 8 }), validate(submitDocumentSchema), submitDocument);
 router.get('/me/documents', protect, requireRole('SUPPLIER', 'BUYER'), listMyDocuments);
 
 // Parrainage : tout utilisateur connecté peut consulter son code de parrainage

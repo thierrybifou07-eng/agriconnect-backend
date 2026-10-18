@@ -16,7 +16,10 @@ const upload = multer({
       // statusCode 400 : un format refusé est une requête mal formée, pas une
       // erreur serveur (convention du projet, error.middleware.js).
       return cb(
-        Object.assign(new Error('Format de fichier non supporté (jpg, png, webp, pdf)'), { statusCode: 400 })
+        Object.assign(new Error('Format de fichier non supporté (jpg, png, webp, pdf)'), {
+          statusCode: 400,
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+        })
       );
     }
     cb(null, true);

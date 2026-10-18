@@ -53,6 +53,7 @@ import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
+import { handleUpload } from '../middlewares/uploadHandler.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
 import { lotCreateSchema } from '../validators/lot.validator.js';
 import { listingCreateSchema, listingUpdateSchema } from '../validators/listing.validator.js';
@@ -99,16 +100,6 @@ const STAFF_DISPATCH = [protect, requireCapability('DISPATCH_COORDINATION')];
 // Les indemnisations exigent DISPUTE_HANDLING (AGENT) ou ADMIN/ROOT.
 const STAFF_COMPENSATIONS = [protect, requireCapability('DISPUTE_HANDLING')];
 
-// Sans ce callback, un sixième fichier arrêterait multer avec
-// LIMIT_UNEXPECTED_FILE et l'erreur remonterait en 500.
-const uploadImages = (req, res, next) => {
-  upload.array('images', 5)(req, res, (err) => {
-    if (!err) return next();
-    const message = err.code === 'LIMIT_UNEXPECTED_FILE' ? 'Maximum 5 images' : err.message;
-    res.status(400).json({ error: message });
-  });
-};
-
 // Schémas de validation pour les routes staff.
 const staffLotCreateSchema = lotCreateSchema.keys({
   supplierUserId: Joi.number().integer().positive().required().messages({
@@ -154,7 +145,7 @@ const deliveryCancelSchema = Joi.object({
 });
 
 // Création d'un lot au nom d'un fournisseur (mêmes champs que P2.2 + supplierUserId).
-router.post('/lots', STAFF, uploadImages, validate(staffLotCreateSchema), createLot);
+router.post('/lots', STAFF, handleUpload(upload.array('images', 5), { field: 'images', maxFiles: 5, maxSizeMb: 5 }), validate(staffLotCreateSchema), createLot);
 
 // Liste des lots avec filtres.
 router.get('/lots', STAFF, listLots);
@@ -173,7 +164,7 @@ router.post('/lots/:id/quality-checks', STAFF, validate(qualityCheckSchema), cre
 router.get('/lots/:id/quality-checks', STAFF, listQualityChecks);
 
 // Annonces publiées par l'équipe à partir des lots validés (P2.5).
-router.post('/listings', STAFF_LISTING, uploadImages, validate(listingCreateSchema), createListing);
+router.post('/listings', STAFF_LISTING, handleUpload(upload.array('images', 5), { field: 'images', maxFiles: 5, maxSizeMb: 5 }), validate(listingCreateSchema), createListing);
 router.get('/listings', STAFF_LISTING, listListings);
 router.get('/listings/:id', STAFF_LISTING, getListing);
 router.patch('/listings/:id', STAFF_LISTING, validate(listingUpdateSchema), updateListing);

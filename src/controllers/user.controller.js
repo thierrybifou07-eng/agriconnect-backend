@@ -73,7 +73,7 @@ export const updateMe = async (req, res) => {
 // POST /api/auth/me/avatar  (remplace l'avatar existant s'il y en avait un)
 export const uploadAvatar = async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: 'Aucune image fournie (champ "avatar")' });
+    return res.status(400).json({ error: 'Aucune image fournie (champ "avatar")', code: 'FILE_REQUIRED' });
   }
 
   const [mediaTypeId, mimeTypeId] = await Promise.all([
@@ -232,7 +232,7 @@ export const deletePayoutAccount = async (req, res) => {
 // publiquement, seul un token JWT de courte durée le rend lisible par le staff.
 export const submitDocument = async (req, res) => {
   if (!req.file) {
-    return res.status(400).json({ error: 'Aucun fichier fourni (champ "file")' });
+    return res.status(400).json({ error: 'Aucun fichier fourni (champ "file")', code: 'FILE_REQUIRED' });
   }
 
   const { type } = req.body; // validé par submitDocumentSchema en amont

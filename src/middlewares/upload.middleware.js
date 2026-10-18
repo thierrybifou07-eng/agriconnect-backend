@@ -11,7 +11,14 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5 Mo max par photo
   fileFilter: (req, file, cb) => {
     if (!ALLOWED_MIME_TYPES.includes(file.mimetype)) {
-      return cb(new Error("Format d'image non supporté (jpg, png, webp uniquement)"));
+      // Meme convention que uploadDocument.middleware.js : statusCode 400 et
+      // code stable, afin que handleUpload puisse les renvoyer tels quels.
+      return cb(
+        Object.assign(new Error("Format d'image non supporté (jpg, png, webp uniquement)"), {
+          statusCode: 400,
+          code: 'UNSUPPORTED_MEDIA_TYPE',
+        })
+      );
     }
     cb(null, true);
   },

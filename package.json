@@ -5,20 +5,20 @@
   "type": "module",
   "main": "src/server.js",
   "scripts": {
+    "backfill:profiles": "node scripts/backfill-profiles.js",
+    "create:root": "node scripts/create-root.js",
+    "db:drift": "node scripts/check-drift.js",
     "dev": "node --watch src/server.js",
-    "start": "node src/server.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
     "seed": "node prisma/seed.js",
     "seed:dev": "node prisma/seed.dev.js",
-    "create:root": "node scripts/create-root.js",
-    "backfill:profiles": "node scripts/backfill-profiles.js",
-    "db:drift": "node scripts/check-drift.js",
+    "start": "node src/server.js",
     "test": "vitest run",
-    "test:watch": "vitest",
+    "test:integration": "vitest run --project integration",
     "test:unit": "vitest run --project unit",
-    "test:integration": "vitest run --project integration"
+    "test:watch": "vitest"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
