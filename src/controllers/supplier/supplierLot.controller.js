@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import prisma from '../../config/prisma.js';
-import { uploadBufferToCloudinary } from '../../utils/cloudinaryUpload.js';
+import { saveFile, StorageKind } from '../../services/storage.service.js';
 import { getLookupId } from '../../utils/lookupCache.js';
 import { asMoney, asQuantity, toNumber } from '../../utils/money.js';
 import { lotToSupplierDto } from '../../utils/dto/lot.dto.js';
@@ -144,8 +144,8 @@ export const createLot = async (req, res) => {
     });
 
     for (let i = 0; i < files.length; i++) {
-      const url = await uploadBufferToCloudinary(files[i].buffer, {
-        folder: 'agriconnect/lots',
+      const { url, publicId } = await saveFile(files[i].buffer, {
+        kind: StorageKind.LOT_PHOTO,
         userId: req.user.id,
         mimetype: files[i].mimetype,
       });
@@ -155,6 +155,7 @@ export const createLot = async (req, res) => {
           mediaTypeId,
           mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
           url,
+          publicId,
           // La première photo envoyée est la photo principale : c'est elle
           // qui sert de vignette dans les listes.
           isPrimary: i === 0,

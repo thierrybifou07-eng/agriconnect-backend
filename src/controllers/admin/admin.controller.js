@@ -13,7 +13,7 @@ import { asMoney, toDecimal, toNumber } from '../../utils/money.js';
 import { sendTemplateEmail } from '../../config/email/sendMail.js';
 // jsonwebtoken est déjà dans les dépendances du projet (src/utils/jwt.js).
 // On l'utilise pour générer un token signé de courte durée qui donne accès
-// aux documents privés (remplace l'URL Cloudinary signée).
+// aux documents privés, signés par ce jeton.
 import jwt from 'jsonwebtoken';
 import { recordAudit } from '../../utils/audit.js';
 import {
@@ -21,7 +21,7 @@ import {
   payReferral,
   rejectReferral,
 } from '../../services/referral.service.js';
-import { UPLOADS_ROOT } from '../../utils/localUpload.js';
+import { UPLOADS_ROOT } from '../../services/storage.service.js';
 import {UserStatusCode} from "../../utils/enums/enums.helpers.js";
 
 const userSafeSelect = {
@@ -338,7 +338,6 @@ export const listVerifications = async (req, res) => {
 // accéder au fichier privé. Le token encode le chemin relatif du fichier
 // (Media.publicId) et expire dans 10 minutes : passé ce délai,
 // GET /api/v2/admin/files/:token rejettera la demande.
-// Comportement identique à l'ancienne URL Cloudinary signée.
 export const getVerification = async (req, res) => {
   const document = await prisma.verificationDocument.findUnique({
     where: { id: req.params.id },
@@ -365,7 +364,7 @@ export const getVerification = async (req, res) => {
   let urlSignee = null;
   if (media?.publicId) {
     // Génère un token JWT signé avec le chemin relatif du fichier.
-    // Durée de vie : 10 minutes — identique à l'ancienne URL Cloudinary signée.
+    // Durée de vie : 10 minutes.
     // SECRET_FILE_TOKEN : clé dédiée aux tokens de fichiers privés.
     // Fallback sur JWT_SECRET si non définie (compatibilité environnements existants).
     const secret = process.env.SECRET_FILE_TOKEN ?? process.env.JWT_SECRET;

@@ -1,44 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { randomInt } from 'node:crypto';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
 import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 
-// --- Mock Cloudinary ---
-// upload_stream : objet avec end() qui déclenche le callback, comme le vrai
-// SDK. Le module npm 'cloudinary' est mocké (et non config/cloudinary.js) :
-// les deux importent { v2 } de 'cloudinary', donc un seul mock couvre les deux.
-const { uploadStream } = vi.hoisted(() => ({
-  uploadStream: vi.fn(),
-}));
-
-vi.mock('cloudinary', () => ({
-  v2: {
-    config: vi.fn(),
-    uploader: { upload_stream: uploadStream },
-  },
-}));
-
 const client = api();
-
-// Compteur : chaque photo reçoit une URL et un public_id distincts, comme le
-// ferait Cloudinary pour deux uploads différents.
-let numeroImage;
-beforeEach(() => {
-  numeroImage = 0;
-  uploadStream.mockImplementation((options, callback) => ({
-    end: () => {
-      numeroImage += 1;
-      setImmediate(() =>
-        callback(null, {
-          public_id: `lot_${numeroImage}`,
-          secure_url: `https://res.cloudinary.com/test/lot_${numeroImage}`,
-        })
-      );
-    },
-  }));
-});
 
 function tokenPour(user, role) {
   return generateToken({ id: user.id, role });
@@ -47,9 +14,6 @@ function tokenPour(user, role) {
 // Buffers minimaux : multer ne regarde que le mimetype déclaré, pas le contenu.
 const FAKE_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 const FAKE_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
-
-// Le setup global (tests/setup/hooks.js) vide la base avant chaque test ; ici
-// on configure seulement le mock Cloudinary.
 
 // --- Fixtures ---
 

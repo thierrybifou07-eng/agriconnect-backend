@@ -136,8 +136,8 @@ async function creerFixtures() {
   // Photos réalistes sur lotA1 : la première est la photo principale.
   await prisma.media.createMany({
     data: [
-      { ownerLotId: lotA1.id, mediaTypeId: mediaType.id, mimeTypeId: mimeType.id, url: 'https://res.cloudinary.com/test/lot_a1_1', publicId: 'lot_a1_1', isPrimary: true, position: 0 },
-      { ownerLotId: lotA1.id, mediaTypeId: mediaType.id, mimeTypeId: mimeType.id, url: 'https://res.cloudinary.com/test/lot_a1_2', publicId: 'lot_a1_2', isPrimary: false, position: 1 },
+      { ownerLotId: lotA1.id, mediaTypeId: mediaType.id, mimeTypeId: mimeType.id, url: '/uploads/LOT_PHOTO/lot_a1_1', publicId: 'LOT_PHOTO/lot_a1_1', isPrimary: true, position: 0 },
+      { ownerLotId: lotA1.id, mediaTypeId: mediaType.id, mimeTypeId: mimeType.id, url: '/uploads/LOT_PHOTO/lot_a1_2', publicId: 'LOT_PHOTO/lot_a1_2', isPrimary: false, position: 1 },
     ],
   });
 
@@ -361,8 +361,8 @@ describe('GET /api/v2/catalog/listings', () => {
     expect(res.status, res.text).toBe(200);
     const item = res.body.items.find((i) => i.id === fixture.annonceA.id);
     expect(item.images).toEqual([
-      'https://res.cloudinary.com/test/lot_a1_1',
-      'https://res.cloudinary.com/test/lot_a1_2',
+      '/uploads/LOT_PHOTO/lot_a1_1',
+      '/uploads/LOT_PHOTO/lot_a1_2',
     ]);
   });
 
@@ -459,8 +459,8 @@ describe('GET /api/v2/catalog/listings/:id', () => {
       zone: { id: fixture.zone.id, name: fixture.zone.name, city: 'Testville' },
     });
     expect(res.body.images).toEqual([
-      'https://res.cloudinary.com/test/lot_a1_1',
-      'https://res.cloudinary.com/test/lot_a1_2',
+      '/uploads/LOT_PHOTO/lot_a1_1',
+      '/uploads/LOT_PHOTO/lot_a1_2',
     ]);
   });
 

@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import prisma from '../../config/prisma.js';
-import { uploadBufferToCloudinary } from '../../utils/cloudinaryUpload.js';
+import { saveFile, StorageKind } from '../../services/storage.service.js';
 import { getLookupId } from '../../utils/lookupCache.js';
 import { asMoney, toDecimal, toNumber } from '../../utils/money.js';
 import { listingToStaffDto } from '../../utils/dto/listing.dto.js';
@@ -130,12 +130,12 @@ export const createListing = async (req, res) => {
     // Photos : celles envoyées ; sinon copie des photos du lot (nouvelles
     // lignes Media ownerListingId reprenant url et publicId, isPrivate false).
     if (files.length > 0) {
-      // withPublicId : la ligne Media de l'annonce reprend le public_id, comme
-      // elle le fait pour les photos copiées depuis le lot.
-      const optionsUpload = { folder: 'agriconnect/listings', withPublicId: true, userId: req.user.id };
       for (let i = 0; i < files.length; i++) {
-        const { url, public_id } = await uploadBufferToCloudinary(files[i].buffer, {
-          ...optionsUpload,
+        // La ligne Media de l'annonce reprend le publicId, comme elle le fait
+        // pour les photos copiées depuis le lot.
+        const { url, publicId } = await saveFile(files[i].buffer, {
+          kind: StorageKind.LISTING_PHOTO,
+          userId: req.user.id,
           mimetype: files[i].mimetype,
         });
         await tx.media.create({
@@ -144,7 +144,7 @@ export const createListing = async (req, res) => {
             mediaTypeId,
             mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
             url,
-            publicId: public_id,
+            publicId,
             isPrivate: false,
             isPrimary: i === 0,
             position: i,

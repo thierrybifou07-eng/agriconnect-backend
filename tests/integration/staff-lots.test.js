@@ -1,39 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { randomInt } from 'node:crypto';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
 import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 
-// --- Mock Cloudinary ---
-const { uploadStream } = vi.hoisted(() => ({
-  uploadStream: vi.fn(),
-}));
-
-vi.mock('cloudinary', () => ({
-  v2: {
-    config: vi.fn(),
-    uploader: { upload_stream: uploadStream },
-  },
-}));
-
 const client = api();
-
-let numeroImage;
-beforeEach(() => {
-  numeroImage = 0;
-  uploadStream.mockImplementation((options, callback) => ({
-    end: () => {
-      numeroImage += 1;
-      setImmediate(() =>
-        callback(null, {
-          public_id: `lot_${numeroImage}`,
-          secure_url: `https://res.cloudinary.com/test/lot_${numeroImage}`,
-        })
-      );
-    },
-  }));
-});
 
 function tokenPour(user, role) {
   return generateToken({ id: user.id, role });

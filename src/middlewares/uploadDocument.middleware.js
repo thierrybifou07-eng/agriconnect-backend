@@ -4,8 +4,8 @@ import multer from 'multer';
 // un mimetype accepté ici mais absent de la table ferait échouer l'upload plus loin.
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 
-// Stockage en mémoire (buffer) : le buffer est envoyé directement à Cloudinary
-// via uploader.upload_stream, sans jamais écrire sur le disque du serveur.
+// Stockage en mémoire (buffer) : le buffer est écrit sur disque par
+// services/storage.service.js, jamais par multer lui-même.
 // 8 Mo : un document d'identité (scan ou photo) dépasse rarement cette taille,
 // et la limite protège la mémoire du processus.
 const upload = multer({

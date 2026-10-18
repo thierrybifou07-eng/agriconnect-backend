@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../../src/config/prisma.js';
@@ -6,22 +6,6 @@ import { api, authHeader } from '../helpers/app.js';
 import { createUser, createListingForLot, createSession } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { assertNoLeak } from '../helpers/assertNoLeak.js';
-
-// --- Mock Cloudinary (pattern de verification.test.js) ---
-// Les routes d'upload (avatar, documents) passent par Cloudinary : en test,
-// le module est mocké pour ne pas dépendre d'un service externe.
-const { uploadStream, privateDownloadUrl } = vi.hoisted(() => ({
-  uploadStream: vi.fn(),
-  privateDownloadUrl: vi.fn(),
-}));
-
-vi.mock('cloudinary', () => ({
-  v2: {
-    config: vi.fn(),
-    uploader: { upload_stream: uploadStream },
-    utils: { private_download_url: privateDownloadUrl },
-  },
-}));
 
 const Decimal = Prisma.Decimal;
 const DANS_7_JOURS = new Date(Date.now() + 7 * 24 * 3600 * 1000);
@@ -315,23 +299,6 @@ async function scenarioComplet() {
 // --- Tests ---
 
 describe('Confidentialité — acheteur', () => {
-  beforeEach(() => {
-    uploadStream.mockImplementation((options, callback) => ({
-      end: () => {
-        setImmediate(() =>
-          callback(null, {
-            public_id: 'test_123',
-            secure_url: 'https://res.cloudinary.com/test/test_123',
-          })
-        );
-      },
-    }));
-    privateDownloadUrl.mockImplementation(
-      (publicId, format, options) =>
-        `https://api.cloudinary.com/v1_1/test/image/download?public_id=${publicId}&format=${format}&expires_at=${options.expires_at}&signature=mocksig`
-    );
-  });
-
   it('aucune donnée interne ni contact de tiers ne fuite sur aucune route acheteur', async () => {
     const ctx = await scenarioComplet();
     const token = tokenPour(ctx.buyer, 'BUYER');
@@ -478,23 +445,6 @@ describe('Confidentialité — acheteur', () => {
 });
 
 describe('Confidentialité — fournisseur', () => {
-  beforeEach(() => {
-    uploadStream.mockImplementation((options, callback) => ({
-      end: () => {
-        setImmediate(() =>
-          callback(null, {
-            public_id: 'test_123',
-            secure_url: 'https://res.cloudinary.com/test/test_123',
-          })
-        );
-      },
-    }));
-    privateDownloadUrl.mockImplementation(
-      (publicId, format, options) =>
-        `https://api.cloudinary.com/v1_1/test/image/download?public_id=${publicId}&format=${format}&expires_at=${options.expires_at}&signature=mocksig`
-    );
-  });
-
   it('aucun identifiant ni nom d\'acheteur ne fuite sur aucune route fournisseur', async () => {
     const ctx = await scenarioComplet();
     const token = tokenPour(ctx.supplierUser, 'SUPPLIER');
@@ -643,23 +593,6 @@ describe('Confidentialité — fournisseur', () => {
 });
 
 describe('Confidentialité — livreur', () => {
-  beforeEach(() => {
-    uploadStream.mockImplementation((options, callback) => ({
-      end: () => {
-        setImmediate(() =>
-          callback(null, {
-            public_id: 'test_123',
-            secure_url: 'https://res.cloudinary.com/test/test_123',
-          })
-        );
-      },
-    }));
-    privateDownloadUrl.mockImplementation(
-      (publicId, format, options) =>
-        `https://api.cloudinary.com/v1_1/test/image/download?public_id=${publicId}&format=${format}&expires_at=${options.expires_at}&signature=mocksig`
-    );
-  });
-
   it('aucun montant ni prix ne fuite sur aucune route livreur', async () => {
     const ctx = await scenarioComplet();
     const token = tokenPour(ctx.driverUser, 'DRIVER');

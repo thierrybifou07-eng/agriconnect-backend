@@ -1,22 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { api, authHeader } from '../helpers/app.js';
 import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
-
-// --- Mock Cloudinary ---
-// upload_stream : objet avec end() qui déclenche le callback, comme le vrai SDK.
-// Le module npm 'cloudinary' est mocké (et non config/cloudinary.js) : les deux
-// importent { v2 } de 'cloudinary', donc un seul mock couvre les deux.
-const { uploadStream } = vi.hoisted(() => ({
-  uploadStream: vi.fn(),
-}));
-
-vi.mock('cloudinary', () => ({
-  v2: {
-    config: vi.fn(),
-    uploader: { upload_stream: uploadStream },
-  },
-}));
 
 const client = api();
 
@@ -29,19 +14,6 @@ const FAKE_JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
 const FAKE_PDF = Buffer.from('%PDF-1.4 factice');
 // Un fichier dont la taille dépasse la limite de 8 Mo du middleware document.
 const GROS_PDF = Buffer.alloc(8 * 1024 * 1024 + 1);
-
-beforeEach(() => {
-  uploadStream.mockImplementation((options, callback) => ({
-    end: () => {
-      setImmediate(() =>
-        callback(null, {
-          public_id: 'upload_test_123',
-          secure_url: 'https://res.cloudinary.com/test/upload_test_123',
-        })
-      );
-    },
-  }));
-});
 
 // Dépose un document via l'API.
 function depotDocument(

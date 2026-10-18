@@ -27,7 +27,6 @@
     "@prisma/client": "^6.0.0",
     "@scalar/express-api-reference": "^0.10.29",
     "bcrypt": "^6.0.0",
-    "cloudinary": "^2.4.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "ejs": "^6.0.1",

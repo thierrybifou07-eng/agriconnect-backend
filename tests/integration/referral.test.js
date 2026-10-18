@@ -1,26 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
 import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
-
-// --- Mock Cloudinary ---
-// upload_stream : objet avec end() qui déclenche le callback, comme le vrai SDK.
-// private_download_url : URL factice avec expires_at.
-// Le module npm 'cloudinary' est mocké (et non config/cloudinary.js) : les deux
-// importent { v2 } de 'cloudinary', donc un seul mock couvre les deux.
-const { uploadStream, privateDownloadUrl } = vi.hoisted(() => ({
-  uploadStream: vi.fn(),
-  privateDownloadUrl: vi.fn(),
-}));
-
-vi.mock('cloudinary', () => ({
-  v2: {
-    config: vi.fn(),
-    uploader: { upload_stream: uploadStream },
-    utils: { private_download_url: privateDownloadUrl },
-  },
-}));
 
 const client = api();
 
@@ -30,25 +12,6 @@ function tokenFor(userId, roleCode) {
 
 // Buffers minimaux : multer ne regarde que le mimetype déclaré, pas le contenu.
 const FAKE_PDF = Buffer.from('%PDF-1.4 factice');
-
-// Le setup global (tests/setup/hooks.js) vide la base avant chaque test ; ici on
-// configure seulement les mocks Cloudinary.
-beforeEach(() => {
-  uploadStream.mockImplementation((options, callback) => ({
-    end: () => {
-      setImmediate(() =>
-        callback(null, {
-          public_id: 'doc_test_123',
-          secure_url: 'https://res.cloudinary.com/test/doc_test_123',
-        })
-      );
-    },
-  }));
-  privateDownloadUrl.mockImplementation(
-    (publicId, format, options) =>
-      `https://api.cloudinary.com/v1_1/test/image/download?public_id=${publicId}&format=${format}&expires_at=${options.expires_at}&signature=mocksig`
-  );
-});
 
 // Restaure les récompenses de parrainage avant chaque test : le test "montant figé"
 // les modifie, et l'ordre d'exécution des tests n'est pas déterministe.

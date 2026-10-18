@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { randomInt } from 'node:crypto';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
@@ -6,35 +6,7 @@ import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { commitSale, expireAvailable, reserve } from '../../src/services/stock.service.js';
 
-// --- Mock Cloudinary ---
-const { uploadStream } = vi.hoisted(() => ({
-  uploadStream: vi.fn(),
-}));
-
-vi.mock('cloudinary', () => ({
-  v2: {
-    config: vi.fn(),
-    uploader: { upload_stream: uploadStream },
-  },
-}));
-
 const client = api();
-
-let numeroImage;
-beforeEach(() => {
-  numeroImage = 0;
-  uploadStream.mockImplementation((options, callback) => ({
-    end: () => {
-      numeroImage += 1;
-      setImmediate(() =>
-        callback(null, {
-          public_id: `listing_${numeroImage}`,
-          secure_url: `https://res.cloudinary.com/test/listing_${numeroImage}`,
-        })
-      );
-    },
-  }));
-});
 
 function tokenPour(user, role) {
   return generateToken({ id: user.id, role });
@@ -273,8 +245,8 @@ describe('POST /api/v2/staff/listings — création', () => {
           ownerLotId: lot.id,
           mediaTypeId: mediaType.id,
           mimeTypeId: mimeType.id,
-          url: 'https://res.cloudinary.com/test/lot_1',
-          publicId: 'lot_1',
+          url: '/uploads/LOT_PHOTO/lot_1',
+          publicId: 'LOT_PHOTO/lot_1',
           isPrimary: true,
           position: 0,
         },
@@ -282,8 +254,8 @@ describe('POST /api/v2/staff/listings — création', () => {
           ownerLotId: lot.id,
           mediaTypeId: mediaType.id,
           mimeTypeId: mimeType.id,
-          url: 'https://res.cloudinary.com/test/lot_2',
-          publicId: 'lot_2',
+          url: '/uploads/LOT_PHOTO/lot_2',
+          publicId: 'LOT_PHOTO/lot_2',
           isPrimary: false,
           position: 1,
         },
@@ -295,7 +267,7 @@ describe('POST /api/v2/staff/listings — création', () => {
     expect(res.status, res.text).toBe(201);
     expect(res.body.images).toHaveLength(2);
     expect(res.body.images[0]).toMatchObject({
-      url: 'https://res.cloudinary.com/test/lot_1',
+      url: '/uploads/LOT_PHOTO/lot_1',
       isPrimary: true,
       position: 0,
     });
@@ -307,14 +279,14 @@ describe('POST /api/v2/staff/listings — création', () => {
     });
     expect(photos).toHaveLength(2);
     expect(photos[0]).toMatchObject({
-      url: 'https://res.cloudinary.com/test/lot_1',
-      publicId: 'lot_1',
+      url: '/uploads/LOT_PHOTO/lot_1',
+      publicId: 'LOT_PHOTO/lot_1',
       isPrivate: false,
       isPrimary: true,
     });
     expect(photos[1]).toMatchObject({
-      url: 'https://res.cloudinary.com/test/lot_2',
-      publicId: 'lot_2',
+      url: '/uploads/LOT_PHOTO/lot_2',
+      publicId: 'LOT_PHOTO/lot_2',
       isPrivate: false,
       isPrimary: false,
     });

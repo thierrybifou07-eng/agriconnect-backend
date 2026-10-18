@@ -1,5 +1,5 @@
 import prisma from '../config/prisma.js';
-import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
+import { saveFile, StorageKind } from '../services/storage.service.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { userToApi, payoutAccountToApi } from '../utils/userApi.js';
 import { resetVerificationForNewEmail } from '../utils/emailVerification.js';
@@ -81,7 +81,8 @@ export const uploadAvatar = async (req, res) => {
     getLookupId('mimeType', req.file.mimetype),
   ]);
 
-  const url = await uploadBufferToCloudinary(req.file.buffer, {
+  const { url, publicId } = await saveFile(req.file.buffer, {
+    kind: StorageKind.AVATAR,
     userId: req.user.id,
     mimetype: req.file.mimetype,
   });
@@ -89,7 +90,7 @@ export const uploadAvatar = async (req, res) => {
   const media = await prisma.$transaction(async (tx) => {
     await tx.media.deleteMany({ where: { ownerUserId: req.user.id, mediaTypeId } });
     return tx.media.create({
-      data: { ownerUserId: req.user.id, mediaTypeId, mimeTypeId, url, isPrimary: true },
+      data: { ownerUserId: req.user.id, mediaTypeId, mimeTypeId, url, publicId, isPrimary: true },
     });
   });
 
@@ -245,11 +246,10 @@ export const submitDocument = async (req, res) => {
     return res.status(400).json({ error: 'Type de fichier non supporté' });
   }
 
-  // documentType : route le fichier vers le bon sous-dossier local
+  // documentType : route le fichier vers le bon sous-dossier privé local
   // (ID_CARD/, BUSINESS_REGISTRATION/, FARM_PROOF/, OTHER/).
-  const { url, public_id } = await uploadBufferToCloudinary(req.file.buffer, {
-    folder: 'agriconnect/verification-documents',
-    type: 'authenticated',
+  const { url, publicId } = await saveFile(req.file.buffer, {
+    kind: StorageKind.VERIFICATION_DOCUMENT,
     userId: req.user.id,
     mimetype: req.file.mimetype,
     documentType: type,
@@ -265,7 +265,7 @@ export const submitDocument = async (req, res) => {
         mediaTypeId: mimeType.mediaTypeId,
         mimeTypeId: mimeType.id,
         url,
-        publicId: public_id,
+        publicId,
         isPrivate: true,
         fileSize: req.file.size,
       },
