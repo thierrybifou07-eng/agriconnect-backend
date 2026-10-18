@@ -87,6 +87,37 @@ export default {
       },
     },
 
+    '/admin/files/{token}': {
+      get: {
+        tags: ['Admin'],
+        summary: 'Télécharge ou affiche un document privé sécurisé',
+        description: 'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Accès via token JWT signé (10 min).',
+        parameters: [
+          {
+            in: 'path',
+            name: 'token',
+            required: true,
+            schema: { type: 'string' },
+            description: 'Token JWT signé encodant le chemin relatif du document',
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Fichier privé streamé (image ou PDF)',
+            content: {
+              '*/*': {
+                schema: { type: 'string', format: 'binary' },
+              },
+            },
+          },
+          '400': R('BadRequest'),
+          '401': R('Unauthorized'),
+          '403': R('Forbidden'),
+          '404': R('NotFound'),
+        },
+      },
+    },
+
     '/admin/settings': {
       get: {
         tags: ['Admin'],

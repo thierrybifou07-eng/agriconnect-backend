@@ -170,10 +170,11 @@ describe('POST /api/v2/supplier/lots — déclaration', () => {
     expect(res.body.storageType).toBe('SUPPLIER_SITE');
     expect(res.body.pickupAddress).toBe('12 route de la ferme');
     // Photos triées : principale d'abord, puis par position.
-    expect(res.body.images).toEqual([
-      { url: 'https://res.cloudinary.com/test/lot_1', position: 0, isPrimary: true },
-      { url: 'https://res.cloudinary.com/test/lot_2', position: 1, isPrimary: false },
-    ]);
+    expect(res.body.images).toHaveLength(2);
+    expect(res.body.images[0]).toMatchObject({ position: 0, isPrimary: true });
+    expect(res.body.images[0].url).toMatch(/^\/uploads\/LOT_PHOTO\//);
+    expect(res.body.images[1]).toMatchObject({ position: 1, isPrimary: false });
+    expect(res.body.images[1].url).toMatch(/^\/uploads\/LOT_PHOTO\//);
     // Aucune donnée acheteur dans la réponse.
     expect(res.body).not.toHaveProperty('buyerId');
 

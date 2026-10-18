@@ -99,7 +99,7 @@ describe('POST /api/v2/auth/me/documents — dépôt de document', () => {
     });
     expect(media).toBeTruthy();
     expect(media.isPrivate).toBe(true);
-    expect(media.publicId).toBe('doc_test_123');
+    expect(media.publicId).toMatch(/^ID_CARD\//);
     expect(media.mimeType.code).toBe('application/pdf');
     expect(media.mediaType.code).toBe('DOCUMENT');
 
@@ -282,15 +282,13 @@ describe('GET /api/v2/admin/verifications/:id — détail + URL signée', () => 
 
     expect(res.status, res.text).toBe(200);
     expect(res.body.media).toBeTruthy();
-    expect(res.body.media.url).toContain('public_id=doc_test_123');
-    expect(res.body.media.url).toContain('expires_at=');
-    // private_download_url appelé avec le bon public_id, le bon format et
-    // une expiration de 10 minutes.
-    expect(privateDownloadUrl).toHaveBeenCalledWith(
-      'doc_test_123',
-      'pdf',
-      expect.objectContaining({ type: 'authenticated', expires_at: expect.any(Number) })
-    );
+    expect(res.body.media.url).toMatch(/^\/api\/v2\/admin\/files\//);
+
+    // Vérifie que le token d'accès permet de récupérer le document privé streamé
+    const fileRes = await client
+      .get(res.body.media.url)
+      .set(authHeader(tokenFor(admin, 'ADMIN')));
+    expect(fileRes.status).toBe(200);
 
     // Un BUYER ne peut pas voir le détail.
     const resBuyer = await client

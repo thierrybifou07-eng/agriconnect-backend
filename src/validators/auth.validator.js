@@ -48,9 +48,16 @@ export const registerSchema = Joi.object({
 });
 
 export const loginSchema = Joi.object({
-  email: Joi.string().required(),
-  password: Joi.string().required(),
-});
+  email: Joi.string().email().required().messages({
+    "string.empty": "email is required",
+    "string.email": "email must be a valid email address",
+    "string.base": "email must be a string",
+  }),
+  password: Joi.string().required().messages({
+    "string.empty": "password is required",
+    "string.base": "password must be a string",
+  }),
+}).options({ stripUnknown: true });
 
 export const refreshSchema = Joi.object({
   refreshToken: Joi.string().required(),

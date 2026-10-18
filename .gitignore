@@ -11,3 +11,6 @@ coverage/
 # Elles ecrivent un .log ou un .out a la racine et n'ont rien a faire dans
 # l'historique.
 _probe_*
+
+# Fichiers uploadés localement (remplace Cloudinary en dev/staging).
+uploads/

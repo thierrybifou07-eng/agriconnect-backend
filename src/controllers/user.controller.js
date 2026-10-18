@@ -81,7 +81,10 @@ export const uploadAvatar = async (req, res) => {
     getLookupId('mimeType', req.file.mimetype),
   ]);
 
-  const url = await uploadBufferToCloudinary(req.file.buffer);
+  const url = await uploadBufferToCloudinary(req.file.buffer, {
+    userId: req.user.id,
+    mimetype: req.file.mimetype,
+  });
 
   const media = await prisma.$transaction(async (tx) => {
     await tx.media.deleteMany({ where: { ownerUserId: req.user.id, mediaTypeId } });
@@ -224,9 +227,9 @@ export const deletePayoutAccount = async (req, res) => {
 
 // POST /api/auth/me/documents
 //
-// Dépôt d'un document de vérification du profil. Le fichier part en mode privé
-// sur Cloudinary (type 'authenticated') : il n'est jamais servi publiquement,
-// seule une URL signée de courte durée le rend lisible par le staff.
+// Dépôt d'un document de vérification du profil. Le fichier est stocké en
+// mode privé (hors du chemin express.static) : il n'est jamais servi
+// publiquement, seul un token JWT de courte durée le rend lisible par le staff.
 export const submitDocument = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Aucun fichier fourni (champ "file")' });
@@ -242,9 +245,14 @@ export const submitDocument = async (req, res) => {
     return res.status(400).json({ error: 'Type de fichier non supporté' });
   }
 
+  // documentType : route le fichier vers le bon sous-dossier local
+  // (ID_CARD/, BUSINESS_REGISTRATION/, FARM_PROOF/, OTHER/).
   const { url, public_id } = await uploadBufferToCloudinary(req.file.buffer, {
     folder: 'agriconnect/verification-documents',
     type: 'authenticated',
+    userId: req.user.id,
+    mimetype: req.file.mimetype,
+    documentType: type,
   });
 
   const document = await prisma.$transaction(async (tx) => {

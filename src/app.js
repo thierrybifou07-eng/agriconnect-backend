@@ -1,6 +1,8 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import routes from './routes/router.js';
 import { notFound, errorHandler } from './middlewares/error.middleware.js';
 import { apiLimiter } from './middlewares/rateLimit.middleware.js';
@@ -41,6 +43,28 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
+
+// Dossier racine uploads/ : fichiers uploaderés en local (remplace Cloudinary).
+// Seuls les dossiers PUBLICS sont servis statiquement.
+// Les documents de vérification (ID_CARD, BUSINESS_REGISTRATION, FARM_PROOF,
+// OTHER) ne sont PAS montés ici : l'accès passe par
+// GET /api/v2/admin/files/:token (token JWT signé, exp. 10 min).
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const uploadsRoot = join(__dirname, '..', 'uploads');
+
+for (const publicFolder of ['AVATAR', 'LOT_PHOTO', 'LISTING_PHOTO']) {
+  app.use(
+    `/uploads/${publicFolder}`,
+    express.static(join(uploadsRoot, publicFolder), {
+      // maxAge 1 an pour les assets statiques (images de lots/annonces).
+      // Les avatars bénéficient également du cache : un changement d'avatar
+      // génère un nouveau nom de fichier (horodatage + rand8), l'ancien est
+      // simplement oublié par le client après invalidation.
+      maxAge: '1y',
+      immutable: true,
+    })
+  );
+}
 
 app.use('/api/v2', apiLimiter, routes);
 

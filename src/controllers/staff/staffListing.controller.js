@@ -132,9 +132,12 @@ export const createListing = async (req, res) => {
     if (files.length > 0) {
       // withPublicId : la ligne Media de l'annonce reprend le public_id, comme
       // elle le fait pour les photos copiées depuis le lot.
-      const optionsUpload = { folder: 'agriconnect/listings', withPublicId: true };
+      const optionsUpload = { folder: 'agriconnect/listings', withPublicId: true, userId: req.user.id };
       for (let i = 0; i < files.length; i++) {
-        const { url, public_id } = await uploadBufferToCloudinary(files[i].buffer, optionsUpload);
+        const { url, public_id } = await uploadBufferToCloudinary(files[i].buffer, {
+          ...optionsUpload,
+          mimetype: files[i].mimetype,
+        });
         await tx.media.create({
           data: {
             ownerListingId: cree.id,

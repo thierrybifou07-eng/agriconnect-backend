@@ -144,7 +144,11 @@ export const createLot = async (req, res) => {
     });
 
     for (let i = 0; i < files.length; i++) {
-      const url = await uploadBufferToCloudinary(files[i].buffer, { folder: 'agriconnect/lots' });
+      const url = await uploadBufferToCloudinary(files[i].buffer, {
+        folder: 'agriconnect/lots',
+        userId: req.user.id,
+        mimetype: files[i].mimetype,
+      });
       await tx.media.create({
         data: {
           ownerLotId: misAJour.id,

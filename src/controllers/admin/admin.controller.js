@@ -1,4 +1,7 @@
 import bcrypt from 'bcrypt';
+import { createReadStream, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { Prisma } from '@prisma/client';
 import prisma from '../../config/prisma.js';
 import { getLookupId } from '../../utils/lookupCache.js';
@@ -8,15 +11,17 @@ import { asMoney, toDecimal, toNumber } from '../../utils/money.js';
 // Meme pile que l inscription (src/config/email) : un seul moteur de rendu,
 // une seule configuration SMTP.
 import { sendTemplateEmail } from '../../config/email/sendMail.js';
-// v2 du SDK : utils.private_download_url genere l URL signée de courte duree
-// qui donne acces a un asset private (type 'authenticated').
-import { v2 as cloudinary } from 'cloudinary';
+// jsonwebtoken est déjà dans les dépendances du projet (src/utils/jwt.js).
+// On l'utilise pour générer un token signé de courte durée qui donne accès
+// aux documents privés (remplace l'URL Cloudinary signée).
+import jwt from 'jsonwebtoken';
 import { recordAudit } from '../../utils/audit.js';
 import {
   onProfileVerified,
   payReferral,
   rejectReferral,
 } from '../../services/referral.service.js';
+import { UPLOADS_ROOT } from '../../utils/localUpload.js';
 import {UserStatusCode} from "../../utils/enums/enums.helpers.js";
 
 const userSafeSelect = {
@@ -329,9 +334,11 @@ export const listVerifications = async (req, res) => {
 
 // GET /api/v2/admin/verifications/:id
 //
-// Detail d'un document + URL signée de courte duree (10 minutes). L'asset est
-// prive (type 'authenticated') : seule une URL signée avec expiration permet de
-// le servir, et elle devient inutilisable apres coup.
+// Détail d'un document + token JWT signé de courte durée (10 minutes) pour
+// accéder au fichier privé. Le token encode le chemin relatif du fichier
+// (Media.publicId) et expire dans 10 minutes : passé ce délai,
+// GET /api/v2/admin/files/:token rejettera la demande.
+// Comportement identique à l'ancienne URL Cloudinary signée.
 export const getVerification = async (req, res) => {
   const document = await prisma.verificationDocument.findUnique({
     where: { id: req.params.id },
@@ -357,13 +364,14 @@ export const getVerification = async (req, res) => {
   const media = document.media[0] ?? null;
   let urlSignee = null;
   if (media?.publicId) {
-    // Format depuis l extension seedee (.jpg, .png, .webp, .pdf) : c est le
-    // format tel que Cloudinary l attend, sans le point.
-    const format = media.mimeType?.extension?.replace(/^\./, '') ?? null;
-    urlSignee = cloudinary.utils.private_download_url(media.publicId, format, {
-      type: 'authenticated',
-      expires_at: Math.floor(Date.now() / 1000) + 10 * 60,
-    });
+    // Génère un token JWT signé avec le chemin relatif du fichier.
+    // Durée de vie : 10 minutes — identique à l'ancienne URL Cloudinary signée.
+    // SECRET_FILE_TOKEN : clé dédiée aux tokens de fichiers privés.
+    // Fallback sur JWT_SECRET si non définie (compatibilité environnements existants).
+    const secret = process.env.SECRET_FILE_TOKEN ?? process.env.JWT_SECRET;
+    const token = jwt.sign({ filePath: media.publicId }, secret, { expiresIn: '10m' });
+    // L'URL est relative au serveur : le client frontal la préfixe avec l'URL de base.
+    urlSignee = `/api/v2/admin/files/${token}`;
   }
 
   res.json({
@@ -385,6 +393,7 @@ export const getVerification = async (req, res) => {
       : null,
   });
 };
+
 
 // PATCH /api/v2/admin/verifications/:id
 //
@@ -581,3 +590,52 @@ export const rejectReferralController = async (req, res) => {
 
   res.json(rejected);
 };
+
+// ---------------------------------------------------------------------------
+// GET /api/v2/admin/files/:token
+// ---------------------------------------------------------------------------
+//
+// Streaming sécurisé d'un fichier privé (document de vérification).
+// Le token JWT (généré par getVerification, exp. 10 min) est validé ici.
+// Le fichier est lu sur disque et streamé directement vers le client sans
+// passer par express.static (les dossiers de documents ne sont pas montés
+// statiquement).
+//
+// Sécurité :
+//  - Seuls les membres du staff (protect + requireCapability) peuvent appeler
+//    GET /verifications/:id, qui génère le token. Le token expire rapidement.
+//  - path.resolve + vérification préfixe UPLOADS_ROOT : empêche toute
+//    traversée de répertoire (/files/../../etc/passwd).
+export const servePrivateFile = (req, res) => {
+  const { token } = req.params;
+  const secret = process.env.SECRET_FILE_TOKEN ?? process.env.JWT_SECRET;
+
+  let payload;
+  try {
+    payload = jwt.verify(token, secret);
+  } catch {
+    // Token expiré, invalide ou altéré : on répond 401.
+    return res.status(401).json({ error: 'Token de fichier invalide ou expiré' });
+  }
+
+  // payload.filePath est un chemin relatif du type "ID_CARD/20261018T142300_42_aB3x.jpg"
+  const absPath = resolve(join(UPLOADS_ROOT, payload.filePath));
+
+  // Protection contre la traversée de répertoire : le chemin résolu doit
+  // rester dans UPLOADS_ROOT.
+  const uploadsResolved = resolve(UPLOADS_ROOT);
+  if (!absPath.startsWith(uploadsResolved + '/') && !absPath.startsWith(uploadsResolved + '\\')) {
+    return res.status(400).json({ error: 'Chemin de fichier invalide' });
+  }
+
+  if (!existsSync(absPath)) {
+    return res.status(404).json({ error: 'Fichier introuvable' });
+  }
+
+  // Le Content-Type est déduit de l'extension par Express/Node ; res.download()
+  // forcerait un Content-Disposition: attachment, on préfère sendFile() pour
+  // que le navigateur puisse afficher le PDF ou l'image en ligne.
+  res.sendFile(absPath);
+};
+
+

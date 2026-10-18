@@ -26,7 +26,7 @@ if (!shadowUrl) {
 // On appelle le point d'entrée JS du CLI Prisma plutôt que le binaire de
 // node_modules/.bin : ce dernier est un script shell sous Windows et "npx"
 // n'est pas résolu comme exécutable sur cette plateforme.
-const prismaCli = path.join(PROJECT_ROOT, 'node_modules', 'prisma', 'build', 'router.js');
+const prismaCli = path.join(PROJECT_ROOT, 'node_modules', 'prisma', 'build', 'index.js');
 
 const result = spawnSync(
   process.execPath,

@@ -9,6 +9,7 @@ import {
   reviewVerification,
   getSettings,
   updateSettings,
+  servePrivateFile,
 } from '../controllers/admin/admin.controller.js';
 import { createLegalVersion, publishLegalVersion } from '../controllers/legal.controller.js';
 import { listAgents, updateAgent, createAiAgent } from '../controllers/agent.controller.js';
@@ -99,6 +100,11 @@ router.param('id', coerceIdParam);
 router.get('/verifications', protect, requireCapability('USER_VERIFICATION'), listVerifications);
 router.get('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), getVerification);
 router.patch('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), validate(reviewVerificationSchema), reviewVerification);
+
+// Accès sécurisé aux fichiers privés (documents de vérification).
+// Le token JWT est généré par GET /verifications/:id (exp. 10 min).
+// Même garde d'accès que les routes de vérification : USER_VERIFICATION ou ADMIN+.
+router.get('/files/:token', protect, requireCapability('USER_VERIFICATION'), servePrivateFile);
 
 router.use(protect, requireMinLevel(50));
 

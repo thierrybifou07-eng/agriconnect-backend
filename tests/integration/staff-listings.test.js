@@ -332,16 +332,16 @@ describe('POST /api/v2/staff/listings — création', () => {
 
     expect(res.status, res.text).toBe(201);
     expect(res.body.images).toHaveLength(1);
-    expect(res.body.images[0].url).toBe('https://res.cloudinary.com/test/listing_1');
+    expect(res.body.images[0].url).toMatch(/^\/uploads\/LISTING_PHOTO\//);
 
     const photos = await prisma.media.findMany({ where: { ownerListingId: res.body.id } });
     expect(photos).toHaveLength(1);
     expect(photos[0]).toMatchObject({
-      url: 'https://res.cloudinary.com/test/listing_1',
-      publicId: 'listing_1',
       isPrivate: false,
       isPrimary: true,
     });
+    expect(photos[0].url).toMatch(/^\/uploads\/LISTING_PHOTO\//);
+    expect(photos[0].publicId).toMatch(/^LISTING_PHOTO\//);
   });
 });
 
