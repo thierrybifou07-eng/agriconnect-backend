@@ -1,6 +1,12 @@
 import { randomInt } from 'node:crypto';
 import prisma from '../../config/prisma.js';
-import { saveFile, StorageKind } from '../../services/storage.service.js';
+import {
+  saveFile,
+  deleteFile,
+  deleteUnreferencedFiles,
+  publicIdFromUrl,
+  StorageKind,
+} from '../../services/storage.service.js';
 import { getLookupId } from '../../utils/lookupCache.js';
 import { asMoney, asQuantity, toNumber } from '../../utils/money.js';
 import { lotToSupplierDto } from '../../utils/dto/lot.dto.js';
@@ -112,60 +118,76 @@ export const createLot = async (req, res) => {
   // appelant ne voit la valeur intermédiaire. Les lignes Media sont écrites
   // après les uploads : si l'un d'eux échoue, la transaction s'annule et le
   // lot n'existe pas.
-  const lot = await prisma.$transaction(async (tx) => {
-    const cree = await tx.stockLot.create({
-      data: {
-        lotCode: `LOT-TMP-${Date.now()}-${randomInt(0, 1_000_000)}`,
-        supplierId: profile.id,
-        productId,
-        zoneId,
-        storageType,
-        hubId: storageType === 'HUB' ? hubId : null,
-        pickupAddress: storageType === 'SUPPLIER_SITE' ? pickupAddress : null,
-        pickupLatitude: storageType === 'SUPPLIER_SITE' ? pickupLatitude : null,
-        pickupLongitude: storageType === 'SUPPLIER_SITE' ? pickupLongitude : null,
-        agreedUnitPrice: asMoney(agreedUnitPrice),
-        quantityInitial: asQuantity(quantity),
-        // Le lot vient d'être déclaré : aucun mouvement n'a encore eu lieu,
-        // la quantité disponible est donc exactement celle déclarée.
-        quantityAvailable: asQuantity(quantity),
-        status: 'PENDING_VALIDATION',
-        harvestedAt: harvestedAt ? new Date(harvestedAt) : null,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        packagingNote: packagingNote ?? null,
-        qualityNote: qualityNote ?? null,
-      },
-    });
+  //
+  // Les fichiers, eux, vivent en dehors de la transaction : un rollback
+  // annule la base mais pas le disque. ecrits retient leurs publicId pour
+  // pouvoir les supprimer si la transaction échoue.
+  const ecrits = [];
 
-    const lotCode = `LOT-${String(cree.id).padStart(6, '0')}`;
-    const misAJour = await tx.stockLot.update({
-      where: { id: cree.id },
-      data: { lotCode },
-    });
-
-    for (let i = 0; i < files.length; i++) {
-      const { url, publicId } = await saveFile(files[i].buffer, {
-        kind: StorageKind.LOT_PHOTO,
-        userId: req.user.id,
-        mimetype: files[i].mimetype,
-      });
-      await tx.media.create({
+  let lot;
+  try {
+    lot = await prisma.$transaction(async (tx) => {
+      const cree = await tx.stockLot.create({
         data: {
-          ownerLotId: misAJour.id,
-          mediaTypeId,
-          mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
-          url,
-          publicId,
-          // La première photo envoyée est la photo principale : c'est elle
-          // qui sert de vignette dans les listes.
-          isPrimary: i === 0,
-          position: i,
+          lotCode: `LOT-TMP-${Date.now()}-${randomInt(0, 1_000_000)}`,
+          supplierId: profile.id,
+          productId,
+          zoneId,
+          storageType,
+          hubId: storageType === 'HUB' ? hubId : null,
+          pickupAddress: storageType === 'SUPPLIER_SITE' ? pickupAddress : null,
+          pickupLatitude: storageType === 'SUPPLIER_SITE' ? pickupLatitude : null,
+          pickupLongitude: storageType === 'SUPPLIER_SITE' ? pickupLongitude : null,
+          agreedUnitPrice: asMoney(agreedUnitPrice),
+          quantityInitial: asQuantity(quantity),
+          // Le lot vient d'être déclaré : aucun mouvement n'a encore eu lieu,
+          // la quantité disponible est donc exactement celle déclarée.
+          quantityAvailable: asQuantity(quantity),
+          status: 'PENDING_VALIDATION',
+          harvestedAt: harvestedAt ? new Date(harvestedAt) : null,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+          packagingNote: packagingNote ?? null,
+          qualityNote: qualityNote ?? null,
         },
       });
-    }
 
-    return misAJour;
-  });
+      const lotCode = `LOT-${String(cree.id).padStart(6, '0')}`;
+      const misAJour = await tx.stockLot.update({
+        where: { id: cree.id },
+        data: { lotCode },
+      });
+
+      for (let i = 0; i < files.length; i++) {
+        const { url, publicId } = await saveFile(files[i].buffer, {
+          kind: StorageKind.LOT_PHOTO,
+          userId: req.user.id,
+          mimetype: files[i].mimetype,
+        });
+        ecrits.push(publicId);
+        await tx.media.create({
+          data: {
+            ownerLotId: misAJour.id,
+            mediaTypeId,
+            mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
+            url,
+            publicId,
+            // La première photo envoyée est la photo principale : c'est elle
+            // qui sert de vignette dans les listes.
+            isPrimary: i === 0,
+            position: i,
+          },
+        });
+      }
+
+      return misAJour;
+    });
+  } catch (err) {
+    // Compensation : la transaction a été annulée, aucune ligne Media ne
+    // référence les fichiers écrits. On les supprime tous, sans qu'un échec
+    // partiel masque l'erreur d'origine — c'est elle qui doit remonter.
+    await Promise.allSettled(ecrits.map((publicId) => deleteFile(publicId)));
+    throw err;
+  }
 
   const complet = await prisma.stockLot.findUnique({
     where: { id: lot.id },
@@ -291,7 +313,31 @@ export const deleteLot = async (req, res) => {
     );
   }
 
+  // La suppression du lot emporte ses photos Media en base (ON DELETE
+  // CASCADE). Les fichiers, eux, restent sur le disque : leurs publicId sont
+  // lus avant la suppression — après, les lignes n'existent plus. Un média
+  // d'avant la colonne publicId n'a qu'une URL, d'où la déduction.
+  const photos = await prisma.media.findMany({
+    where: { ownerLotId: lot.id },
+    select: { publicId: true, url: true },
+  });
+  const publicIdsPhotos = photos
+    .map((photo) => photo.publicId ?? publicIdFromUrl(photo.url))
+    .filter(Boolean);
+
   await prisma.stockLot.delete({ where: { id: lot.id } });
+
+  // Après le commit seulement : le lot n'existe plus, la suppression des
+  // fichiers est donc « au mieux » — une fuite disque, pas une perte de donnée
+  // pour le fournisseur. deleteUnreferencedFiles ne supprime que ce qu'aucune
+  // autre ligne Media ne référence : une annonce peut partager la photo d'un
+  // lot (elle en reprend le même publicId).
+  try {
+    await deleteUnreferencedFiles(prisma, publicIdsPhotos);
+  } catch (err) {
+    console.error('Suppression des photos du lot impossible :', err);
+  }
+
   res.status(204).send();
 };
 

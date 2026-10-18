@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import prisma from '../../config/prisma.js';
-import { saveFile, StorageKind } from '../../services/storage.service.js';
+import { saveFile, deleteFile, StorageKind } from '../../services/storage.service.js';
 import { getLookupId } from '../../utils/lookupCache.js';
 import { asMoney, toDecimal, toNumber } from '../../utils/money.js';
 import { listingToStaffDto } from '../../utils/dto/listing.dto.js';
@@ -99,89 +99,105 @@ export const createListing = async (req, res) => {
   // mise à jour — comme lotCode sur un lot.
   const statutBrouillonId = await getLookupId('listingStatus', 'DRAFT');
 
-  const annonce = await prisma.$transaction(async (tx) => {
-    const cree = await tx.listing.create({
-      data: {
-        reference: `ANN-TMP-${Date.now()}-${randomInt(0, 1_000_000)}`,
-        title,
-        description: description ?? null,
-        // Prix public : celui de l'équipe, par défaut le prix convenu du lot.
-        unitPrice: asMoney(unitPrice ?? lot.agreedUnitPrice),
-        // Le produit et la zone sont repris du lot : le client ne les choisit
-        // pas, l'annonce expose le produit du lot, jamais un lot directement.
-        productId: lot.productId,
-        zoneId: zoneId ?? lot.zoneId,
-        statusId: statutBrouillonId,
-        createdByUserId: req.user.id,
-        createdByAgentId: req.agent?.id ?? null,
-      },
-    });
+  // Les photos écrites vivent hors de la transaction : leurs publicId sont
+  // mémorisés dans ecrits pour être supprimés si elle échoue. Les photos
+  // COPIÉES depuis le lot n'y sont pas : ce sont des fichiers déjà existants,
+  // éventuellement partagés avec le lot.
+  const ecrits = [];
 
-    const reference = `ANN-${String(cree.id).padStart(6, '0')}`;
-    const misAJour = await tx.listing.update({
-      where: { id: cree.id },
-      data: { reference },
-    });
-
-    await tx.listingLot.create({
-      data: { listingId: cree.id, lotId: lot.id },
-    });
-
-    // Photos : celles envoyées ; sinon copie des photos du lot (nouvelles
-    // lignes Media ownerListingId reprenant url et publicId, isPrivate false).
-    if (files.length > 0) {
-      for (let i = 0; i < files.length; i++) {
-        // La ligne Media de l'annonce reprend le publicId, comme elle le fait
-        // pour les photos copiées depuis le lot.
-        const { url, publicId } = await saveFile(files[i].buffer, {
-          kind: StorageKind.LISTING_PHOTO,
-          userId: req.user.id,
-          mimetype: files[i].mimetype,
-        });
-        await tx.media.create({
-          data: {
-            ownerListingId: cree.id,
-            mediaTypeId,
-            mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
-            url,
-            publicId,
-            isPrivate: false,
-            isPrimary: i === 0,
-            position: i,
-          },
-        });
-      }
-    } else {
-      const photosLot = await tx.media.findMany({
-        where: { ownerLotId: lot.id },
-        orderBy: [{ isPrimary: 'desc' }, { position: 'asc' }],
+  let annonce;
+  try {
+    annonce = await prisma.$transaction(async (tx) => {
+      const cree = await tx.listing.create({
+        data: {
+          reference: `ANN-TMP-${Date.now()}-${randomInt(0, 1_000_000)}`,
+          title,
+          description: description ?? null,
+          // Prix public : celui de l'équipe, par défaut le prix convenu du lot.
+          unitPrice: asMoney(unitPrice ?? lot.agreedUnitPrice),
+          // Le produit et la zone sont repris du lot : le client ne les choisit
+          // pas, l'annonce expose le produit du lot, jamais un lot directement.
+          productId: lot.productId,
+          zoneId: zoneId ?? lot.zoneId,
+          statusId: statutBrouillonId,
+          createdByUserId: req.user.id,
+          createdByAgentId: req.agent?.id ?? null,
+        },
       });
-      for (const photo of photosLot) {
-        await tx.media.create({
-          data: {
-            ownerListingId: cree.id,
-            mediaTypeId: photo.mediaTypeId,
-            mimeTypeId: photo.mimeTypeId,
-            url: photo.url,
-            publicId: photo.publicId,
-            isPrivate: false,
-            isPrimary: photo.isPrimary,
-            position: photo.position,
-          },
+
+      const reference = `ANN-${String(cree.id).padStart(6, '0')}`;
+      const misAJour = await tx.listing.update({
+        where: { id: cree.id },
+        data: { reference },
+      });
+
+      await tx.listingLot.create({
+        data: { listingId: cree.id, lotId: lot.id },
+      });
+
+      // Photos : celles envoyées ; sinon copie des photos du lot (nouvelles
+      // lignes Media ownerListingId reprenant url et publicId, isPrivate false).
+      if (files.length > 0) {
+        for (let i = 0; i < files.length; i++) {
+          // La ligne Media de l'annonce reprend le publicId, comme elle le fait
+          // pour les photos copiées depuis le lot.
+          const { url, publicId } = await saveFile(files[i].buffer, {
+            kind: StorageKind.LISTING_PHOTO,
+            userId: req.user.id,
+            mimetype: files[i].mimetype,
+          });
+          ecrits.push(publicId);
+          await tx.media.create({
+            data: {
+              ownerListingId: cree.id,
+              mediaTypeId,
+              mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
+              url,
+              publicId,
+              isPrivate: false,
+              isPrimary: i === 0,
+              position: i,
+            },
+          });
+        }
+      } else {
+        const photosLot = await tx.media.findMany({
+          where: { ownerLotId: lot.id },
+          orderBy: [{ isPrimary: 'desc' }, { position: 'asc' }],
         });
+        for (const photo of photosLot) {
+          await tx.media.create({
+            data: {
+              ownerListingId: cree.id,
+              mediaTypeId: photo.mediaTypeId,
+              mimeTypeId: photo.mimeTypeId,
+              url: photo.url,
+              publicId: photo.publicId,
+              isPrivate: false,
+              isPrimary: photo.isPrimary,
+              position: photo.position,
+            },
+          });
+        }
       }
-    }
 
-    await recordAudit(tx, {
-      ...acteur(req),
-      action: 'LISTING_CREATED',
-      entityType: 'Listing',
-      entityId: cree.id,
-      metadata: { lotId: lot.id, reference },
+      await recordAudit(tx, {
+        ...acteur(req),
+        action: 'LISTING_CREATED',
+        entityType: 'Listing',
+        entityId: cree.id,
+        metadata: { lotId: lot.id, reference },
+      });
+
+      return misAJour;
     });
-
-    return misAJour;
-  });
+  } catch (err) {
+    // Compensation : la transaction est annulée, les fichiers écrits ne sont
+    // référencés par aucune ligne Media. On les supprime tous avant de relancer
+    // l'erreur d'origine.
+    await Promise.allSettled(ecrits.map((publicId) => deleteFile(publicId)));
+    throw err;
+  }
 
   const complet = await prisma.listing.findUnique({
     where: { id: annonce.id },

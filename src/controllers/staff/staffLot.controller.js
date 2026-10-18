@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import prisma from '../../config/prisma.js';
-import { saveFile, StorageKind } from '../../services/storage.service.js';
+import { saveFile, deleteFile, StorageKind } from '../../services/storage.service.js';
 import { getLookupId } from '../../utils/lookupCache.js';
 import { asMoney, asQuantity, toNumber } from '../../utils/money.js';
 import { lotToStaffDto } from '../../utils/dto/lot.dto.js';
@@ -116,57 +116,71 @@ export const createLot = async (req, res) => {
 
   // La création tient en une transaction. Le lotCode dépend de l'id
   // auto-incrémenté : le lot est créé avec un code provisoire, puis mis à jour.
-  const lot = await prisma.$transaction(async (tx) => {
-    const cree = await tx.stockLot.create({
-      data: {
-        lotCode: `LOT-TMP-${Date.now()}-${randomInt(0, 1_000_000)}`,
-        supplierId: profile.id,
-        productId,
-        zoneId,
-        storageType,
-        hubId: storageType === 'HUB' ? hubId : null,
-        pickupAddress: storageType === 'SUPPLIER_SITE' ? pickupAddress : null,
-        pickupLatitude: storageType === 'SUPPLIER_SITE' ? pickupLatitude : null,
-        pickupLongitude: storageType === 'SUPPLIER_SITE' ? pickupLongitude : null,
-        agreedUnitPrice: asMoney(agreedUnitPrice),
-        quantityInitial: asQuantity(quantity),
-        quantityAvailable: asQuantity(quantity),
-        status: 'PENDING_VALIDATION',
-        createdByAgentId: req.agent?.id ?? null,
-        harvestedAt: harvestedAt ? new Date(harvestedAt) : null,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-        packagingNote: packagingNote ?? null,
-        qualityNote: qualityNote ?? null,
-      },
-    });
+  // Les fichiers étant écrits hors du périmètre de la transaction, leurs
+  // publicId sont mémorisés dans ecrits pour être supprimés si elle échoue.
+  const ecrits = [];
 
-    const lotCode = `LOT-${String(cree.id).padStart(6, '0')}`;
-    const misAJour = await tx.stockLot.update({
-      where: { id: cree.id },
-      data: { lotCode },
-    });
-
-    for (let i = 0; i < files.length; i++) {
-      const { url, publicId } = await saveFile(files[i].buffer, {
-        kind: StorageKind.LOT_PHOTO,
-        userId: Number(req.body.supplierUserId),
-        mimetype: files[i].mimetype,
-      });
-      await tx.media.create({
+  let lot;
+  try {
+    lot = await prisma.$transaction(async (tx) => {
+      const cree = await tx.stockLot.create({
         data: {
-          ownerLotId: misAJour.id,
-          mediaTypeId,
-          mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
-          url,
-          publicId,
-          isPrimary: i === 0,
-          position: i,
+          lotCode: `LOT-TMP-${Date.now()}-${randomInt(0, 1_000_000)}`,
+          supplierId: profile.id,
+          productId,
+          zoneId,
+          storageType,
+          hubId: storageType === 'HUB' ? hubId : null,
+          pickupAddress: storageType === 'SUPPLIER_SITE' ? pickupAddress : null,
+          pickupLatitude: storageType === 'SUPPLIER_SITE' ? pickupLatitude : null,
+          pickupLongitude: storageType === 'SUPPLIER_SITE' ? pickupLongitude : null,
+          agreedUnitPrice: asMoney(agreedUnitPrice),
+          quantityInitial: asQuantity(quantity),
+          quantityAvailable: asQuantity(quantity),
+          status: 'PENDING_VALIDATION',
+          createdByAgentId: req.agent?.id ?? null,
+          harvestedAt: harvestedAt ? new Date(harvestedAt) : null,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+          packagingNote: packagingNote ?? null,
+          qualityNote: qualityNote ?? null,
         },
       });
-    }
 
-    return misAJour;
-  });
+      const lotCode = `LOT-${String(cree.id).padStart(6, '0')}`;
+      const misAJour = await tx.stockLot.update({
+        where: { id: cree.id },
+        data: { lotCode },
+      });
+
+      for (let i = 0; i < files.length; i++) {
+        const { url, publicId } = await saveFile(files[i].buffer, {
+          kind: StorageKind.LOT_PHOTO,
+          userId: Number(req.body.supplierUserId),
+          mimetype: files[i].mimetype,
+        });
+        ecrits.push(publicId);
+        await tx.media.create({
+          data: {
+            ownerLotId: misAJour.id,
+            mediaTypeId,
+            mimeTypeId: mimeTypeIdParCode.get(files[i].mimetype),
+            url,
+            publicId,
+            isPrimary: i === 0,
+            position: i,
+          },
+        });
+      }
+
+      return misAJour;
+    });
+  } catch (err) {
+    // Compensation : la transaction est annulée, les fichiers écrits ne sont
+    // référencés par aucune ligne Media. On les supprime tous avant de relancer
+    // l'erreur d'origine.
+    await Promise.allSettled(ecrits.map((publicId) => deleteFile(publicId)));
+    throw err;
+  }
 
   const complet = await prisma.stockLot.findUnique({
     where: { id: lot.id },

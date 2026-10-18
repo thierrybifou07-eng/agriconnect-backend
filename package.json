@@ -18,7 +18,8 @@
     "test": "vitest run",
     "test:integration": "vitest run --project integration",
     "test:unit": "vitest run --project unit",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "uploads:cleanup": "node scripts/cleanup-orphan-uploads.js"
   },
   "prisma": {
     "seed": "node prisma/seed.js"

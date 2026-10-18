@@ -302,34 +302,47 @@ export const submitDocument = async (req, res) => {
     documentType: type,
   });
 
-  const document = await prisma.$transaction(async (tx) => {
-    const doc = await tx.verificationDocument.create({
-      data: { userId: req.user.id, type },
-    });
-    await tx.media.create({
-      data: {
-        ownerVerificationDocumentId: doc.id,
-        mediaTypeId: mimeType.mediaTypeId,
-        mimeTypeId: mimeType.id,
-        url,
-        publicId,
-        isPrivate: true,
-        fileSize: req.file.size,
-      },
-    });
+  // Le fichier est écrit hors de la transaction : si celle-ci échoue, il
+  // devient orphelin et ecrits permet de le supprimer avant de remonter l'erreur.
+  const ecrits = [publicId];
 
-    // Un nouveau dépôt relance l'examen : UNVERIFIED ou REJECTED repassent en
-    // PENDING. Un compte déjà VERIFIED n'est pas dévérifié par un nouveau dépôt.
-    const courant = await tx.user.findUnique({
-      where: { id: req.user.id },
-      select: { profileVerificationStatus: true },
-    });
-    if (courant.profileVerificationStatus === 'UNVERIFIED' || courant.profileVerificationStatus === 'REJECTED') {
-      await tx.user.update({ where: { id: req.user.id }, data: { profileVerificationStatus: 'PENDING' } });
-    }
+  let document;
+  try {
+    document = await prisma.$transaction(async (tx) => {
+      const doc = await tx.verificationDocument.create({
+        data: { userId: req.user.id, type },
+      });
+      await tx.media.create({
+        data: {
+          ownerVerificationDocumentId: doc.id,
+          mediaTypeId: mimeType.mediaTypeId,
+          mimeTypeId: mimeType.id,
+          url,
+          publicId,
+          isPrivate: true,
+          fileSize: req.file.size,
+        },
+      });
 
-    return doc;
-  });
+      // Un nouveau dépôt relance l'examen : UNVERIFIED ou REJECTED repassent en
+      // PENDING. Un compte déjà VERIFIED n'est pas dévérifié par un nouveau dépôt.
+      const courant = await tx.user.findUnique({
+        where: { id: req.user.id },
+        select: { profileVerificationStatus: true },
+      });
+      if (courant.profileVerificationStatus === 'UNVERIFIED' || courant.profileVerificationStatus === 'REJECTED') {
+        await tx.user.update({ where: { id: req.user.id }, data: { profileVerificationStatus: 'PENDING' } });
+      }
+
+      return doc;
+    });
+  } catch (err) {
+    // Compensation : la transaction a été annulée, aucune ligne Media ne
+    // référence le document. On le supprime avant de relancer l'erreur
+    // d'origine, qui reste celle que le client doit voir.
+    await Promise.allSettled(ecrits.map((publicId) => deleteFile(publicId)));
+    throw err;
+  }
 
   // Réponse volontairement minimale : aucune URL (le fichier est privé, seule
   // une URL signée de courte durée est délivrée au staff).
