@@ -12,6 +12,7 @@ import { listPayouts } from '../controllers/supplier/supplierPayout.controller.j
 import { listCompensations } from '../controllers/supplier/supplierCompensation.controller.js';
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
+import { requireVerifiedProfile } from '../middlewares/verification.middleware.js';
 import upload from '../middlewares/upload.middleware.js';
 import { handleUpload } from '../middlewares/uploadHandler.middleware.js';
 import { validate } from '../middlewares/validate.middleware.js';
@@ -33,7 +34,10 @@ const withdrawSchema = Joi.object({
 //
 // multer parse d'abord le multipart (champ `images` + champs texte), puis
 // validate contrôle le corps : l'ordre des middlewares est important.
-router.post('/lots', protect, requireRole('SUPPLIER'), handleUpload(upload.array('images', 5), { field: 'images', maxFiles: 5, maxSizeMb: 5 }), validate(lotCreateSchema), createLot);
+//
+// requireVerifiedProfile vient avant multer : un compte non vérifié est
+// refusé sans qu'aucun fichier ne soit écrit sur le disque (D2).
+router.post('/lots', protect, requireRole('SUPPLIER'), requireVerifiedProfile, handleUpload(upload.array('images', 5), { field: 'images', maxFiles: 5, maxSizeMb: 5 }), validate(lotCreateSchema), createLot);
 // Les paramètres de liste ne passent pas par validate() : en Express 5,
 // req.query est un getter sans setter, et le middleware ne peut pas l'écraser.
 // listLots les lit directement et les borne lui-même (status inconnu -> 400).
@@ -43,8 +47,11 @@ router.get('/payouts', protect, requireRole('SUPPLIER'), listPayouts);
 // Indemnisations du fournisseur connecte (P6.2).
 router.get('/compensations', protect, requireRole('SUPPLIER'), listCompensations);
 router.get('/lots/:id', protect, requireRole('SUPPLIER'), getLot);
-router.patch('/lots/:id', protect, requireRole('SUPPLIER'), validate(lotUpdateSchema), updateLot);
+// Modification et retrait exigent aussi un profil vérifié (D2) : lire et
+// supprimer un lot reste ouvert (une déclaration rejetée doit pouvoir être
+// nettoyée).
+router.patch('/lots/:id', protect, requireRole('SUPPLIER'), requireVerifiedProfile, validate(lotUpdateSchema), updateLot);
 router.delete('/lots/:id', protect, requireRole('SUPPLIER'), deleteLot);
-router.post('/lots/:id/withdraw', protect, requireRole('SUPPLIER'), validate(withdrawSchema), withdrawLot);
+router.post('/lots/:id/withdraw', protect, requireRole('SUPPLIER'), requireVerifiedProfile, validate(withdrawSchema), withdrawLot);
 
 export default router;

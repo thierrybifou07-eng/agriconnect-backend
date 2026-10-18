@@ -144,8 +144,15 @@ describe('POST /api/v2/staff/lots/:id/validate — validation', () => {
 
   it('refuse si le fournisseur n\'est pas vérifié : 409 NOT_VERIFIED', async () => {
     const { user: agentUser } = await createAgentUser({ capabilities: ['STOCK_VALIDATION'] });
-    const supplier = await fournisseur({ verifie: false });
+    // Le lot est déclaré par un fournisseur vérifié (la déclaration l'exige,
+    // requireVerifiedProfile), puis le profil est retiré : c'est la validation
+    // staff que ce test vérifie.
+    const supplier = await fournisseur({ verifie: true });
     const lotRes = await declarentLotSurSite(tokenPour(supplier, 'SUPPLIER'));
+    await prisma.user.update({
+      where: { id: supplier.id },
+      data: { profileVerificationStatus: 'UNVERIFIED' },
+    });
 
     const res = await client
       .post(`/api/v2/staff/lots/${lotRes.body.id}/validate`)

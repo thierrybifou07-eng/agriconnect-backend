@@ -38,7 +38,7 @@ export default {
         tags: ['Fournisseur'],
         summary: 'Déclare un lot (multipart)',
         description:
-          'Crée le lot en PENDING_VALIDATION (lotCode = \'LOT-\' + id sur 6 chiffres) et ses photos (ownerLotId). expiresAt obligatoire si le produit est périssable (vérifié par le contrôleur). hubId obligatoire si HUB ; pickupAddress + coordonnées obligatoires si SUPPLIER_SITE.',
+          'Crée le lot en PENDING_VALIDATION (lotCode = \'LOT-\' + id sur 6 chiffres) et ses photos (ownerLotId). expiresAt obligatoire si le produit est périssable (vérifié par le contrôleur). hubId obligatoire si HUB ; pickupAddress + coordonnées obligatoires si SUPPLIER_SITE. Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED (renvoyé avant l\'écriture des fichiers) tant que profileVerificationStatus n\'est pas VERIFIED.',
         requestBody: lotMultipart(),
         responses: {
           '201': {
@@ -47,7 +47,7 @@ export default {
           },
           '400': R('BadRequest'),
           '401': R('Unauthorized'),
-          '403': R('Forbidden'),
+          '403': R('ForbiddenProfileNotVerified'),
         },
       },
       get: {
@@ -109,7 +109,8 @@ export default {
       patch: {
         tags: ['Fournisseur'],
         summary: 'Modifie un lot (PENDING_VALIDATION uniquement)',
-        description: 'PATCH hors PENDING_VALIDATION -> 409 INVALID_STATE_TRANSITION.',
+        description:
+          'PATCH hors PENDING_VALIDATION -> 409 INVALID_STATE_TRANSITION. Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED.',
         parameters: [{ $ref: '#/components/parameters/IdParam' }],
         requestBody: jsonBody(lotUpdateSchema),
         responses: {
@@ -119,7 +120,7 @@ export default {
           },
           '400': R('BadRequest'),
           '401': R('Unauthorized'),
-          '403': R('Forbidden'),
+          '403': R('ForbiddenProfileNotVerified'),
           '404': R('NotFound'),
           '409': { description: 'Transition interdite (INVALID_STATE_TRANSITION)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
@@ -143,14 +144,15 @@ export default {
       post: {
         tags: ['Fournisseur'],
         summary: 'Retire un lot (AVAILABLE sans réservation -> WITHDRAWN)',
-        description: 'Avec réservation -> 409 INVALID_STATE_TRANSITION.',
+        description:
+          'Avec réservation -> 409 INVALID_STATE_TRANSITION. Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED.',
         parameters: [{ $ref: '#/components/parameters/IdParam' }],
         requestBody: withdrawBody,
         responses: {
           '200': { description: 'Lot retiré (WITHDRAWN)' },
           '400': R('BadRequest'),
           '401': R('Unauthorized'),
-          '403': R('Forbidden'),
+          '403': R('ForbiddenProfileNotVerified'),
           '404': R('NotFound'),
           '409': { description: 'Transition interdite (INVALID_STATE_TRANSITION)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },

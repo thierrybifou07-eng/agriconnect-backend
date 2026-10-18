@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { randomInt } from 'node:crypto';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
-import { createUser } from '../helpers/factory.js';
+import { createUser, createVerifiedUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 
 const client = api();
@@ -22,8 +22,10 @@ const FAKE_PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 // Un compte SUPPLIER avec son profil : le lot appartient au profil, pas au
 // compte. createUser ne crée pas de profil (l'inscription, si : P1.2).
+// Profil vérifié : déclarer, modifier ou retirer un lot l'exige
+// (requireVerifiedProfile).
 async function fournisseur() {
-  const user = await createUser({ role: 'SUPPLIER' });
+  const user = await createVerifiedUser({ role: 'SUPPLIER' });
   await prisma.supplierProfile.create({
     data: { userId: user.id, farmName: 'Ferme du Test' },
   });
@@ -372,7 +374,7 @@ describe('POST /api/v2/supplier/lots — déclaration', () => {
   // Compte SUPPLIER sans profil : cree avant P1.2 (ancien FARMER devenu
   // SUPPLIER). Le profil est cree a la vollee plutot que de echouer.
   it('cree le profil a la vollee pour un fournisseur sans profil : 201', async () => {
-    const user = await createUser({ role: 'SUPPLIER', firstname: 'Karim', lastname: 'Haddad' });
+    const user = await createVerifiedUser({ role: 'SUPPLIER', firstname: 'Karim', lastname: 'Haddad' });
     const prod = await produit();
     const z = await zone();
 

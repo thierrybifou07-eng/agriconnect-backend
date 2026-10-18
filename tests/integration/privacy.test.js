@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
-import { createUser, createListingForLot, createSession } from '../helpers/factory.js';
+import { createUser, createVerifiedUser, createListingForLot, createSession } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { assertNoLeak } from '../helpers/assertNoLeak.js';
 
@@ -129,14 +129,14 @@ async function verifier(description, res, clesInterdites) {
 // (commande QUOTED), commande confirmée et livraison acceptée. Le scénario
 // est reconstruit dans chaque test : le beforeEach global vide la base.
 async function scenarioComplet() {
-  // Acheteur
-  const buyer = await createUser({ role: 'BUYER' });
+  // Acheteur (profil vérifié : il confirme le devis)
+  const buyer = await createVerifiedUser({ role: 'BUYER' });
   await prisma.buyerProfile.create({
     data: { userId: buyer.id, buyerType: 'WHOLESALER', businessName: 'Grossiste Test' },
   });
 
-  // Fournisseur
-  const supplierUser = await createUser({ role: 'SUPPLIER' });
+  // Fournisseur (profil vérifié : il déclare un lot via l'API)
+  const supplierUser = await createVerifiedUser({ role: 'SUPPLIER' });
   const supplierProfile = await prisma.supplierProfile.create({
     data: { userId: supplierUser.id, farmName: 'Ferme du Test' },
   });

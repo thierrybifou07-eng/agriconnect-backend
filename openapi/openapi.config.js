@@ -107,6 +107,14 @@ const document = {
         description: 'Rôle, capacité ou privilège insuffisant ; compte suspendu',
         content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
       },
+      // 403 des routes réservées aux profils vérifiés (D2). Le corps porte le
+      // code PROFILE_NOT_VERIFIED et le statut courant, que le client affiche
+      // pour orienter vers le dépôt de documents. Le 403 de rôle reste possible
+      // sur ces mêmes routes : la description couvre les deux causes.
+      ForbiddenProfileNotVerified: {
+        description: 'Rôle insuffisant, ou profil non vérifié (PROFILE_NOT_VERIFIED)',
+        content: { 'application/json': { schema: { $ref: '#/components/schemas/ProfileNotVerifiedError' } } },
+      },
       NotFound: {
         description: 'Ressource introuvable',
         content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } },
@@ -197,6 +205,20 @@ const document = {
             type: 'string',
             description: 'Code MAJUSCULES_AVEC_UNDERSCORES quand l\'erreur en porte un',
             example: 'INSUFFICIENT_STOCK',
+          },
+        },
+      },
+      // Erreur du middleware requireVerifiedProfile : en plus du message et du
+      // code, elle renvoie le statut du profil pour que le client sache s'il
+      // doit attendre (PENDING) ou redéposer (REJECTED).
+      ProfileNotVerifiedError: {
+        type: 'object',
+        properties: {
+          error: { type: 'string', description: 'Message en français' },
+          code: { type: 'string', example: 'PROFILE_NOT_VERIFIED' },
+          profileVerificationStatus: {
+            type: 'string',
+            enum: ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'],
           },
         },
       },

@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
-import { createUser, createListingForLot } from '../helpers/factory.js';
+import { createUser, createVerifiedUser, createListingForLot } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { refundPayment } from '../../src/services/payment.service.js';
 
@@ -616,7 +616,8 @@ describe('Idempotence liée à la requête', () => {
 // fois (3000 + 3000), passé COMPLETED : reversement READY. Retourne les
 // deux paiements pour les rembourser.
 async function commandeCompleteePayee() {
-  const buyer = await createUser({ role: 'BUYER' });
+  // Profil vérifié : la confirmation du devis l'exige (requireVerifiedProfile).
+  const buyer = await createVerifiedUser({ role: 'BUYER' });
   const lot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
   const annonce = await createListingForLot(lot);
   await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });

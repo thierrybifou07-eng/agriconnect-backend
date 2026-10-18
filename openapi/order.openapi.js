@@ -41,6 +41,8 @@ export default {
       post: {
         tags: ['Commandes'],
         summary: 'Confirme un devis (QUOTED -> CONFIRMED)',
+        description:
+          'Exige un profil vérifié : 403 PROFILE_NOT_VERIFIED tant que profileVerificationStatus n\'est pas VERIFIED (le corps renvoie le statut courant).',
         parameters: [{ $ref: '#/components/parameters/IdParam' }],
         responses: {
           '200': {
@@ -48,7 +50,7 @@ export default {
             content: { 'application/json': { schema: { $ref: '#/components/schemas/Order' } } },
           },
           '401': R('Unauthorized'),
-          '403': R('Forbidden'),
+          '403': R('ForbiddenProfileNotVerified'),
           '404': R('NotFound'),
           '409': { description: 'Transition interdite (INVALID_STATE_TRANSITION)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },

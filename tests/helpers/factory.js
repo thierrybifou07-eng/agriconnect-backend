@@ -48,6 +48,13 @@ export async function createUser({ role = 'BUYER', status = 'ACTIVE', ...overrid
   });
 }
 
+// Compte dont le profil a été vérifié par l'équipe. Les routes réservées aux
+// profils vérifiés (requireVerifiedProfile) refusent les autres en 403, donc
+// tout test qui exerce une de ces routes doit partir de cette fabrique.
+export async function createVerifiedUser(overrides = {}) {
+  return createUser({ profileVerificationStatus: 'VERIFIED', ...overrides });
+}
+
 // Une session represente un appareil connecte. Elle expire par defaut dans 30
 // jours, comme le jeton de rafraichissement qu'elle porte.
 export async function createSession(user, overrides = {}) {

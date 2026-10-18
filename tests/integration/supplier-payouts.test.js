@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
-import { createUser, createListingForLot } from '../helpers/factory.js';
+import { createUser, createVerifiedUser, createListingForLot } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { assertNoLeak } from '../helpers/assertNoLeak.js';
 
@@ -106,7 +106,8 @@ function tokenFournisseurPour(user) {
 
 // Cree une commande QUOTED via l'API staff avec un seul lot.
 async function creerCommande({ lots, quantities }) {
-  const buyer = await createUser({ role: 'BUYER' });
+  // Profil vérifié : l'acheteur confirme la commande, route protégée.
+  const buyer = await createVerifiedUser({ role: 'BUYER' });
   // ORDER_PROCESSING pour creer le devis, PAYMENT_FOLLOWUP pour le payer.
   const { user: agentUser } = await agentAvecCapacite(['ORDER_PROCESSING', 'PAYMENT_FOLLOWUP']);
 

@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
-import { createUser, createListingForLot } from '../helpers/factory.js';
+import { createUser, createVerifiedUser, createListingForLot } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { assertNoLeak } from '../helpers/assertNoLeak.js';
 
@@ -132,8 +132,9 @@ async function zoneCouverte() {
 }
 
 // Devis HUB_PICKUP complet : acheteur, lot, annonce, hub, route staff.
+// L'acheteur est VERIFIED : POST /orders/:id/confirm l'exige (requireVerifiedProfile).
 async function creerDevisHub(overrides = {}) {
-  const buyer = await createUser({ role: 'BUYER' });
+  const buyer = await createVerifiedUser({ role: 'BUYER' });
   const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
   const annonce = await annoncePour(monLot);
   await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
@@ -156,7 +157,7 @@ async function creerDevisHub(overrides = {}) {
 
 // Devis AGENCY_DELIVERY complet.
 async function creerDevisAgency(overrides = {}) {
-  const buyer = await createUser({ role: 'BUYER' });
+  const buyer = await createVerifiedUser({ role: 'BUYER' });
   const monLot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
   const annonce = await annoncePour(monLot);
   await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
@@ -234,7 +235,9 @@ describe('Cycle de vie de la commande (P3.5)', () => {
 
     it('un acheteur ne peut pas confirmer la commande d\'un autre : 404', async () => {
       const { order } = await creerDevisHub();
-      const autreAcheteur = await createUser({ role: 'BUYER' });
+      // Profil vérifié : le contrôle de vérification ne doit pas masquer le 404
+      // de propriété que ce test vérifie.
+      const autreAcheteur = await createVerifiedUser({ role: 'BUYER' });
       const tokenAutre = generateToken({ id: autreAcheteur.id, role: { code: 'BUYER', level: 10 } });
 
       const res = await api()

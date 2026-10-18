@@ -159,7 +159,7 @@ async function avecTransactionQuiEchoue(fauxTx, requete) {
 describe('Échec de transaction — aucun fichier écrit ne doit subsister', () => {
   it('POST /supplier/lots : les photos écrites avant l\'échec sont supprimées', async () => {
     fichiersAvantTest = await snapshotUploads();
-    const supplier = await fournisseur();
+    const supplier = await fournisseur({ verifie: true });
     const token = tokenPour(supplier, 'SUPPLIER');
     const prod = await produit();
     const z = await zone();
@@ -315,7 +315,7 @@ describe('Échec de transaction — aucun fichier écrit ne doit subsister', () 
 describe('DELETE /api/v2/supplier/lots/:id — nettoyage des photos sur disque', () => {
   it('supprime du disque les photos qui ne sont plus référencées', async () => {
     fichiersAvantTest = await snapshotUploads();
-    const supplier = await fournisseur();
+    const supplier = await fournisseur({ verifie: true });
     const token = tokenPour(supplier, 'SUPPLIER');
     const prod = await produit();
     const z = await zone();

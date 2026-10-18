@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { api, authHeader } from '../helpers/app.js';
-import { createUser } from '../helpers/factory.js';
+import { createUser, createVerifiedUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 
 const client = api();
@@ -127,7 +127,9 @@ describe('POST /api/v2/auth/me/avatar — erreurs multipart', () => {
 
 describe('POST /api/v2/supplier/lots — erreurs multipart', () => {
   it('un lot avec 6 images : 400 UNEXPECTED_FILE_FIELD (maximum 5)', async () => {
-    const fournisseur = await createUser({ role: 'SUPPLIER' });
+    // Profil vérifié : sinon requireVerifiedProfile répond 403 avant multer et
+    // le test ne porterait plus sur la limite de fichiers.
+    const fournisseur = await createVerifiedUser({ role: 'SUPPLIER' });
 
     let requete = client.post('/api/v2/supplier/lots').set(authHeader(tokenPour(fournisseur, 'SUPPLIER')));
     for (let i = 0; i < 6; i += 1) {

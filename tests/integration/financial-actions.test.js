@@ -3,7 +3,7 @@ import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../../src/config/prisma.js';
 import { api, authHeader } from '../helpers/app.js';
-import { createUser, createListingForLot } from '../helpers/factory.js';
+import { createUser, createVerifiedUser, createListingForLot } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { refreshPayoutReadiness } from '../../src/services/payout.service.js';
 
@@ -123,7 +123,8 @@ function tokenAdminPour(user) {
 // paiement, un reversement READY, une compensation APPROVED et un
 // parrainage ELIGIBLE : toutes les routes d'argent ont une cible valide.
 async function scenarioFinancier() {
-  const buyer = await createUser({ role: 'BUYER' });
+  // Profil vérifié : la confirmation du devis l'exige (requireVerifiedProfile).
+  const buyer = await createVerifiedUser({ role: 'BUYER' });
   const lot = await creerLot({ quantity: '10', agreedUnitPrice: '1000.00' });
   const annonce = await createListingForLot(lot);
   await prisma.listing.update({ where: { id: annonce.id }, data: { unitPrice: '1200.00' } });
