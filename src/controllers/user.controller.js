@@ -1,5 +1,11 @@
 import prisma from '../config/prisma.js';
-import { saveFile, StorageKind } from '../services/storage.service.js';
+import {
+  saveFile,
+  deleteFile,
+  deleteUnreferencedFiles,
+  publicIdFromUrl,
+  StorageKind,
+} from '../services/storage.service.js';
 import { getLookupId } from '../utils/lookupCache.js';
 import { userToApi, payoutAccountToApi } from '../utils/userApi.js';
 import { resetVerificationForNewEmail } from '../utils/emailVerification.js';
@@ -71,6 +77,12 @@ export const updateMe = async (req, res) => {
 };
 
 // POST /api/auth/me/avatar  (remplace l'avatar existant s'il y en avait un)
+//
+// Le remplacement porte sur deux supports : la ligne Media ET le fichier. La
+// ligne part dans la transaction, avec la création de la nouvelle ; le fichier,
+// lui, ne peut être supprimé qu'APRÈS le commit — le faire avant exposerait
+// l'utilisateur à une image cassée si la transaction échouait. D'où cet ordre :
+// écriture, transaction, puis nettoyage au mieux.
 export const uploadAvatar = async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'Aucune image fournie (champ "avatar")', code: 'FILE_REQUIRED' });
@@ -81,18 +93,53 @@ export const uploadAvatar = async (req, res) => {
     getLookupId('mimeType', req.file.mimetype),
   ]);
 
+  // Les anciens avatars sont lus avant tout : leurs publicId sont nécessaires
+  // après le commit, quand la transaction les aura supprimés de la base.
+  const anciensAvatars = await prisma.media.findMany({
+    where: { ownerUserId: req.user.id, mediaTypeId },
+  });
+  // Un média enregistré avant l'existence de la colonne publicId n'a qu'une URL :
+  // on la dérive pour pouvoir supprimer le fichier lui aussi. La lecture ne
+  // touche que les médias possédés par l'utilisateur (ownerUserId) : les
+  // documents de vérification ont un propriétaire distinct et ne sont jamais
+  // concernés.
+  const anciensPublicIds = anciensAvatars
+    .map((media) => media.publicId ?? publicIdFromUrl(media.url))
+    .filter(Boolean);
+
   const { url, publicId } = await saveFile(req.file.buffer, {
     kind: StorageKind.AVATAR,
     userId: req.user.id,
     mimetype: req.file.mimetype,
   });
 
-  const media = await prisma.$transaction(async (tx) => {
-    await tx.media.deleteMany({ where: { ownerUserId: req.user.id, mediaTypeId } });
-    return tx.media.create({
-      data: { ownerUserId: req.user.id, mediaTypeId, mimeTypeId, url, publicId, isPrimary: true },
+  let media;
+  try {
+    media = await prisma.$transaction(async (tx) => {
+      await tx.media.deleteMany({ where: { ownerUserId: req.user.id, mediaTypeId } });
+      return tx.media.create({
+        data: { ownerUserId: req.user.id, mediaTypeId, mimeTypeId, url, publicId, isPrimary: true },
+      });
     });
-  });
+  } catch (err) {
+    // La transaction a échoué : le nouveau fichier n'est référencé par aucune
+    // ligne Media, il est donc orphelin. On le supprime avant de relancer
+    // l'erreur d'origine — la compensation ne doit jamais la masquer.
+    await deleteFile(publicId).catch((compensationErr) => {
+      console.error('Suppression du fichier avatar impossible :', compensationErr);
+    });
+    throw err;
+  }
+
+  // Après le commit seulement : l'ancien avatar est déjà remplacé en base.
+  // deleteUnreferencedFiles ne supprime le fichier que si plus aucune ligne
+  // Media ne le référence. Un échec ici est une fuite disque, pas une perte de
+  // donnée pour l'utilisateur : il est journalisé, jamais propagé.
+  try {
+    await deleteUnreferencedFiles(prisma, anciensPublicIds);
+  } catch (err) {
+    console.error("Suppression de l'ancien avatar impossible :", err);
+  }
 
   // L'objet Media brut porte publicId, fileSize et les clés de référence :
   // seul le DTO d'affichage (URL, position, principale) est renvoyé.
