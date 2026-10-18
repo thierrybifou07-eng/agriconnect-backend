@@ -1,14 +1,14 @@
 import { randomInt } from 'node:crypto';
-import prisma from '../config/prisma.js';
-import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
-import { getLookupId } from '../utils/lookupCache.js';
-import { asMoney, asQuantity, toNumber } from '../utils/money.js';
-import { lotToSupplierDto } from '../utils/dto/lot.dto.js';
-import { LOT_STATUSES } from '../validators/lot.validator.js';
-import { returnAvailable } from '../services/stock.service.js';
-import { assertTransition } from '../services/lot.state.js';
-import { recordAudit } from '../utils/audit.js';
-import { ensureProfile } from '../utils/profile.js';
+import prisma from '../../config/prisma.js';
+import { uploadBufferToCloudinary } from '../../utils/cloudinaryUpload.js';
+import { getLookupId } from '../../utils/lookupCache.js';
+import { asMoney, asQuantity, toNumber } from '../../utils/money.js';
+import { lotToSupplierDto } from '../../utils/dto/lot.dto.js';
+import { LOT_STATUSES } from '../../validators/lot.validator.js';
+import { returnAvailable } from '../../services/stock.service.js';
+import { assertTransition } from '../../services/lot.state.js';
+import { recordAudit } from '../../utils/audit.js';
+import { ensureProfile } from '../../utils/profile.js';
 
 // Un lot ne peut être modifié ou supprimé que tant qu'il n'a pas été validé :
 // une fois l'équipe passée, les quantités sont pilotées par les mouvements de

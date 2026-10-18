@@ -1,12 +1,12 @@
 import { randomInt } from 'node:crypto';
-import prisma from '../config/prisma.js';
-import { uploadBufferToCloudinary } from '../utils/cloudinaryUpload.js';
-import { getLookupId } from '../utils/lookupCache.js';
-import { asMoney, asQuantity, toNumber } from '../utils/money.js';
-import { lotToStaffDto } from '../utils/dto/lot.dto.js';
-import { recordAudit } from '../utils/audit.js';
-import { receiveLot, returnAvailable } from '../services/stock.service.js';
-import { assertTransition } from '../services/lot.state.js';
+import prisma from '../../config/prisma.js';
+import { uploadBufferToCloudinary } from '../../utils/cloudinaryUpload.js';
+import { getLookupId } from '../../utils/lookupCache.js';
+import { asMoney, asQuantity, toNumber } from '../../utils/money.js';
+import { lotToStaffDto } from '../../utils/dto/lot.dto.js';
+import { recordAudit } from '../../utils/audit.js';
+import { receiveLot, returnAvailable } from '../../services/stock.service.js';
+import { assertTransition } from '../../services/lot.state.js';
 
 // Un lot appartient à un SupplierProfile, pas directement à un User. Pour
 // créer au nom d'un fournisseur, on résout d'abord supplierUserId vers son

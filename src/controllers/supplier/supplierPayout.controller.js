@@ -1,6 +1,6 @@
-import prisma from '../config/prisma.js';
-import { ensureProfile } from '../utils/profile.js';
-import { listPayoutsPourFournisseur } from '../services/payout.service.js';
+import prisma from '../../config/prisma.js';
+import { ensureProfile } from '../../utils/profile.js';
+import { listPayoutsPourFournisseur } from '../../services/payout.service.js';
 
 // GET /api/v2/supplier/payouts?page=&limit=
 //

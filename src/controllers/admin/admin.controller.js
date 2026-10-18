@@ -1,22 +1,22 @@
 import bcrypt from 'bcrypt';
 import { Prisma } from '@prisma/client';
-import prisma from '../config/prisma.js';
-import { getLookupId } from '../utils/lookupCache.js';
-import { closeAllSessions } from '../utils/session.js';
-import { emitSessionRevoked } from '../sockets/revocation.js';
-import { asMoney, toDecimal, toNumber } from '../utils/money.js';
+import prisma from '../../config/prisma.js';
+import { getLookupId } from '../../utils/lookupCache.js';
+import { closeAllSessions } from '../../utils/session.js';
+import { emitSessionRevoked } from '../../sockets/revocation.js';
+import { asMoney, toDecimal, toNumber } from '../../utils/money.js';
 // Meme pile que l inscription (src/config/email) : un seul moteur de rendu,
 // une seule configuration SMTP.
-import { sendTemplateEmail } from '../config/email/sendMail.js';
+import { sendTemplateEmail } from '../../config/email/sendMail.js';
 // v2 du SDK : utils.private_download_url genere l URL signée de courte duree
 // qui donne acces a un asset private (type 'authenticated').
 import { v2 as cloudinary } from 'cloudinary';
-import { recordAudit } from '../utils/audit.js';
+import { recordAudit } from '../../utils/audit.js';
 import {
   onProfileVerified,
   payReferral,
   rejectReferral,
-} from '../services/referral.service.js';
+} from '../../services/referral.service.js';
 
 const userSafeSelect = {
   id: true,

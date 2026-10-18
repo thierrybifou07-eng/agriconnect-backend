@@ -1,5 +1,5 @@
-import prisma from '../config/prisma.js';
-import { listAllPayouts, payPayout } from '../services/payout.service.js';
+import prisma from '../../config/prisma.js';
+import { listAllPayouts, payPayout } from '../../services/payout.service.js';
 
 // GET /api/v2/admin/payouts?status=&page=&limit=
 //

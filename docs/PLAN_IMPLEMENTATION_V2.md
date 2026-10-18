@@ -94,7 +94,7 @@ Source de vérité du schéma : prisma/schema.prisma ET docs/schema.v2.target.pr
 RÈGLES ABSOLUES
 1. Identifiants entiers (Int). Jamais d'UUID. Toute route avec :id passe par coerceIdParam.
 2. Préfixe d'API : /api/v2. Dans les prompts, toute route écrite "/api/xxx" se lit "/api/v2/xxx", et "/me/*"
-   est /api/v2/auth/me/*. src/routes/index.js peut être modifié UNIQUEMENT pour monter un nouveau routeur.
+   est /api/v2/auth/me/*. src/routes/router.js peut être modifié UNIQUEMENT pour monter un nouveau routeur.
 3. Erreurs : res.status(n).json({ error: 'message en français' }) ; erreurs levées :
    Object.assign(new Error('message'), { statusCode: 409, code: 'CODE_MAJUSCULE' }).
    Succès : objet brut. Listes paginées : { items, page, limit, total }.
@@ -234,7 +234,7 @@ ni au module auth. Les tables restent en base jusqu'à P0.4.
 Les tables Listing, Order, Conversation, Message et Delivery sont CONSERVÉES et adaptées en P0.4 ; leur logique
 est réécrite plus loin (annonces en P2.5, commandes en P3.x). Ici, seul le CODE v1 est retiré.
 
-Lis d'abord : src/routes/index.js, src/routes/admin.routes.js, src/controllers/admin.controller.js,
+Lis d'abord : src/routes/router.js, src/routes/admin.routes.js, src/controllers/admin.controller.js,
 src/sockets/chat.socket.js, tests/helpers/factory.js, tests/helpers/db.js.
 
 À SUPPRIMER :
@@ -246,7 +246,7 @@ src/sockets/chat.socket.js, tests/helpers/factory.js, tests/helpers/db.js.
   seulement les cas marketplace. Liste dans le commit chaque test supprimé et pourquoi.
 
 À MODIFIER :
-- src/routes/index.js : ne garder que /auth et /admin.
+- src/routes/router.js : ne garder que /auth et /admin.
 - src/routes/admin.routes.js et admin.controller.js : retirer getAllOrders, getStats,
   deactivateListing et leurs routes. Garder listUsers, suspendUser, reactivateUser, createAdmin.
 - src/sockets/chat.socket.js : garder io.use(...) d'authentification et joinUserRoom ;
@@ -378,7 +378,7 @@ Commit : feat(db): add the v2 consignment domain schema (MySQL, integer ids)
 Lis la section PRÉAMBULE de docs/PLAN_IMPLEMENTATION_V2.md et applique-la.
 
 Objectif : servir les CGU depuis la base, versionnées, en FR et EN.
-Lis d'abord : src/routes/index.js, src/routes/admin.routes.js, src/validators/admin.validator.js,
+Lis d'abord : src/routes/router.js, src/routes/admin.routes.js, src/validators/admin.validator.js,
 prisma/seed.js, modèles LegalDocument* dans prisma/schema.prisma.
 
 À CRÉER :

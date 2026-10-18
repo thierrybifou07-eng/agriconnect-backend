@@ -1,24 +1,24 @@
 import { randomInt } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import prisma from '../config/prisma.js';
-import { getLookupId } from '../utils/lookupCache.js';
-import { asMoney, asQuantity, toDecimal, toNumber } from '../utils/money.js';
-import { recordAudit } from '../utils/audit.js';
-import { reserve } from '../services/stock.service.js';
+import prisma from '../../config/prisma.js';
+import { getLookupId } from '../../utils/lookupCache.js';
+import { asMoney, asQuantity, toDecimal, toNumber } from '../../utils/money.js';
+import { recordAudit } from '../../utils/audit.js';
+import { reserve } from '../../services/stock.service.js';
 import {
   computeLine,
   computeBuyerFee,
   computeOrderTotals,
   getSettings,
-} from '../services/pricing.service.js';
+} from '../../services/pricing.service.js';
 import {
   grouperParOrigine,
   pointEnlevement,
   distanceOrigine,
   tarifOrigine,
-} from '../services/delivery.pricing.js';
-import { orderToStaffDto } from '../utils/dto/order.dto.js';
-import { confirmerAvecExpiration, cancelOrder, changeStatus } from '../services/order.service.js';
+} from '../../services/delivery.pricing.js';
+import { orderToStaffDto } from '../../utils/dto/order.dto.js';
+import { confirmerAvecExpiration, cancelOrder, changeStatus } from '../../services/order.service.js';
 
 // Résout l'identité de l'acteur pour l'audit (recordAudit attend des objets).
 // Un agent connecté a req.agent (requireCapability) ; un admin n'en a pas.

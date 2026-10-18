@@ -9,7 +9,7 @@ import {
   listStockMovements,
   createQualityCheck,
   listQualityChecks,
-} from '../controllers/staffLot.controller.js';
+} from '../controllers/staff/staffLot.controller.js';
 import {
   createListing,
   listListings,
@@ -17,7 +17,7 @@ import {
   updateListing,
   publishListing,
   unpublishListing,
-} from '../controllers/staffListing.controller.js';
+} from '../controllers/staff/staffListing.controller.js';
 import {
   createOrder,
   listOrders,
@@ -25,7 +25,7 @@ import {
   changeOrderStatus,
   confirmOrderByStaff,
   cancelOrderByStaff,
-} from '../controllers/staffOrder.controller.js';
+} from '../controllers/staff/staffOrder.controller.js';
 import {
   listConversations,
   getConversation,
@@ -34,20 +34,20 @@ import {
   escalateConversation,
   closeConversation,
   sendStaffMessage,
-} from '../controllers/staffConversation.controller.js';
+} from '../controllers/staff/staffConversation.controller.js';
 import {
   recordPaymentHandler,
   listPaymentsHandler,
   refundPaymentHandler,
-} from '../controllers/staffPayment.controller.js';
+} from '../controllers/staff/staffPayment.controller.js';
 import {
   createDeliveries,
   listDeliveries,
   releaseDelivery,
   redispatchDelivery,
   cancelDelivery,
-} from '../controllers/staffDelivery.controller.js';
-import { createCompensation } from '../controllers/staffCompensation.controller.js';
+} from '../controllers/staff/staffDelivery.controller.js';
+import { createCompensation } from '../controllers/staff/staffCompensation.controller.js';
 import { protect, requireMinLevel } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';

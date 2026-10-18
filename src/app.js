@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import routes from './routes/index.js';
+import routes from './routes/router.js';
 import { notFound, errorHandler } from './middlewares/error.middleware.js';
 import { apiLimiter } from './middlewares/rateLimit.middleware.js';
 import { decimalAsNumber } from './middlewares/decimal-json.middleware.js';

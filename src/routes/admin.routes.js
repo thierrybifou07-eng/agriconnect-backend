@@ -9,7 +9,7 @@ import {
   reviewVerification,
   getSettings,
   updateSettings,
-} from '../controllers/admin.controller.js';
+} from '../controllers/admin/admin.controller.js';
 import { createLegalVersion, publishLegalVersion } from '../controllers/legal.controller.js';
 import { listAgents, updateAgent, createAiAgent } from '../controllers/agent.controller.js';
 import {
@@ -37,19 +37,19 @@ import {
   removeAgencyZone,
   listAgencyDrivers,
 } from '../controllers/agency.controller.js';
-import { listPayouts, payPayoutController } from '../controllers/adminPayout.controller.js';
+import { listPayouts, payPayoutController } from '../controllers/admin/adminPayout.controller.js';
 import {
   listReferrals,
   payReferralController,
   rejectReferralController,
-} from '../controllers/admin.controller.js';
+} from '../controllers/admin/admin.controller.js';
 import {
   listCompensationsAdmin,
   approveCompensationController,
   rejectCompensationController,
   payCompensationController,
-} from '../controllers/adminCompensation.controller.js';
-import { getStats, listAuditLogs } from '../controllers/adminStats.controller.js';
+} from '../controllers/admin/adminCompensation.controller.js';
+import { getStats, listAuditLogs } from '../controllers/admin/adminStats.controller.js';
 import { protect, requireMinLevel, requireRole } from '../middlewares/auth.middleware.js';
 import { requireCapability } from '../middlewares/capability.middleware.js';
 import { requireHumanActor } from '../middlewares/humanActor.middleware.js';

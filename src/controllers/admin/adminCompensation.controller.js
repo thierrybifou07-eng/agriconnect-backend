@@ -1,10 +1,10 @@
-import prisma from '../config/prisma.js';
+import prisma from '../../config/prisma.js';
 import {
   listCompensations,
   approveCompensation,
   rejectCompensation,
   payCompensation,
-} from '../services/compensation.service.js';
+} from '../../services/compensation.service.js';
 
 // Résout l'identité de l'acteur pour l'audit : un admin n'a pas de fiche
 // d'agent (requireMinLevel(50) ne passe jamais par requireCapability).

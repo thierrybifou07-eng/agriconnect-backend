@@ -435,7 +435,7 @@ export const verifyEmailPage = async (req, res) => {
     title: 'Confirmer votre adresse',
     description:
       'Confirmez que cette adresse email est bien la votre. Vous pourrez continuer a utiliser AgriConnect dans tous les cas.',
-    action: '/api/auth/verify-email',
+    action: '/api/v2/auth/verify-email',
     token: req.query.token ?? '',
     libelle: 'Confirmer mon adresse',
     succes: null,
@@ -449,7 +449,6 @@ export const verifyEmailPage = async (req, res) => {
 // POST /api/auth/verify-email
 export const verifyEmail = async (req, res) => {
   const resultat = await consumeVerificationToken(req.body.token);
-
   if (!resultat.ok) {
     const messages = {
       inconnu: 'Ce lien est invalide.',
@@ -459,7 +458,7 @@ export const verifyEmail = async (req, res) => {
     const html = await renderPage('formulaire', {
       title: 'Confirmation impossible',
       description: '',
-      action: '/api/auth/verify-email',
+      action: '/api/v2/auth/verify-email',
       token: '',
       libelle: 'Confirmer mon adresse',
       succes: null,
@@ -485,6 +484,7 @@ export const verifyEmail = async (req, res) => {
 
 // POST /api/auth/resend-verification
 export const resendVerification = async (req, res) => {
+  if(req.user.emailVerified===true) return res.status(409).json({error: 'L\'email de l\'utilisateur à déjà ete vérifiée'})
   // force : l'utilisateur vient d'appeler explicitement, le cooldown protege la
   // boite mais ne doit pas transformer un renvoi manuel en echec.
   const jeton = await issueVerificationToken(req.user, { force: true });

@@ -1,6 +1,6 @@
-import prisma from '../config/prisma.js';
-import { recordPayment, refundPayment, listPayments } from '../services/payment.service.js';
-import { paymentToApi } from '../utils/dto/payment.dto.js';
+import prisma from '../../config/prisma.js';
+import { recordPayment, refundPayment, listPayments } from '../../services/payment.service.js';
+import { paymentToApi } from '../../utils/dto/payment.dto.js';
 
 // Résout l'identité de l'acteur pour l'audit (recordAudit attend des objets).
 // Un agent connecté a req.agent (requireCapability) ; un admin n'en a pas.

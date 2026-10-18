@@ -7,7 +7,7 @@ const SYSTEM_DB_URL = TEST_DATABASE_URL.replace(/\/[^/?#]*([?#].*)?$/, '/mysql$1
 // Appelle le point d'entree JS du CLI Prisma plutot que le binaire de
 // node_modules/.bin : ce dernier est un script shell sous Windows et
 // "npx" n'est pas resolu comme executable sur cette plateforme.
-const PRISMA_CLI = path.join(PROJECT_ROOT, 'node_modules', 'prisma', 'build', 'index.js');
+const PRISMA_CLI = path.join(PROJECT_ROOT, 'node_modules', 'prisma', 'build', 'router.js');
 
 function runPrisma(args) {
   execFileSync(process.execPath, [PRISMA_CLI, ...args], {

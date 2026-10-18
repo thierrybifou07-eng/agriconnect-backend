@@ -5,7 +5,7 @@ import { PROJECT_ROOT } from '../setup/env.js';
 import openapiDocument from '../../openapi/openapi.config.js';
 
 // Le test compare deux listes :
-//  1. les routes reellement montees, extraites de src/routes (index.js donne
+//  1. les routes reellement montees, extraites de src/routes (router.js donne
 //     le prefixe de chaque routeur, chaque fichier donne router.METHOD('path'))
 //  2. les chemins du document OpenAPI genere (openapi/openapi.config.js,
 //     assemble depuis les fragments par domaine)
@@ -26,10 +26,10 @@ function extractRouterRoutes(code) {
   return found;
 }
 
-// Extrait les montages de src/routes/index.js : router.use('/prefix', xRoutes)
+// Extrait les montages de src/routes/router.js : router.use('/prefix', xRoutes)
 // en liant la variable a son import (import xRoutes from './x.routes.js').
 function extractMounts() {
-  const code = readFileSync(path.join(ROUTES_DIR, 'index.js'), 'utf8');
+  const code = readFileSync(path.join(ROUTES_DIR, 'router.js'), 'utf8');
   const imports = {};
   const importRe = /import\s+(\w+)Routes\s+from\s+'\.\/(.+)\.routes\.js'/g;
   let m;

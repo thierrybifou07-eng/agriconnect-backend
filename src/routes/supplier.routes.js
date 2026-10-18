@@ -7,9 +7,9 @@ import {
   updateLot,
   deleteLot,
   withdrawLot,
-} from '../controllers/supplierLot.controller.js';
-import { listPayouts } from '../controllers/supplierPayout.controller.js';
-import { listCompensations } from '../controllers/supplierCompensation.controller.js';
+} from '../controllers/supplier/supplierLot.controller.js';
+import { listPayouts } from '../controllers/supplier/supplierPayout.controller.js';
+import { listCompensations } from '../controllers/supplier/supplierCompensation.controller.js';
 import { protect, requireRole } from '../middlewares/auth.middleware.js';
 import { coerceIdParam } from '../middlewares/params.middleware.js';
 import upload from '../middlewares/upload.middleware.js';

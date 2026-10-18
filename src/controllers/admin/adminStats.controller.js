@@ -1,6 +1,6 @@
 import { Prisma } from '@prisma/client';
-import prisma from '../config/prisma.js';
-import { toDecimal } from '../utils/money.js';
+import prisma from '../../config/prisma.js';
+import { toDecimal } from '../../utils/money.js';
 
 const Decimal = Prisma.Decimal;
 

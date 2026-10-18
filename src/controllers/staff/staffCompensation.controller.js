@@ -1,5 +1,5 @@
-import prisma from '../config/prisma.js';
-import { createForLoss } from '../services/compensation.service.js';
+import prisma from '../../config/prisma.js';
+import { createForLoss } from '../../services/compensation.service.js';
 
 // POST /api/v2/staff/compensations — demande d'indemnisation pour invendus
 // ou pertes (capacite DISPUTE_HANDLING, ADMIN toujours).

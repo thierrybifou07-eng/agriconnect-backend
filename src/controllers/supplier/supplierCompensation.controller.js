@@ -1,6 +1,6 @@
-import prisma from '../config/prisma.js';
-import { ensureProfile } from '../utils/profile.js';
-import { listCompensationsPourFournisseur } from '../services/compensation.service.js';
+import prisma from '../../config/prisma.js';
+import { ensureProfile } from '../../utils/profile.js';
+import { listCompensationsPourFournisseur } from '../../services/compensation.service.js';
 
 // GET /api/v2/supplier/compensations?page=&limit= — liste paginée des
 // indemnisations du fournisseur connecté (motif, quantité, montant, statut).

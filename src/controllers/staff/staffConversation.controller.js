@@ -1,6 +1,6 @@
-import prisma from '../config/prisma.js';
-import { conversationToStaffDto, messageToStaffDto } from '../utils/dto/conversation.dto.js';
-import { createMessage, emitConversationAssigned, emitConversationEscalated } from '../services/message.service.js';
+import prisma from '../../config/prisma.js';
+import { conversationToStaffDto, messageToStaffDto } from '../../utils/dto/conversation.dto.js';
+import { createMessage, emitConversationAssigned, emitConversationEscalated } from '../../services/message.service.js';
 
 // Partie staff de la messagerie (plan v2, P3.1).
 //
