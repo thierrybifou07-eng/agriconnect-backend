@@ -14,9 +14,12 @@ import jwt from 'jsonwebtoken';
 // `sessionId` identifie l'appareil connecte. C'est lui qui permet au client de
 // reconnaitre sa propre session parmi celles qu'il liste, et de fermer les
 // autres.
+// Le jeton d'acces est COURT : c'est le refresh token qui porte la duree de la
+// connexion (REFRESH_TOKEN_TTL_DAYS). Un jeton d'acces long survit a un mot de
+// passe change et garde en vie ce qui aurait du mourir avec lui.
 export function generateToken(payload) {
   return jwt.sign(payload, process.env.JWT_SECRET, {
-    expiresIn: process.env.JWT_EXPIRES_IN || '10h',
+    expiresIn: process.env.JWT_EXPIRES_IN || '1h',
   });
 }
 

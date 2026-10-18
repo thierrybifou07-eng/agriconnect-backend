@@ -50,6 +50,17 @@ app.get('/health', (req, res) => res.json({ status: 'ok' }));
 // Les documents de vérification (ID_CARD, BUSINESS_REGISTRATION, FARM_PROOF,
 // OTHER) ne sont PAS montés ici : l'accès passe par
 // GET /api/v2/admin/files/:token (token JWT signé, exp. 10 min).
+//
+// helmet pose Cross-Origin-Resource-Policy: same-origin sur toutes les réponses :
+// un navigateur servant une autre origine refuse alors d'afficher ces images
+// dans une page (le front Flutter web), et l'image arrive cassée. On rouvre la
+// lecture pour /uploads seulement, qui ne sert que des fichiers publics ; le
+// reste de l'API garde la protection par défaut de helmet, non modifié.
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+  next();
+});
+
 for (const publicFolder of PUBLIC_KINDS) {
   app.use(
     `/uploads/${publicFolder}`,
