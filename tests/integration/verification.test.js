@@ -233,6 +233,195 @@ describe('GET /api/v2/admin/verifications — liste paginée', () => {
   });
 });
 
+describe('GET /api/v2/admin/verifications — filtres', () => {
+  const adminToken = async () => {
+    const admin = await createUser({ role: 'ADMIN' });
+    return tokenFor(admin, 'ADMIN');
+  };
+
+  const liste = (jeton, query) =>
+    client.get(`/api/v2/admin/verifications${query}`).set(authHeader(jeton));
+
+  it('filtre par type de document', async () => {
+    const token = tokenFor(await createUser({ role: 'BUYER' }), 'BUYER');
+    await depotDocument(token, { type: 'ID_CARD' });
+    await depotDocument(token, { type: 'FARM_PROOF', filename: 'ferme.pdf' });
+    const jetonAdmin = await adminToken();
+
+    const res = await liste(jetonAdmin, '?type=FARM_PROOF');
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0]).toMatchObject({ type: 'FARM_PROOF', status: 'PENDING' });
+  });
+
+  it('filtre par rôle du compte déposant', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const supplier = await createUser({ role: 'SUPPLIER' });
+    await depotDocument(tokenFor(buyer, 'BUYER'));
+    await depotDocument(tokenFor(supplier, 'SUPPLIER'), { type: 'FARM_PROOF', filename: 'registre.pdf' });
+    const jetonAdmin = await adminToken();
+
+    const res = await liste(jetonAdmin, '?role=SUPPLIER');
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0].user.role.code).toBe('SUPPLIER');
+  });
+
+  it('filtre par userId', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const autre = await createUser({ role: 'BUYER' });
+    await depotDocument(tokenFor(buyer, 'BUYER'));
+    await depotDocument(tokenFor(autre, 'BUYER'));
+    const jetonAdmin = await adminToken();
+
+    const res = await liste(jetonAdmin, `?userId=${buyer.id}`);
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0].user.id).toBe(buyer.id);
+  });
+
+  it('cumule les filtres', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    await depotDocument(tokenFor(buyer, 'BUYER'));
+    await depotDocument(tokenFor(buyer, 'BUYER'), { type: 'OTHER', filename: 'autre.pdf' });
+    const jetonAdmin = await adminToken();
+
+    const res = await liste(jetonAdmin, `?status=PENDING&type=OTHER&role=BUYER&userId=${buyer.id}`);
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.total).toBe(1);
+    expect(res.body.items[0]).toMatchObject({ type: 'OTHER' });
+    expect(res.body.items[0].user.id).toBe(buyer.id);
+  });
+
+  it('refuse un filtre hors nomenclature (400)', async () => {
+    const jetonAdmin = await adminToken();
+
+    for (const query of ['?status=APPROVED', '?type=PASSEPORT', '?role=ADMIN', '?limit=0', '?limit=101', '?limit=abc', '?userId=0']) {
+      const res = await liste(jetonAdmin, query);
+      expect(res.status, `${query} devrait être refusé (recu ${res.text})`).toBe(400);
+      expect(res.body.error).toBe('Données invalides');
+    }
+  });
+
+  it('borne la pagination et reste exacte', async () => {
+    const token = tokenFor(await createUser({ role: 'BUYER' }), 'BUYER');
+    for (let i = 0; i < 3; i++) {
+      await depotDocument(token, { filename: `doc${i}.pdf` });
+    }
+    const jetonAdmin = await adminToken();
+
+    const res = await liste(jetonAdmin, '?status=PENDING&limit=2&page=2');
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body).toMatchObject({ page: 2, limit: 2, total: 3 });
+    expect(res.body.items).toHaveLength(1);
+  });
+});
+
+describe('GET /api/v2/admin/verifications — ordre FIFO sur la file', () => {
+  it('sort la demande la plus ancienne en premier (status=PENDING)', async () => {
+    const token = tokenFor(await createUser({ role: 'BUYER' }), 'BUYER');
+    const anciens = [];
+    for (let i = 0; i < 3; i++) {
+      const res = await depotDocument(token, { filename: `doc${i}.pdf` });
+      anciens.push(res.body.id);
+    }
+    // Dates explicites et distinctes : le tri repose sur createdAt, pas sur
+    // l'ordre d'insertion supposé.
+    const base = new Date('2026-01-01T10:00:00Z').getTime();
+    for (let i = 0; i < anciens.length; i++) {
+      await prisma.verificationDocument.update({
+        where: { id: anciens[i] },
+        data: { createdAt: new Date(base + i * 60_000) },
+      });
+    }
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const res = await client
+      .get('/api/v2/admin/verifications?status=PENDING')
+      .set(authHeader(tokenFor(admin, 'ADMIN')));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.items.map((d) => d.id)).toEqual(anciens);
+  });
+
+  it('trie du plus récent au plus ancien hors file d attente (status=VERIFIED)', async () => {
+    const token = tokenFor(await createUser({ role: 'BUYER' }), 'BUYER');
+    const docs = [];
+    for (let i = 0; i < 2; i++) {
+      const res = await depotDocument(token, { filename: `doc${i}.pdf` });
+      docs.push(res.body.id);
+    }
+    const admin = await createUser({ role: 'ADMIN' });
+    for (let i = 0; i < docs.length; i++) {
+      await prisma.verificationDocument.update({
+        where: { id: docs[i] },
+        data: { status: 'VERIFIED', createdAt: new Date(new Date('2026-01-01T10:00:00Z').getTime() + i * 60_000) },
+      });
+    }
+
+    const res = await client
+      .get('/api/v2/admin/verifications?status=VERIFIED')
+      .set(authHeader(tokenFor(admin, 'ADMIN')));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.items.map((d) => d.id)).toEqual([...docs].reverse());
+  });
+});
+
+describe('GET /api/v2/admin/verifications — contenu de la liste', () => {
+  it('expose le statut du profil et les caractéristiques du fichier, jamais une URL', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const depot = await depotDocument(tokenFor(buyer, 'BUYER'));
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const res = await client
+      .get('/api/v2/admin/verifications?status=PENDING')
+      .set(authHeader(tokenFor(admin, 'ADMIN')));
+
+    expect(res.status, res.text).toBe(200);
+    const item = res.body.items[0];
+    expect(item.id).toBe(depot.body.id);
+    // Le relecteur voit où en est le COMPTE, pas seulement le document.
+    expect(item.user.profileVerificationStatus).toBe('PENDING');
+    // Assez pour juger de la pièce (format, poids), pas pour la lire.
+    expect(item.media).toMatchObject({ mimeType: 'application/pdf' });
+    expect(item.media.fileSize).toBeGreaterThan(0);
+
+    // Aucune URL ni publicId, à aucun niveau de la réponse.
+    expect(JSON.stringify(res.body)).not.toContain('/uploads/');
+    const cles = [];
+    (function parcourir(valeur) {
+      if (Array.isArray(valeur)) valeur.forEach(parcourir);
+      else if (valeur && typeof valeur === 'object') {
+        for (const [cle, sous] of Object.entries(valeur)) {
+          cles.push(cle);
+          parcourir(sous);
+        }
+      }
+    })(res.body);
+    expect(cles).not.toContain('url');
+    expect(cles).not.toContain('publicId');
+  });
+
+  it('renvoie media null pour un document sans pièce jointe', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    await prisma.verificationDocument.create({ data: { userId: buyer.id, type: 'OTHER' } });
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const res = await client
+      .get('/api/v2/admin/verifications?status=PENDING')
+      .set(authHeader(tokenFor(admin, 'ADMIN')));
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.items[0].media).toBeNull();
+  });
+});
+
 describe('GET /api/v2/admin/verifications/:id — détail + URL signée', () => {
   it('un ADMIN voit l URL signée, un BUYER non', async () => {
     const buyer = await createUser({ role: 'BUYER' });
@@ -380,6 +569,105 @@ describe('PATCH /api/v2/admin/verifications/:id — décision', () => {
       .send({ decision: 'REJECT', note: 'Trop tard' });
 
     expect(res.status, res.text).toBe(409);
+    expect(res.body.error).toBe('Ce document a déjà été examiné');
+  });
+
+  it('répond 404 sur un document inconnu', async () => {
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const res = await client
+      .patch('/api/v2/admin/verifications/999999')
+      .set(authHeader(tokenFor(admin, 'ADMIN')))
+      .send({ decision: 'APPROVE' });
+
+    expect(res.status, res.text).toBe(404);
+  });
+
+  // La course : deux relecteurs cliquent en même temps sur le même dossier.
+  // Lire le statut puis écrire sans condition laissait les deux passer ; une
+  // seule écriture conditionnelle peut aboutir.
+  it('deux décisions simultanées : un 200 et un 409', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const depot = await depotDocument(tokenFor(buyer, 'BUYER'));
+    const docId = depot.body.id;
+    const premier = await createUser({ role: 'ADMIN' });
+    const second = await createUser({ role: 'ADMIN' });
+
+    const [a, b] = await Promise.all([
+      client
+        .patch(`/api/v2/admin/verifications/${docId}`)
+        .set(authHeader(tokenFor(premier, 'ADMIN')))
+        .send({ decision: 'APPROVE' }),
+      client
+        .patch(`/api/v2/admin/verifications/${docId}`)
+        .set(authHeader(tokenFor(second, 'ADMIN')))
+        .send({ decision: 'REJECT', note: 'Pièce non conforme' }),
+    ]);
+
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+    const perdant = a.status === 409 ? a : b;
+    expect(perdant.body.error).toBe('Ce document a déjà été examiné');
+
+    // Une seule décision écrite en base, et un seul audit : le perdant n'a rien
+    // laissé derrière lui.
+    const audits = await prisma.auditLog.findMany({
+      where: { entityType: 'VerificationDocument', entityId: docId },
+    });
+    expect(audits).toHaveLength(1);
+
+    const doc = await prisma.verificationDocument.findUnique({ where: { id: docId } });
+    const gagnant = a.status === 200 ? premier : second;
+    expect(doc.reviewedById).toBe(gagnant.id);
+    expect(doc.status === 'VERIFIED').toBe(a.status === 200);
+  });
+
+  it('un AGENT sans USER_VERIFICATION ne décide pas (403)', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const depot = await depotDocument(tokenFor(buyer, 'BUYER'));
+    const agent = await createUser({ role: 'AGENT' }); // aucune fiche agent
+
+    const res = await client
+      .patch(`/api/v2/admin/verifications/${depot.body.id}`)
+      .set(authHeader(tokenFor(agent, 'AGENT')))
+      .send({ decision: 'APPROVE' });
+
+    expect(res.status, res.text).toBe(403);
+    const doc = await prisma.verificationDocument.findUnique({ where: { id: depot.body.id } });
+    expect(doc.status).toBe('PENDING');
+  });
+
+  it('un AGENT avec USER_VERIFICATION décide (200)', async () => {
+    const buyer = await createUser({ role: 'BUYER' });
+    const depot = await depotDocument(tokenFor(buyer, 'BUYER'));
+    const agent = await agentAvecVerification();
+
+    const res = await client
+      .patch(`/api/v2/admin/verifications/${depot.body.id}`)
+      .set(authHeader(tokenFor(agent, 'AGENT')))
+      .send({ decision: 'APPROVE' });
+
+    expect(res.status, res.text).toBe(200);
+    expect(res.body.status).toBe('VERIFIED');
+  });
+
+  // Le message de décision part après le commit et n'est pas attendu : le
+  // SMTP est neutralisé en test (SMTP_DISABLED), la décision doit donc aboutir
+  // exactement comme si aucun serveur de messagerie n'existait.
+  it('la décision aboutit même sans messagerie (non bloquant)', async () => {
+    expect(process.env.SMTP_DISABLED).toBe('1');
+
+    const buyer = await createUser({ role: 'BUYER' });
+    const depot = await depotDocument(tokenFor(buyer, 'BUYER'));
+    const admin = await createUser({ role: 'ADMIN' });
+
+    const res = await client
+      .patch(`/api/v2/admin/verifications/${depot.body.id}`)
+      .set(authHeader(tokenFor(admin, 'ADMIN')))
+      .send({ decision: 'REJECT', note: 'Document illisible' });
+
+    expect(res.status, res.text).toBe(200);
+    const user = await prisma.user.findUnique({ where: { id: buyer.id } });
+    expect(user.profileVerificationStatus).toBe('REJECTED');
   });
 });
 

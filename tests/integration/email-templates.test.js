@@ -124,6 +124,57 @@ describe('Rendu du gabarit de bienvenue', () => {
   });
 });
 
+describe('Rendu du gabarit de décision de vérification', () => {
+  // Décision d'examen : c'est le seul moment où l'utilisateur apprend le sort de
+  // son dossier. Un gabarit cassé ne se verrait qu'en production, sur un
+  // envoi réel.
+  async function render(props) {
+    const { renderTemplate } = await import('../../src/config/email/sendMail.js');
+    return renderTemplate('verification-decision', props);
+  }
+
+  it('annonce la vérification quand le document est accepté', async () => {
+    const html = await render({ username: 'Amina', decision: 'APPROVE', heading: 'Profil vérifié' });
+
+    expect(html).toContain('Amina');
+    expect(html).toContain('vérifié');
+    expect(html).not.toContain('<%');
+    expect(html).not.toContain('undefined');
+  });
+
+  it('reprend la note du relecteur quand le document est refusé', async () => {
+    const html = await render({
+      username: 'Zaid',
+      decision: 'REJECT',
+      note: 'Photo trop floue pour lire le numéro de carte',
+      heading: 'Document non validé',
+    });
+
+    expect(html).toContain('Zaid');
+    expect(html).toContain('non validé');
+    expect(html).toContain('Photo trop floue pour lire le numéro de carte');
+    expect(html).not.toContain('<%');
+  });
+
+  it('reste valide quand une approbation ne porte pas de note', async () => {
+    // APPROVE peut être envoyée sans note : le gabarit ne doit pas afficher
+    // « undefined » au demandeur.
+    const html = await render({ username: 'Amina', decision: 'APPROVE', note: null });
+
+    expect(html).toContain('Amina');
+    expect(html).not.toContain('undefined');
+  });
+
+  it('échappe la note du relecteur', async () => {
+    // La note est libre : elle ne doit pas pouvoir injecter du HTML dans le
+    // message.
+    const html = await render({ username: 'Amina', decision: 'REJECT', note: '<script>alert(1)</script>' });
+
+    expect(html).not.toContain('<script>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+});
+
 describe('Transport SMTP', () => {
   const envSauvegarde = { ...process.env };
 

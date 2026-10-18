@@ -64,7 +64,7 @@ import {
   rejectReferralSchema,
 } from '../validators/admin.validator.js';
 import { updateAgentSchema, createAiAgentSchema } from '../validators/agent.validator.js';
-import { reviewVerificationSchema } from '../validators/verification.validator.js';
+import { listVerificationsQuerySchema, reviewVerificationSchema } from '../validators/verification.validator.js';
 import { payPayoutSchema } from '../validators/payout.validator.js';
 import {
   compensationRejectSchema,
@@ -97,7 +97,7 @@ router.param('id', coerceIdParam);
 // Monte AVANT le requireMinLevel(50) global : un AGENT (niveau 30) muni de la
 // capacite USER_VERIFICATION doit passer ici, alors que le reste de /admin lui
 // est ferme. requireCapability laisse passer les niveaux 50+ sans controle.
-router.get('/verifications', protect, requireCapability('USER_VERIFICATION'), listVerifications);
+router.get('/verifications', protect, requireCapability('USER_VERIFICATION'), validate(listVerificationsQuerySchema, 'query'), listVerifications);
 router.get('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), getVerification);
 router.patch('/verifications/:id', protect, requireCapability('USER_VERIFICATION'), validate(reviewVerificationSchema), reviewVerification);
 

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title><%= typeof heading !== 'undefined' && heading ? heading : 'Examen de votre document' %></title>
+</head>
+<body>
+  <div class="email-wrapper">
+    <%- include('../_shared/header') %>
+
+    <div class="email-body">
+      <h2>Bonjour <%= username %>,</h2>
+
+      <% if (decision === 'APPROVE') { %>
+        <p>
+          Votre pi&egrave;ce justificative a &eacute;t&eacute; accept&eacute;e par notre
+          &eacute;quipe&nbsp;: votre profil AgriConnect est d&eacute;sormais
+          <strong>v&eacute;rifi&eacute;</strong>.
+        </p>
+        <p>
+          Vous disposez maintenant de l'ensemble des fonctions r&eacute;serv&eacute;es aux
+          profils v&eacute;rifi&eacute;s.
+        </p>
+      <% } else { %>
+        <p>
+          Nous n'avons pas pu valider votre pi&egrave;ce justificative. Votre profil
+          reste <strong>non v&eacute;rifi&eacute;</strong> tant qu'aucun document
+          n'a pu &ecirc;tre accept&eacute;.
+        </p>
+        <% if (typeof note !== 'undefined' && note) { %>
+          <%# La note du relecteur est la seule chose que l'utilisateur puisse
+              utiliser pour corriger son dossier : elle est affichée telle quelle. %>
+          <div class="info-row">
+            Motif&nbsp;: <strong><%= note %></strong>
+          </div>
+        <% } %>
+        <p>
+          Vous pouvez d&eacute;poser un nouveau document depuis votre profil d&egrave;s que
+          vous avez corrig&eacute; le point signal&eacute; ci-dessus.
+        </p>
+      <% } %>
+
+      <div class="divider"></div>
+
+      <p style="font-size:14px; color:#94a3b8;">
+        Si ce message vous semble erron&eacute;, r&eacute;pondez simplement &agrave;
+        cet email&nbsp;: notre &eacute;quipe relit le dossier.
+      </p>
+    </div>
+
+    <%- include('../_shared/footer') %>
+  </div>
+</body>
+</html>

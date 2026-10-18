@@ -288,16 +288,31 @@ export const updateSettings = async (req, res) => {
   res.json(updated);
 };
 
-// GET /api/v2/admin/verifications?status=
+// GET /api/v2/admin/verifications?status=&type=&role=&userId=&page=&limit=
 //
-// Liste paginée des documents de verification. Le filtre porte sur le statut
-// du document (PENDING par defaut côté client), pas sur celui du compte.
+// File de revue des documents de verification, paginee. Les filtres sont
+// valides en amont (validate(listVerificationsQuerySchema, 'query')) : les
+// defauts page/limit viennent donc du schema, pas d'un Math.min() qui laissait
+// passer un ?limit=0 ou un NaN.
 export const listVerifications = async (req, res) => {
-  const { status } = req.query;
-  const page = Math.max(1, Number(req.query.page) || 1);
-  const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+  const { status, type, role, userId, page, limit } = req.query;
 
-  const where = status ? { status } : {};
+  // Le filtre porte sur le statut du DOCUMENT (PENDING par défaut côté client),
+  // pas sur celui du compte : le statut du compte est renvoyé dans chaque
+  // élément, il ne filtre rien.
+  const where = {
+    ...(status && { status }),
+    ...(type && { type }),
+    ...(userId && { userId }),
+    ...(role && { user: { role: { code: role } } }),
+  };
+
+  // FIFO sur la file d'attente : c'est la demande la plus ancienne qui attend
+  // depuis le plus longtemps, donc celle qui doit sortir en premier. Un tri
+  // descendant la repoussait en fin de liste, si elle y entrait encore, et
+  // laissait vieillir indéfiniment les premières demandes reçues. Les autres
+  // statuts sont consultés comme un historique : le plus récent d'abord.
+  const orderBy = { createdAt: status === 'PENDING' ? 'asc' : 'desc' };
 
   const [items, total] = await Promise.all([
     prisma.verificationDocument.findMany({
@@ -315,18 +330,47 @@ export const listVerifications = async (req, res) => {
             firstname: true,
             lastname: true,
             email: true,
+            // Statut du PROFIL : sans lui, le relecteur ne sait pas si le
+            // dossier s'inscrit dans un compte déjà vérifié par ailleurs.
+            profileVerificationStatus: true,
             role: { select: { code: true } },
           },
         },
+        // Caractéristiques de la pièce jointe, et RIEN d'autre. Jamais d'URL ni
+        // de publicId : la pièce ne s'ouvre que par le jeton court émis par
+        // GET /verifications/:id, et lister des liens directs donnerait à
+        // lire les documents sans laisser de trace.
+        media: {
+          take: 1,
+          select: { mimeType: { select: { code: true } }, fileSize: true },
+        },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy,
       skip: (page - 1) * limit,
       take: limit,
     }),
     prisma.verificationDocument.count({ where }),
   ]);
 
-  res.json({ items, page, limit, total });
+  res.json({
+    items: items.map((d) => ({
+      id: d.id,
+      type: d.type,
+      status: d.status,
+      note: d.note,
+      createdAt: d.createdAt,
+      reviewedAt: d.reviewedAt,
+      user: d.user,
+      // Un document a un seul Media en pratique, mais la relation est 1-N :
+      // on expose la première ligne, ou null si le dépôt est sans fichier.
+      media: d.media[0]
+        ? { mimeType: d.media[0].mimeType?.code ?? null, fileSize: d.media[0].fileSize ?? null }
+        : null,
+    })),
+    page,
+    limit,
+    total,
+  });
 };
 
 // GET /api/v2/admin/verifications/:id
@@ -410,26 +454,46 @@ export const getVerification = async (req, res) => {
 export const reviewVerification = async (req, res) => {
   const { decision, note } = req.body; // validé par reviewVerificationSchema en amont
 
-  const document = await prisma.verificationDocument.findUnique({ where: { id: req.params.id } });
+  // Cette lecture ne sert qu'à l'existence du document (404) et au destinataire
+  // de l'email. Elle ne teste PAS le statut : lire « PENDING » puis écrire sans
+  // condition laisse deux relecteurs simultanés passer tous les deux la
+  // vérification « déjà examiné ». La décision appartient à l'écriture
+  // conditionnelle ci-dessous, et à elle seule.
+  const document = await prisma.verificationDocument.findUnique({
+    where: { id: req.params.id },
+    select: {
+      id: true,
+      type: true,
+      createdAt: true,
+      userId: true,
+      user: { select: { email: true, firstname: true, lastname: true } },
+    },
+  });
   if (!document) {
     return res.status(404).json({ error: 'Document introuvable' });
   }
-  if (document.status !== 'PENDING') {
-    return res.status(409).json({ error: 'Ce document a déjà été examiné' });
-  }
 
   const statutDocument = decision === 'APPROVE' ? 'VERIFIED' : 'REJECTED';
+  const reviewedAt = new Date();
 
-  const { doc, profilMisAJour } = await prisma.$transaction(async (tx) => {
-    const misAJour = await tx.verificationDocument.update({
-      where: { id: document.id },
+  const { dejaExamine } = await prisma.$transaction(async (tx) => {
+    // Mise à jour CONDITIONNELLE : c'est le point qui départage les relecteurs.
+    // InnoDB sérialise les UPDATE sur une même ligne, donc le second relecteur
+    // n'affecte plus aucune ligne (count 0) : le statut n'est plus PENDING.
+    const { count } = await tx.verificationDocument.updateMany({
+      where: { id: document.id, status: 'PENDING' },
       data: {
         status: statutDocument,
         reviewedById: req.user.id,
-        reviewedAt: new Date(),
+        reviewedAt,
         note: note ?? null,
       },
     });
+
+    // Déjà examiné : on sort SANS écrire (ni audit, ni statut de compte). La
+    // transaction se termine proprement — lever ici ferait remonter une 500
+    // au lieu du 409 attendu par l'appelant.
+    if (count === 0) return { dejaExamine: true };
 
     // Relecture des documents du compte : la regle porte sur l'ensemble des
     // depots, pas sur le seul document examine ici.
@@ -483,16 +547,43 @@ export const reviewVerification = async (req, res) => {
       },
     });
 
-    return { doc: misAJour, profilMisAJour: nouveauStatut };
+    return { dejaExamine: false };
   });
+
+  if (dejaExamine) {
+    return res.status(409).json({ error: 'Ce document a déjà été examiné' });
+  }
+
+  // Notification, APRÈS le commit : elle annonce une décision déjà prise et ne
+  // peut donc pas l'annuler. L'envoi n'est pas attendu et ne lève jamais (le
+  // SMTP est la dépendance la moins fiable du projet) : un serveur de
+  // messagerie en panne n'a jamais fait échouer une décision. En test,
+  // SMTP_DISABLED neutralise tout envoi.
+  if (document.user.email) {
+    sendTemplateEmail(
+      document.user.email,
+      decision === 'APPROVE'
+        ? 'Votre profil AgriConnect est vérifié'
+        : 'Votre document n’a pas été validé',
+      'verification-decision',
+      {
+        heading: decision === 'APPROVE' ? 'Profil vérifié' : 'Document non validé',
+        username: `${document.user.firstname} ${document.user.lastname}`,
+        decision,
+        // Rejet sans note impossible (reviewVerificationSchema), APPROVE peut
+        // en porter une : le gabarit n'affiche la note que s'il y en a une.
+        note: note ?? null,
+      }
+    );
+  }
 
   res.json({
     id: document.id,
     type: document.type,
-    status: doc.status,
-    note: doc.note,
-    reviewedAt: doc.reviewedAt,
-    createdAt: doc.createdAt,
+    status: statutDocument,
+    note: note ?? null,
+    reviewedAt,
+    createdAt: document.createdAt,
   });
 };
 

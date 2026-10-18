@@ -41,14 +41,19 @@ export default {
       get: {
         tags: ['Admin'],
         summary: 'Dossiers de vérification des profils (paginé)',
-        description: 'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION.',
+        description:
+          'ADMIN et plus, ou AGENT avec la capacité USER_VERIFICATION. Tri FIFO (le plus ancien d\'abord) quand status=PENDING, antéchronologique sinon. La liste n\'expose ni URL ni publicId du fichier.',
         parameters: [
           { in: 'query', name: 'status', schema: { type: 'string', enum: ['PENDING', 'VERIFIED', 'REJECTED'] } },
+          { in: 'query', name: 'type', schema: { type: 'string', enum: ['ID_CARD', 'BUSINESS_REGISTRATION', 'FARM_PROOF', 'OTHER'] } },
+          { in: 'query', name: 'role', schema: { type: 'string', enum: ['SUPPLIER', 'BUYER'] } },
+          { in: 'query', name: 'userId', schema: { type: 'integer', minimum: 1 } },
           { $ref: '#/components/parameters/PageParam' },
           { $ref: '#/components/parameters/LimitParam' },
         ],
         responses: {
           '200': { $ref: '#/components/responses/PaginatedVerifications' },
+          '400': R('BadRequest'),
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
         },
@@ -74,7 +79,7 @@ export default {
         tags: ['Admin'],
         summary: 'Décision d\'examen (APPROVE / REJECT)',
         description:
-          'APPROVE -> document VERIFIED, utilisateur VERIFIED si aucun document PENDING. REJECT sans document VERIFIED -> utilisateur REJECTED. Audit dans la même transaction.',
+          'APPROVE -> document VERIFIED, utilisateur VERIFIED si aucun document PENDING. REJECT sans document VERIFIED -> utilisateur REJECTED. Audit dans la même transaction. Décision atomique : deux relecteurs simultanés obtiennent un 200 et un 409. L\'utilisateur est prévenu par email après la décision.',
         parameters: [{ $ref: '#/components/parameters/IdParam' }],
         requestBody: jsonBody(reviewVerificationSchema),
         responses: {
@@ -83,6 +88,7 @@ export default {
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
           '404': R('NotFound'),
+          '409': { description: 'Document déjà examiné par un autre relecteur', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
         },
       },
     },
