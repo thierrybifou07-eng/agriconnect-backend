@@ -17,6 +17,7 @@ import {
   payReferral,
   rejectReferral,
 } from '../../services/referral.service.js';
+import {UserStatusCode} from "../../utils/enums/enums.helpers.js";
 
 const userSafeSelect = {
   id: true,
@@ -73,7 +74,7 @@ export const suspendUser = async (req, res) => {
     return res.status(403).json({ error: 'Seul ROOT peut suspendre un compte administrateur' });
   }
 
-  const suspendedStatusId = await getLookupId('userStatus', 'SUSPENDED');
+  const suspendedStatusId = await getLookupId('userStatus', UserStatusCode.SUSPENDED);
 
   const updated = await prisma.user.update({
     where: { id: req.params.id },

@@ -1,5 +1,6 @@
 import { verifyToken } from '../utils/jwt.js';
 import prisma from '../config/prisma.js';
+import {UserStatusCode} from "../utils/enums/enums.helpers.js";
 
 // Vérifie le token JWT, charge l'utilisateur avec son rôle et son statut,
 // et bloque l'accès si le compte est suspendu (1er des 3 points de blocage,
@@ -50,7 +51,7 @@ export const protect = async (req, res, next) => {
     if (!user) {
       return res.status(401).json({ error: 'Utilisateur introuvable' });
     }
-    if (user.userStatus.code === 'SUSPENDED') {
+    if (user.userStatus.code === UserStatusCode.SUSPENDED) {
       return res.status(403).json({ error: 'Ce compte a été suspendu' });
     }
 

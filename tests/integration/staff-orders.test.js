@@ -7,6 +7,7 @@ import { createUser, createListingForLot } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { orderToBuyerDto } from '../../src/utils/dto/order.dto.js';
 import { assertNoLeak } from '../helpers/assertNoLeak.js';
+import {UserStatusCode} from "../../src/utils/enums/enums.helpers.js";
 
 const Decimal = Prisma.Decimal;
 
@@ -356,7 +357,7 @@ describe('POST /api/v2/staff/orders', () => {
   });
 
   it('refuse un acheteur suspendu : 403 BUYER_NOT_ACTIVE', async () => {
-    const buyer = await createUser({ role: 'BUYER', status: 'SUSPENDED' });
+    const buyer = await createUser({ role: 'BUYER', status: UserStatusCode.SUSPENDED });
     const monLot = await creerLot({ quantity: '10' });
     const annonce = await annoncePour(monLot);
 

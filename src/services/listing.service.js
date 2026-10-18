@@ -13,6 +13,8 @@ const STATUTS_LOTS_INACTIFS = ['EXPIRED', 'RETURNED', 'WITHDRAWN', 'REJECTED'];
 // Résout un code de statut d'annonce dans la transaction appelante : le cache
 // mémoire de getLookupId vit hors transaction et ne verrait pas les écritures
 // en cours.
+import {ListingStatusCode, LotStatusCode} from "../utils/enums/enums.helpers.js";
+
 async function statutId(tx, code) {
   const row = await tx.listingStatus.findUnique({ where: { code } });
   if (!row) {
@@ -36,7 +38,7 @@ export async function syncListingsForLot(tx, lotId) {
   });
   for (const lien of liens) {
     const annonce = lien.listing;
-    if (annonce.status.code !== 'ACTIVE') {
+    if (annonce.status.code !== ListingStatusCode.ACTIVE) {
       continue;
     }
     const lots = await tx.listingLot.findMany({
@@ -48,10 +50,10 @@ export async function syncListingsForLot(tx, lotId) {
     }
     const statuts = lots.map((l) => l.lot.status);
     let cible = null;
-    if (statuts.every((s) => s === 'SOLD_OUT')) {
-      cible = 'SOLD';
+    if (statuts.every((s) => s === LotStatusCode.SOLD_OUT)) {
+      cible = ListingStatusCode.SOLD;
     } else if (statuts.every((s) => STATUTS_LOTS_INACTIFS.includes(s))) {
-      cible = 'INACTIVE';
+     cible = ListingStatusCode.INACTIVE;
     }
     if (cible) {
       await tx.listing.update({

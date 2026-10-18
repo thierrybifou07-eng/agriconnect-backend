@@ -7,6 +7,7 @@ import {
   STAFF_ROOM,
   ERROR_MESSAGE,
 } from '../services/message.service.js';
+import {UserStatusCode} from "../utils/enums/enums.helpers.js";
 
 // Messagerie temps reel (plan v2, P3.2).
 //
@@ -84,7 +85,7 @@ export default function initChatSocket(io) {
         select: { userStatus: { select: { code: true } } },
       });
       if (!user) return next(new Error('Utilisateur introuvable'));
-      if (user.userStatus.code === 'SUSPENDED') {
+      if (user.userStatus.code === UserStatusCode.SUSPENDED) {
         return next(new Error('Ce compte a été suspendu'));
       }
 

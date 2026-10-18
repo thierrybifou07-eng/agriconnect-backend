@@ -15,6 +15,7 @@ import {
   CONVERSATION_ASSIGNED,
   CONVERSATION_ESCALATED,
 } from '../../src/services/message.service.js';
+import {UserStatusCode} from "../../src/utils/enums/enums.helpers.js";
 
 // Temps reel de la messagerie (plan v2, P3.2). Les memes regles que l API
 // REST, mais sur socket : un client ne voit que ses conversations, une note
@@ -322,7 +323,7 @@ describe('Controle d acces sur join_conversation et send_message', () => {
   });
 
   it('compte suspendu : connexion refusee (comportement conserve)', async () => {
-    const user = await createUser({ status: 'SUSPENDED' });
+    const user = await createUser({ status: UserStatusCode.SUSPENDED });
 
     await avecServeur(async (url) => {
       await expect(connecter(url, jetonPour(user))).rejects.toThrow(/suspend/i);

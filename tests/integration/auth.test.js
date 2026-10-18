@@ -4,6 +4,7 @@ import { api } from '../helpers/app.js';
 import { registerViaApi } from '../helpers/factory.js';
 import { hashToken } from '../../src/utils/refreshToken.js';
 import { generateToken, verifyToken } from '../../src/utils/jwt.js';
+import {UserStatusCode} from "../../src/utils/enums/enums.helpers.js";
 
 const client = api();
 
@@ -214,7 +215,7 @@ describe('POST /api/v2/auth/login', () => {
   it('bloque la connexion d un compte suspendu', async () => {
     const { payload } = await registerViaApi(client, { email: 'suspendu@example.com' });
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
-    const suspendu = await prisma.userStatus.findUnique({ where: { code: 'SUSPENDED' } });
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: UserStatusCode.SUSPENDED } });
     await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
 
     const res = await client
@@ -683,7 +684,7 @@ describe('Statut du compte : la base prime sur le jeton', () => {
   it('refuse un jeton.delivre avant une suspension', async () => {
     const { accessToken, payload } = await registerViaApi(client);
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
-    const suspendu = await prisma.userStatus.findUnique({ where: { code: 'SUSPENDED' } });
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: UserStatusCode.SUSPENDED } });
     await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
 
     // Le jeton porte encore userStatus ACTIVE, il expire dans une heure. Sans
@@ -695,7 +696,7 @@ describe('Statut du compte : la base prime sur le jeton', () => {
   it('n accorde rien a un jeton qui se declare plus permissif que la base', async () => {
     const { payload } = await registerViaApi(client);
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
-    const suspendu = await prisma.userStatus.findUnique({ where: { code: 'SUSPENDED' } });
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: UserStatusCode.SUSPENDED } });
     await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
 
     // Un jeton signe avec le vrai secret, mais portant un statut falsifie. Il est
@@ -728,7 +729,7 @@ describe('Statut du compte : la base prime sur le jeton', () => {
   it('laisse passer un jeton anterieur a une levee de suspension', async () => {
     const { payload } = await registerViaApi(client);
     const user = await prisma.user.findUnique({ where: { email: payload.email } });
-    const suspendu = await prisma.userStatus.findUnique({ where: { code: 'SUSPENDED' } });
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: UserStatusCode.SUSPENDED } });
     await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
 
     const refuse = await client

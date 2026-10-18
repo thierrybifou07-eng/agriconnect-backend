@@ -4,6 +4,7 @@ import { api, authHeader } from '../helpers/app.js';
 import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { getLookupId } from '../../src/utils/lookupCache.js';
+import {UserStatusCode} from "../../src/utils/enums/enums.helpers.js";
 
 // B5 : Express donne toujours req.params sous forme de chaine, alors que toutes
 // les cles primaires du schema sont des Int. Les lectures
@@ -38,13 +39,13 @@ describe('Routes /api/v2/admin/*/:id', () => {
       where: { id: cible.id },
       include: { userStatus: true },
     });
-    expect(apres.userStatus.code).toBe('SUSPENDED');
+    expect(apres.userStatus.code).toBe(UserStatusCode.SUSPENDED);
   });
 
   it('PATCH /users/:id/reactivate reactive un compte', async () => {
     const { token } = await adminToken();
     const cible = await createUser({ role: 'BUYER' });
-    const suspendu = await getLookupId('userStatus', 'SUSPENDED');
+    const suspendu = await getLookupId('userStatus', UserStatusCode.SUSPENDED);
     await prisma.user.update({ where: { id: cible.id }, data: { userStatusId: suspendu } });
 
     const res = await client
@@ -57,6 +58,6 @@ describe('Routes /api/v2/admin/*/:id', () => {
       where: { id: cible.id },
       include: { userStatus: true },
     });
-    expect(apres.userStatus.code).toBe('ACTIVE');
+    expect(apres.userStatus.code).toBe(UserStatusCode.ACTIVE);
   });
 });

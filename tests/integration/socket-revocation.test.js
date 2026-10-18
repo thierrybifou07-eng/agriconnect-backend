@@ -7,6 +7,7 @@ import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import initChatSocket from '../../src/sockets/chat.socket.js';
 import { emitSessionRevoked, userRoom, SESSION_REVOKED } from '../../src/sockets/revocation.js';
+import {UserStatusCode} from "../../src/utils/enums/enums.helpers.js";
 
 // Le blocage d'un compte se faisait en trois points sur quatre : protect, login et
 // refresh. Le quatrieme etait le websocket. Ces tests montent un vrai serveur et
@@ -101,7 +102,7 @@ describe('Connexion au socket', () => {
   // C'est le defaut verrouille ici : le jeton annonce ACTIVE alors que la base
   // dit SUSPENDED. Seul un controle en base peut l'attraper, et il manquait.
   it('refuse un compte suspendu, la ou le jeton ne le dit pas', async () => {
-    const user = await createUser({ status: 'SUSPENDED' });
+    const user = await createUser({ status: UserStatusCode.SUSPENDED });
 
     await avecServeur(async (url) => {
       await expect(connecter(url, jetonPour(user, 'ACTIVE'))).rejects.toThrow(/suspend/i);
@@ -185,7 +186,7 @@ describe('Suspension : les sessions tombent', () => {
     const res = await client.patch(`/api/v2/admin/users/${user.id}/suspend`).set(authHeader(token));
 
     expect(res.status, res.text).toBe(200);
-    expect(await statutDe(user.id)).toBe('SUSPENDED');
+    expect(await statutDe(user.id)).toBe(UserStatusCode.SUSPENDED);
     expect(emitSessionRevoked(null, user.id)).toBe(false);
   });
 });
