@@ -6,6 +6,7 @@
   "main": "src/server.js",
   "scripts": {
     "backfill:profiles": "node scripts/backfill-profiles.js",
+    "ai:eval": "node scripts/ai-eval.js",
     "create:root": "node scripts/create-root.js",
     "db:drift": "node scripts/check-drift.js",
     "dev": "node --watch src/server.js",

@@ -9,11 +9,13 @@ import conversationRoutes from './conversation.routes.js';
 import orderRoutes from './order.routes.js';
 import driverRoutes from './driver.routes.js';
 import referenceRoutes from './reference.routes.js';
+import aiRoutes from './ai.routes.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/admin', adminRoutes);
+router.use('/admin/ai', aiRoutes);
 router.use('/legal', legalRoutes);
 router.use('/supplier', supplierRoutes);
 router.use('/staff', staffRoutes);

@@ -20,8 +20,9 @@ import conversation from './conversation.openapi.js';
 import order from './order.openapi.js';
 import driver from './driver.openapi.js';
 import reference from './reference.openapi.js';
+import ai from './ai.openapi.js';
 
-const fragments = [auth, admin, legal, supplier, staff, catalog, conversation, order, driver, reference];
+const fragments = [auth, admin, legal, supplier, staff, catalog, conversation, order, driver, reference, ai];
 
 const { output } = merge(fragments.map((fragment) => ({ oas: fragment })));
 
@@ -54,6 +55,7 @@ const document = {
     { name: 'Commandes', description: 'Cycle de vie de la commande côté acheteur' },
     { name: 'Livreur', description: 'Courses du livreur connecté' },
     { name: 'Référentiels', description: 'Listes paginées des données de référence actives accessibles aux comptes connectés' },
+    { name: 'IA', description: 'État et test du fournisseur IA local Ollama (administration)' },
   ],
   paths: output.paths,
   components: {
