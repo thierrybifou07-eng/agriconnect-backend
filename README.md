@@ -44,6 +44,7 @@ cp .env.example .env
 npm run prisma:generate   # si le client Prisma n'est pas déjà à jour
 npm run prisma:migrate    # applique les migrations
 npm run seed              # OBLIGATOIRE sur une base neuve : référentiels + CGU + settings
+npm run seed:demo         # données et comptes de démonstration (développement uniquement)
 npm run create:root       # crée le compte ROOT en interactif - JAMAIS via l'API
 npm run dev
 ```
@@ -52,6 +53,15 @@ Sur une base neuve, `npm run seed` est obligatoire : il crée les référentiels
 (rôles, unités, catégories, capacités d'agent…), les CGU en FR/EN et le singleton
 `PlatformSetting`. Sans lui, aucune inscription ne passe (les CGU PUBLISHED
 manquent) et la commission vaut 0.
+
+## Données de démo
+
+Après `npm run seed`, exécutez `npm run seed:demo` sur une base de développement
+pour charger les comptes, produits, zone, hub, agence, lot, annonce et conversation
+de démonstration. La commande est idempotente et refuse `NODE_ENV=production`.
+Les comptes et leur mot de passe commun sont listés dans
+[`docs/DEMO_ACCOUNTS.md`](docs/DEMO_ACCOUNTS.md). Le compte ROOT reste séparé et
+se crée avec `npm run create:root`.
 
 ## Variables d'environnement
 
@@ -88,6 +98,7 @@ npm run prisma:migrate   # migrate dev (interactif) ; en production : prisma mig
 npm run prisma:studio    # inspecte la base
 npm run seed             # référentiels + CGU + settings (idempotent)
 npm run seed:dev         # + zone pilote, agence pilote, hub (développement seulement)
+npm run seed:demo        # comptes, catalogue, zone, agence et conversation de démonstration
 npm run create:root      # compte ROOT en interactif (jamais via l'API)
 npm run backfill:profiles # PROFILE_MISSING : crée les profils manquants
 npm run db:drift         # contrôle de schéma (base shadow dédiée)

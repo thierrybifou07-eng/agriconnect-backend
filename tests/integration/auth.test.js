@@ -198,6 +198,15 @@ describe('POST /api/v2/auth/login', () => {
     expect(res.body.accessToken).toBeTruthy();
   });
 
+  it('accepte les adresses du domaine de démonstration réservé .test', async () => {
+    const res = await client
+      .post('/api/v2/auth/login')
+      .send({ email: 'agent@demo.agriconnect.test', password: 'Demo@2026x' });
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Identifiants invalides');
+  });
+
   it('renvoie le meme message pour email inconnu et mot de passe faux', async () => {
     const { payload } = await registerViaApi(client, { email: 'connu@example.com' });
 
@@ -223,6 +232,8 @@ describe('POST /api/v2/auth/login', () => {
       .send({ email: payload.email, password: payload.password });
 
     expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Ce compte a été suspendu');
+    expect(res.body.code).toBe('ACCOUNT_SUSPENDED');
   });
 });
 
@@ -259,6 +270,18 @@ describe('Rotation du refresh token', () => {
 
     const res = await client.post('/api/v2/auth/refresh').send({ refreshToken });
     expect(res.status).toBe(401);
+  });
+
+  it('identifie un compte suspendu au refresh', async () => {
+    const { refreshToken, user } = await registerViaApi(client);
+    const suspendu = await prisma.userStatus.findUnique({ where: { code: UserStatusCode.SUSPENDED } });
+    await prisma.user.update({ where: { id: user.id }, data: { userStatusId: suspendu.id } });
+
+    const res = await client.post('/api/v2/auth/refresh').send({ refreshToken });
+
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Ce compte a été suspendu');
+    expect(res.body.code).toBe('ACCOUNT_SUSPENDED');
   });
 });
 
@@ -691,6 +714,8 @@ describe('Statut du compte : la base prime sur le jeton', () => {
     // relecture en base, l'utilisateur suspendu disposerait d'une heure de plus.
     const res = await routeProtegee(accessToken);
     expect(res.status).toBe(403);
+    expect(res.body.error).toBe('Ce compte a été suspendu');
+    expect(res.body.code).toBe('ACCOUNT_SUSPENDED');
   });
 
   it('n accorde rien a un jeton qui se declare plus permissif que la base', async () => {

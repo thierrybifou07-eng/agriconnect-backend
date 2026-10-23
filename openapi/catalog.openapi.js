@@ -28,7 +28,9 @@ export default {
         description: 'Le catalogue acheteur n\'utilise PAS les lots : il utilise les annonces. Une annonce SOLD ou INACTIVE n\'y figure plus.',
         parameters: [
           { in: 'query', name: 'categoryId', schema: { type: 'integer' } },
-          { in: 'query', name: 'productId', schema: { type: 'integer' } },
+          { in: 'query', name: 'zoneId', schema: { type: 'integer' } },
+          { in: 'query', name: 'q', schema: { type: 'string' } },
+          { in: 'query', name: 'sort', schema: { type: 'string', enum: ['price', 'expiry'] } },
           { $ref: '#/components/parameters/PageParam' },
           { $ref: '#/components/parameters/LimitParam' },
         ],

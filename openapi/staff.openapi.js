@@ -173,7 +173,19 @@ export default {
         responses: {
           '200': {
             description: 'Mouvements (RECEIVED, RESERVED, RESERVATION_RELEASED, SOLD, EXPIRED, RETURNED)',
-            content: { 'application/json': { schema: { type: 'array', items: { type: 'object' } } } },
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    items: { type: 'array', items: { $ref: '#/components/schemas/StockMovement' } },
+                    page: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    total: { type: 'integer' },
+                  },
+                },
+              },
+            },
           },
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
@@ -324,6 +336,10 @@ export default {
         summary: 'Conversations (BUYER_SUPPORT ou SUPPLIER_SUPPORT requis)',
         description: 'Un agent n\'agit ensuite que sur les conversations de son type (vérifié dans le contrôleur).',
         parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['OPEN', 'WAITING_CUSTOMER', 'CLOSED'] } },
+          { in: 'query', name: 'unassigned', schema: { type: 'boolean' } },
+          { in: 'query', name: 'mine', schema: { type: 'boolean' } },
+          { in: 'query', name: 'escalated', schema: { type: 'boolean' } },
           { $ref: '#/components/parameters/PageParam' },
           { $ref: '#/components/parameters/LimitParam' },
         ],
@@ -343,7 +359,7 @@ export default {
         responses: {
           '200': {
             description: 'Conversation',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Conversation' } } },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/StaffConversation' } } },
           },
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
@@ -356,11 +372,27 @@ export default {
       get: {
         tags: ['Équipe'],
         summary: 'Messages d\'une conversation (fil public)',
-        parameters: [{ $ref: '#/components/parameters/IdParam' }],
+        parameters: [
+          { $ref: '#/components/parameters/IdParam' },
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': {
             description: 'Messages',
-            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Message' } } } },
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    items: { type: 'array', items: { $ref: '#/components/schemas/StaffMessage' } },
+                    page: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    total: { type: 'integer' },
+                  },
+                },
+              },
+            },
           },
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
@@ -376,7 +408,7 @@ export default {
         responses: {
           '201': {
             description: 'Message envoyé',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Message' } } },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/StaffMessage' } } },
           },
           '400': R('BadRequest'),
           '401': R('Unauthorized'),
@@ -456,6 +488,7 @@ export default {
         tags: ['Équipe'],
         summary: 'Commandes (paginé)',
         parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string' } },
           { $ref: '#/components/parameters/PageParam' },
           { $ref: '#/components/parameters/LimitParam' },
         ],
@@ -610,6 +643,8 @@ export default {
         tags: ['Équipe'],
         summary: 'Livraisons (paginé)',
         parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string' } },
+          { in: 'query', name: 'orderId', schema: { type: 'integer' } },
           { $ref: '#/components/parameters/PageParam' },
           { $ref: '#/components/parameters/LimitParam' },
         ],

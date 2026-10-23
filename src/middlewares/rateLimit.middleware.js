@@ -28,7 +28,7 @@ export const authLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => !limiterEnabled(),
-  message: { error: 'Trop de tentatives, réessayez dans quelques minutes' },
+  message: { error: 'Trop de tentatives, réessayez dans quelques minutes', code: 'RATE_LIMITED' },
 });
 
 // Limite distincte pour /refresh. Elle partageait auparavant le meme seau que
@@ -45,7 +45,7 @@ export const refreshLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => !limiterEnabled(),
-  message: { error: 'Trop de rafraîchissements, réessayez dans quelques minutes' },
+  message: { error: 'Trop de rafraîchissements, réessayez dans quelques minutes', code: 'RATE_LIMITED' },
 });
 
 // Limite propre à /forgot-password.
@@ -65,7 +65,7 @@ export const forgotPasswordLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   skip: () => !limiterEnabled(),
-  message: { error: 'Trop de demandes de réinitialisation, réessayez dans quelques minutes' },
+  message: { error: 'Trop de demandes de réinitialisation, réessayez dans quelques minutes', code: 'RATE_LIMITED' },
 });
 
 // Limite générale sur le reste de l'API
@@ -74,5 +74,5 @@ export const apiLimiter = rateLimit({
   limit: resolveLimit(300),
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'Trop de requêtes, réessayez plus tard' },
+  message: { error: 'Trop de requêtes, réessayez plus tard', code: 'RATE_LIMITED' },
 });

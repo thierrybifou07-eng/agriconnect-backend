@@ -9,6 +9,8 @@ import {
 import {getLookupId} from '../utils/lookupCache.js';
 import {sendTemplateEmail} from '../config/email/sendMail.js';
 import {userToApi} from '../utils/userApi.js';
+import {loadAgentForUser} from '../services/agent.service.js';
+import {agentToClientDto} from '../utils/dto/agent.dto.js';
 import {renderPage} from '../utils/renderPage.js';
 import {
   issueVerificationToken, dispatchVerificationEmail, consumeVerificationToken, resetVerificationForNewEmail,
@@ -215,7 +217,7 @@ export const login = async (req, res) => {
 
   // Blocage 1/3 : connexion refusée pour un compte suspendu
   if (user.userStatus.code === UserStatusCode.SUSPENDED) {
-    return res.status(403).json({error: 'Ce compte a été suspendu'});
+    return res.status(403).json({error: 'Ce compte a été suspendu', code: 'ACCOUNT_SUSPENDED'});
   }
 
   const session = await openSession(user.id, req);
@@ -223,7 +225,8 @@ export const login = async (req, res) => {
   const refreshToken = await issueRefreshToken(user.id, session.id);
 
   // const { password: _pw, ...userSafe } = user;
-  res.json({user: userToApi(user), accessToken, refreshToken});
+  const agent = user.role.code === 'AGENT' ? await loadAgentForUser(user.id) : null;
+  res.json({user: {...userToApi(user), agent: agentToClientDto(agent)}, accessToken, refreshToken});
 };
 
 // POST /api/auth/refresh
@@ -253,7 +256,7 @@ export const refresh = async (req, res) => {
   // Blocage 2/3 : un compte suspendu après l'émission de l'access token ne peut
   // pas en obtenir un nouveau au moment du refresh
   if (user.userStatus.code === UserStatusCode.SUSPENDED) {
-    return res.status(403).json({error: 'Ce compte a été suspendu'});
+    return res.status(403).json({error: 'Ce compte a été suspendu', code: 'ACCOUNT_SUSPENDED'});
   }
 
   // Rotation : le jeton presente est remplace dans la meme session. Un jeton

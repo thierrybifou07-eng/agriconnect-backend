@@ -186,12 +186,15 @@ export default {
         tags: ['Admin'],
         summary: 'Liste des utilisateurs (ADMIN et plus)',
         parameters: [
+          { in: 'query', name: 'role', schema: { type: 'string', enum: ['ROOT', 'ADMIN', 'AGENT', 'SUPPLIER', 'BUYER', 'DRIVER'] } },
+          { in: 'query', name: 'search', schema: { type: 'string' } },
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['ACTIVE', 'SUSPENDED'] } },
           { in: 'query', name: 'profileVerificationStatus', schema: { type: 'string', enum: ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'] } },
         ],
         responses: {
           '200': {
             description: 'Tableau d\'utilisateurs',
-            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/User' } } } },
+            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/AdminUser' } } } },
           },
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
@@ -280,6 +283,11 @@ export default {
         tags: ['Admin'],
         summary: 'Reversements fournisseurs (ADMIN humain)',
         description: 'requireHumanActor — un agent IA ne peut pas déplacer de l\'argent.',
+        parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string' } },
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': { $ref: '#/components/responses/PaginatedPayouts' },
           '401': R('Unauthorized'),
@@ -677,6 +685,11 @@ export default {
         tags: ['Admin'],
         summary: 'Parrainages (ADMIN humain)',
         description: 'requireHumanActor — un agent IA ne peut pas déplacer de l\'argent.',
+        parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['PENDING', 'ELIGIBLE', 'PAID', 'REJECTED'] } },
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': { $ref: '#/components/responses/PaginatedReferrals' },
           '401': R('Unauthorized'),
@@ -725,6 +738,11 @@ export default {
         tags: ['Admin'],
         summary: 'Indemnisations fournisseurs (ADMIN humain)',
         description: 'La vue admin affiche le compte de paiement par défaut du fournisseur (numéro complet).',
+        parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['PENDING_APPROVAL', 'APPROVED', 'PAID', 'REJECTED'] } },
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': { $ref: '#/components/responses/PaginatedCompensations' },
           '401': R('Unauthorized'),
@@ -785,6 +803,10 @@ export default {
       get: {
         tags: ['Admin'],
         summary: 'Tableau de bord',
+        parameters: [
+          { in: 'query', name: 'from', schema: { type: 'string', format: 'date-time' } },
+          { in: 'query', name: 'to', schema: { type: 'string', format: 'date-time' } },
+        ],
         responses: {
           '200': {
             description: 'Statistiques agrégées',
@@ -801,6 +823,12 @@ export default {
         tags: ['Admin'],
         summary: 'Journal d\'audit',
         parameters: [
+          { in: 'query', name: 'entityType', schema: { type: 'string' } },
+          { in: 'query', name: 'entityId', schema: { type: 'integer' } },
+          { in: 'query', name: 'actorUserId', schema: { type: 'integer' } },
+          { in: 'query', name: 'actorAgentId', schema: { type: 'integer' } },
+          { in: 'query', name: 'from', schema: { type: 'string', format: 'date-time' } },
+          { in: 'query', name: 'to', schema: { type: 'string', format: 'date-time' } },
           { $ref: '#/components/parameters/PageParam' },
           { $ref: '#/components/parameters/LimitParam' },
         ],

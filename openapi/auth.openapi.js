@@ -213,8 +213,17 @@ export default {
         description: 'Identifie l\'appareil courant par le sessionId du jeton d\'accès.',
         responses: {
           '200': {
-            description: 'Liste des sessions avec isCurrent',
-            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Session' } } } },
+            description: 'Sessions ouvertes avec isCurrent',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    sessions: { type: 'array', items: { $ref: '#/components/schemas/Session' } },
+                  },
+                },
+              },
+            },
           },
           '401': R('Unauthorized'),
         },
@@ -249,7 +258,7 @@ export default {
       get: {
         tags: ['Utilisateur'],
         summary: 'Profil de l\'utilisateur connecté',
-        description: 'userToApi + objet profile selon le rôle (SupplierProfile, BuyerProfile, DriverProfile).',
+        description: 'userToApi + media et agent (actif si le rôle est AGENT, sinon null) + objet profile selon le rôle.',
         responses: {
           '200': {
             description: 'Utilisateur courant',
@@ -298,7 +307,10 @@ export default {
           'Remplace l\'avatar ; ne supprime jamais un document de vérification (propriétaires distincts). L\'ancien fichier est supprimé du disque une fois la transaction validée.',
         requestBody: multipartBody({ file: { name: 'avatar', description: 'UN SEUL fichier dans le champ "avatar" : jpeg, png ou webp, 5 Mo max' } }),
         responses: {
-          '200': { description: 'Avatar remplacé' },
+          '201': {
+            description: 'Avatar remplacé',
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/Media' } } },
+          },
           '400': R('UploadBadRequest'),
           '401': R('Unauthorized'),
           '413': R('FileTooLarge'),
@@ -456,16 +468,25 @@ export default {
                 schema: {
                   type: 'object',
                   properties: {
-                    referralCode: { type: 'string' },
+                    code: { type: 'string', nullable: true },
+                    totals: {
+                      type: 'object',
+                      properties: {
+                        pending: { type: 'integer' },
+                        eligible: { type: 'integer' },
+                        paid: { type: 'integer' },
+                      },
+                    },
                     referrals: {
                       type: 'array',
                       items: {
                         type: 'object',
                         properties: {
-                          id: { type: 'integer' },
+                          status: { type: 'string', enum: ['PENDING', 'ELIGIBLE', 'PAID', 'REJECTED'] },
                           kind: { type: 'string', enum: ['SUPPLIER', 'BUYER'] },
-                          status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED'] },
-                          firstname: { type: 'string' },
+                          rewardAmount: { type: 'number', nullable: true },
+                          createdAt: { type: 'string', format: 'date-time' },
+                          referredFirstname: { type: 'string' },
                         },
                       },
                     },

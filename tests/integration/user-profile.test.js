@@ -492,8 +492,8 @@ describe('Forme unique de la reponse utilisateur', () => {
     expect(profilVerifie.body.emailVerified).toBe(true);
   });
 
-  // La forme doit etre la meme partout : c'est register et login qui
-  // s'alignent sur /me qui change, pas l'inverse.
+  // Les champs propres au contrat de session (/me et login) ne changent pas
+  // la forme commune du compte exposee a l'inscription.
   it('est la meme forme sur register, login et me', async () => {
     const { accessToken, user: inscrit, payload } = await registerViaApi(client, { role: 'SUPPLIER' });
     const me = await client.get('/api/v2/auth/me').set(authHeader(accessToken));
@@ -503,11 +503,15 @@ describe('Forme unique de la reponse utilisateur', () => {
 
     expect(login.status, login.text).toBe(200);
 
-    const cles = (u) => Object.keys(u).sort().join(',');
-    // /me porte en plus "media" et "profile", qui n'ont pas sa place dans une
-    // inscription.
-    expect(cles(me.body).replace(',media', '').replace(',profile', '')).toBe(cles(inscrit));
-    expect(cles(login.body.user)).toBe(cles(inscrit));
+    const cles = (u, extras = []) => Object.keys(u)
+      .filter((cle) => !extras.includes(cle))
+      .sort()
+      .join(',');
+    // /me porte en plus media, profile et agent; login porte aussi agent.
+    expect(cles(me.body, ['media', 'profile', 'agent'])).toBe(cles(inscrit));
+    expect(cles(login.body.user, ['agent'])).toBe(cles(inscrit));
+    expect(me.body.agent).toBeNull();
+    expect(login.body.user.agent).toBeNull();
     expect(inscrit.role).toEqual({ code: 'SUPPLIER', label: 'Fournisseur' });
   });
 

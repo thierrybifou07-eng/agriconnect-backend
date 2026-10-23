@@ -116,7 +116,7 @@ un repli sur le statut HTTP + message.
 | `Compensation.status` | `PENDING` | `PENDING_APPROVAL\|APPROVED\|PAID\|REJECTED` |
 | `GET /catalog/listings` params | `categoryId`, `productId` | **`categoryId`, `zoneId`, `q`, `sort`(`price`\|`expiry`, défaut récence)** ; `productId` est **ignoré** |
 | `GET /admin/users` params | `profileVerificationStatus` | + `role`, `search`, `status` ; **non paginé** (tableau brut) |
-| `POST /auth/me/avatar` | 200 | renvoie le Media `{id,url,isPrimary,position}` |
+| `POST /auth/me/avatar` | 200 | 201, renvoie le Media `{id,url,isPrimary,position}` |
 | `Error` | `{error,code}` | + `details[]` sur 400 Joi, + champs d'appoint (voir §2) |
 | `GET /staff/conversations` params | `page`,`limit` | + **`status`, `unassigned`, `mine`, `escalated`** (filtres d'inbox) |
 | `GET /admin/audit-logs` params | `page`,`limit` | + **`entityType`, `entityId`, `actorUserId`, `actorAgentId`, `from`, `to`** |
@@ -124,24 +124,19 @@ un repli sur le statut HTTP + message.
 | `GET /admin/payouts`, `/admin/compensations`, `/admin/referrals` params | aucun | + **`status`** (+ `page`,`limit`) |
 | `GET /driver/deliveries/mine` params | aucun | + `status` |
 | `GET /staff/deliveries` params | `page`,`limit` | + `status`, `orderId` |
-| `User.agent` / capacités | absent | **absent aussi du code** → voir §5 |
+| `User.agent` / capacités | absent | `agent` dans `/auth/me` et `/auth/login` : DTO actif pour AGENT, sinon `null` |
 
-## 5. TROUS DU CONTRAT (bloquants — à corriger côté backend, prompt P00)
+## 5. TROUS DU CONTRAT
 
-1. **B1 — Capacités d'un AGENT invisibles du client.** `userToApi` ne renvoie ni `agent` ni
-   `capabilities` ; ni `/auth/login`, ni `/auth/me`. Le seul endpoint qui les expose
-   (`GET /admin/agents`) exige ADMIN. Un agent ne peut donc pas savoir quels onglets afficher.
-   → Ajouter `agent: {id, displayName, kind, autonomy, capabilities: string[]}` (ou `null`) à
-   `userToApi` pour les AGENT. Repli sans changement backend : afficher les onglets staff
-   « optimistes » et traiter `403 "Capacité requise"` — dégradé, déconseillé.
-2. **B2 — Aucun référentiel lisible par SUPPLIER/BUYER.** `GET /admin/products|zones|hubs|units|categories`
-   sont `requireMinLevel(50)`. `/catalog/categories` exclut SUPPLIER. Un fournisseur **ne peut pas
-   obtenir** `productId`, `zoneId`, `hubId` pour `POST /supplier/lots` ; un acheteur ne peut pas
-   choisir sa `zoneId`. **Bloquant pour la déclaration de lot.**
-   → Ajouter des lectures seules `GET /reference/{products|zones|hubs|units|categories}`
-   (rôles SUPPLIER, BUYER, AGENT, ADMIN, ROOT ; éléments actifs ; paginées `limit ≤ 100`).
-3. **B3 — Régénérer `docs/openapi.yaml`** une fois les dérives du §4 corrigées (source : fragments
-   `openapi/*.openapi.js`, commande `npm run docs:openapi`).
+1. **B1 — Corrigé.** `agent: {id, displayName, kind, autonomy, capabilities: string[]}` est
+   exposé dans `/auth/me` et `/auth/login` pour une fiche active d'un AGENT. Les codes de capacité
+   sont triés ; les autres rôles et les agents sans fiche active reçoivent `null`.
+2. **B2 — Corrigé.** `GET /reference/{products|zones|hubs|units|categories}` est accessible aux rôles
+   SUPPLIER, BUYER, AGENT, ADMIN et ROOT. Les listes filtrent les enregistrements actifs, sont
+   paginées (limite maximale 100) et triées alphabétiquement. Le modèle Prisma `Unit` ne porte pas
+   de `isActive` : les unités existantes sont donc toutes listées.
+3. **B3 — Corrigé.** Les fragments `openapi/*.openapi.js` documentent les routes et formes de réponse ;
+   `docs/openapi.yaml` est généré par `npm run docs:openapi` et couvert par un test routes↔spec.
 
 4. **B4 — Agent IA : aucun runtime (nouveau, vérifié).** `Agent.kind='AI'` existe (champs `aiProvider`, `aiModel`,
    `aiConfig`, `autonomy`) et `POST /admin/agents/ai` crée la fiche, mais :

@@ -60,6 +60,7 @@ describe('Référentiels — contrôle d\'accès', () => {
     const res = await client.get('/api/v2/admin/categories').set(authHeader(tokenFor(agent, 'AGENT')));
 
     expect(res.status, res.text).toBe(403);
+    expect(res.body.code).toBe('LEVEL_FORBIDDEN');
   });
 
   it('refuse un AGENT sur les écritures également (403)', async () => {

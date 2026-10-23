@@ -18,5 +18,14 @@ describe('Sante du service', () => {
     const res = await api().get('/api/v2/auth/me');
     expect(res.status).toBe(401);
     expect(res.body.error).toBe('Authentification requise');
+    expect(res.body.code).toBe('TOKEN_MISSING');
+  });
+
+  it('identifie un jeton invalide par son code', async () => {
+    const res = await api().get('/api/v2/auth/me').set('Authorization', 'Bearer invalide');
+
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('Token invalide ou expiré');
+    expect(res.body.code).toBe('TOKEN_INVALID');
   });
 });

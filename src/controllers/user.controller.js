@@ -13,6 +13,8 @@ import { resetVerificationForNewEmail } from '../utils/emailVerification.js';
 import { ensureProfile } from '../utils/profile.js';
 import { mediaToApi } from '../utils/dto/media.dto.js';
 import { profileToApi } from '../utils/dto/profile.dto.js';
+import { loadAgentForUser } from '../services/agent.service.js';
+import { agentToClientDto } from '../utils/dto/agent.dto.js';
 
 // Ces quatre routes vivaient sous /api/users et	y ont ete deplacees : un
 // utilisateur qui gere son propre profil est, du point de vue de l'API, dans le
@@ -38,11 +40,16 @@ const profileModel = (roleCode) =>
 
 // GET /api/auth/me
 export const getMe = async (req, res) => {
-  const [media, profile] = await Promise.all([
+  const [media, profile, agent] = await Promise.all([
     prisma.media.findMany({ where: { ownerUserId: req.user.id } }),
     loadRoleProfile(prisma, req.user),
+    req.user.role.code === 'AGENT' ? loadAgentForUser(req.user.id) : null,
   ]);
-  res.json(userToApi(req.user, { media, profile }));
+  res.json(userToApi(req.user, {
+    media: media.map(mediaToApi),
+    profile,
+    agent: agentToClientDto(agent),
+  }));
 };
 
 // PATCH /api/auth/me

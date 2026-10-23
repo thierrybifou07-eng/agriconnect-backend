@@ -21,10 +21,26 @@ export default {
       get: {
         tags: ['Livreur'],
         summary: 'Courses disponibles (PENDING, non assignées)',
+        parameters: [
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': {
             description: 'Courses disponibles',
-            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Delivery' } } } },
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    items: { type: 'array', items: { $ref: '#/components/schemas/DriverDelivery' } },
+                    page: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    total: { type: 'integer' },
+                  },
+                },
+              },
+            },
           },
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
@@ -36,10 +52,27 @@ export default {
       get: {
         tags: ['Livreur'],
         summary: 'Courses du livreur connecté',
+        parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string' } },
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': {
             description: 'Courses du livreur',
-            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Delivery' } } } },
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    items: { type: 'array', items: { $ref: '#/components/schemas/DriverDelivery' } },
+                    page: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    total: { type: 'integer' },
+                  },
+                },
+              },
+            },
           },
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
@@ -56,7 +89,7 @@ export default {
         responses: {
           '200': {
             description: 'Course acceptée',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Delivery' } } },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/DriverDelivery' } } },
           },
           '401': R('Unauthorized'),
           '403': R('Forbidden'),
@@ -76,7 +109,7 @@ export default {
         responses: {
           '200': {
             description: 'Statut mis à jour',
-            content: { 'application/json': { schema: { $ref: '#/components/schemas/Delivery' } } },
+            content: { 'application/json': { schema: { $ref: '#/components/schemas/DriverDelivery' } } },
           },
           '400': R('BadRequest'),
           '401': R('Unauthorized'),

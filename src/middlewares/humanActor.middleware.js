@@ -7,7 +7,10 @@
 // enregistrer un paiement ni un remboursement.
 export const requireHumanActor = (req, res, next) => {
   if (req.agent?.kind === 'AI') {
-    return res.status(403).json({ error: 'Un agent IA ne peut pas effectuer cette action' });
+    return res.status(403).json({
+      error: 'Un agent IA ne peut pas effectuer cette action',
+      code: 'HUMAN_ACTOR_REQUIRED',
+    });
   }
   next();
 };

@@ -61,6 +61,7 @@ describe('Limite anti-brute-force', () => {
 
     expect(res.status).toBe(429);
     expect(res.body.error).toMatch(/trop de tentatives/i);
+    expect(res.body.code).toBe('RATE_LIMITED');
   });
 
   // Sans cet en-tete, un client ne peut pas savoir quand reessayer.

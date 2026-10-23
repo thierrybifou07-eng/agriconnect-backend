@@ -44,7 +44,7 @@ async function conversationPourStaff(req, res) {
   const capacite = CAPACITE_PAR_TYPE[conversation.type];
   const autorise = req.user.role.level >= 50 || req.agent?.capabilities.includes(capacite);
   if (!autorise) {
-    res.status(403).json({ error: 'Capacité requise' });
+    res.status(403).json({ error: 'Capacité requise', code: 'CAPABILITY_REQUIRED' });
     return null;
   }
   return conversation;

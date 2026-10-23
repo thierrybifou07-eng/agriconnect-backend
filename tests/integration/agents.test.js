@@ -4,6 +4,7 @@ import { api, authHeader } from '../helpers/app.js';
 import { createUser } from '../helpers/factory.js';
 import { generateToken } from '../../src/utils/jwt.js';
 import { requireCapability } from '../../src/middlewares/capability.middleware.js';
+import { requireHumanActor } from '../../src/middlewares/humanActor.middleware.js';
 
 const client = api();
 
@@ -40,7 +41,7 @@ async function createAgentUser({ capabilities = [], isActive = true } = {}) {
 // Appelle un middleware Express avec un req factice : la réponse est
 // interceptée et next() signale que le middleware laisse passer (= la requête
 // aurait répondu 200 plus loin dans la chaîne).
-function runMiddleware(middleware, user) {
+function runMiddleware(middleware, user, agent = null) {
   return new Promise((resolve) => {
     let settled = false;
     const res = {
@@ -62,7 +63,7 @@ function runMiddleware(middleware, user) {
         resolve({ req, res, passed });
       }
     };
-    const req = { user, params: {}, body: {} };
+    const req = { user, agent, params: {}, body: {} };
     middleware(req, res, () => settle(true));
   });
 }
@@ -93,6 +94,18 @@ describe('requireCapability — contrôle par capacité', () => {
     expect(passed).toBe(false);
     expect(res.statusCode).toBe(403);
     expect(res.body.error).toBe('Capacité requise');
+    expect(res.body.code).toBe('CAPABILITY_REQUIRED');
+  });
+
+  describe('requireHumanActor — code d’erreur stable', () => {
+    it('identifie un acteur IA qui tente une action humaine', async () => {
+      const { res, passed } = await runMiddleware(requireHumanActor, null, { kind: 'AI' });
+
+      expect(passed).toBe(false);
+      expect(res.statusCode).toBe(403);
+      expect(res.body.error).toBe('Un agent IA ne peut pas effectuer cette action');
+      expect(res.body.code).toBe('HUMAN_ACTOR_REQUIRED');
+    });
   });
 
   it('laisse passer un AGENT qui possède la capacité et renseigne req.agent', async () => {

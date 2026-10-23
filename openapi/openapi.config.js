@@ -19,8 +19,9 @@ import catalog from './catalog.openapi.js';
 import conversation from './conversation.openapi.js';
 import order from './order.openapi.js';
 import driver from './driver.openapi.js';
+import reference from './reference.openapi.js';
 
-const fragments = [auth, admin, legal, supplier, staff, catalog, conversation, order, driver];
+const fragments = [auth, admin, legal, supplier, staff, catalog, conversation, order, driver, reference];
 
 const { output } = merge(fragments.map((fragment) => ({ oas: fragment })));
 
@@ -52,6 +53,7 @@ const document = {
     { name: 'Conversations', description: 'Messagerie client <-> équipe' },
     { name: 'Commandes', description: 'Cycle de vie de la commande côté acheteur' },
     { name: 'Livreur', description: 'Courses du livreur connecté' },
+    { name: 'Référentiels', description: 'Listes paginées des données de référence actives accessibles aux comptes connectés' },
   ],
   paths: output.paths,
   components: {
@@ -187,7 +189,19 @@ const document = {
       },
       PaginatedConversations: {
         description: 'Conversations paginées',
-        content: { 'application/json': { schema: { $ref: '#/components/schemas/Paginated' } } },
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                items: { type: 'array', items: { $ref: '#/components/schemas/StaffConversation' } },
+                page: { type: 'integer' },
+                limit: { type: 'integer' },
+                total: { type: 'integer' },
+              },
+            },
+          },
+        },
       },
       PaginatedOrders: {
         description: 'Commandes paginées',
@@ -199,15 +213,51 @@ const document = {
       },
       PaginatedCompensations: {
         description: 'Indemnisations (admin) paginées',
-        content: { 'application/json': { schema: { $ref: '#/components/schemas/Paginated' } } },
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                items: { type: 'array', items: { $ref: '#/components/schemas/Compensation' } },
+                page: { type: 'integer' },
+                limit: { type: 'integer' },
+                total: { type: 'integer' },
+              },
+            },
+          },
+        },
       },
       PaginatedDeliveries: {
         description: 'Livraisons paginées',
-        content: { 'application/json': { schema: { $ref: '#/components/schemas/Paginated' } } },
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                items: { type: 'array', items: { $ref: '#/components/schemas/Delivery' } },
+                page: { type: 'integer' },
+                limit: { type: 'integer' },
+                total: { type: 'integer' },
+              },
+            },
+          },
+        },
       },
       PaginatedCatalogListings: {
         description: 'Annonces du catalogue paginées',
-        content: { 'application/json': { schema: { $ref: '#/components/schemas/Paginated' } } },
+        content: {
+          'application/json': {
+            schema: {
+              type: 'object',
+              properties: {
+                items: { type: 'array', items: { $ref: '#/components/schemas/CatalogListing' } },
+                page: { type: 'integer' },
+                limit: { type: 'integer' },
+                total: { type: 'integer' },
+              },
+            },
+          },
+        },
       },
       PaginatedAuditLogs: {
         description: 'Journal d\'audit paginé',
@@ -221,8 +271,20 @@ const document = {
           error: { type: 'string', description: 'Message en français' },
           code: {
             type: 'string',
-            description: 'Code MAJUSCULES_AVEC_UNDERSCORES quand l\'erreur en porte un',
-            example: 'INSUFFICIENT_STOCK',
+            description:
+              'Code stable. Authentification/autorisation: TOKEN_MISSING, TOKEN_INVALID, ACCOUNT_SUSPENDED, ROLE_FORBIDDEN, LEVEL_FORBIDDEN, CAPABILITY_REQUIRED, HUMAN_ACTOR_REQUIRED. Limitation: RATE_LIMITED.',
+            example: 'TOKEN_INVALID',
+          },
+          details: {
+            type: 'array',
+            description: 'Détails de validation Joi (présent sur les erreurs 400)',
+            items: {
+              type: 'object',
+              properties: {
+                field: { type: 'string' },
+                message: { type: 'string' },
+              },
+            },
           },
         },
       },
@@ -286,8 +348,6 @@ const document = {
         properties: {
           code: { type: 'string', enum: ['ROOT', 'ADMIN', 'AGENT', 'SUPPLIER', 'BUYER', 'DRIVER'] },
           label: { type: 'string' },
-          level: { type: 'integer', description: '10 opérationnel, 30 AGENT, 50 ADMIN, 100 ROOT' },
-          isActive: { type: 'boolean' },
         },
       },
       UserStatus: {
@@ -295,7 +355,6 @@ const document = {
         properties: {
           code: { type: 'string' },
           label: { type: 'string' },
-          isActive: { type: 'boolean' },
         },
       },
       User: {
@@ -317,8 +376,11 @@ const document = {
           createdAt: { type: 'string', format: 'date-time' },
           role: { $ref: '#/components/schemas/Role' },
           userStatus: { $ref: '#/components/schemas/UserStatus' },
+          media: { type: 'array', items: { $ref: '#/components/schemas/Media' } },
+          agent: { $ref: '#/components/schemas/ClientAgent' },
           profile: {
             description: 'SupplierProfile, BuyerProfile ou DriverProfile selon le rôle ; sinon null',
+            nullable: true,
             oneOf: [
               { $ref: '#/components/schemas/SupplierProfile' },
               { $ref: '#/components/schemas/BuyerProfile' },
@@ -330,7 +392,6 @@ const document = {
       SupplierProfile: {
         type: 'object',
         properties: {
-          id: { type: 'integer' },
           farmName: { type: 'string' },
           description: { type: 'string', nullable: true },
           zoneId: { type: 'integer', nullable: true },
@@ -339,7 +400,6 @@ const document = {
       BuyerProfile: {
         type: 'object',
         properties: {
-          id: { type: 'integer' },
           buyerType: { type: 'string', enum: ['RETAILER', 'FARMER', 'WHOLESALER', 'OTHER'] },
           businessName: { type: 'string', nullable: true },
           zoneId: { type: 'integer', nullable: true },
@@ -348,19 +408,41 @@ const document = {
       DriverProfile: {
         type: 'object',
         properties: {
-          id: { type: 'integer' },
           vehicleType: { type: 'string', nullable: true },
           plateNumber: { type: 'string', nullable: true },
+          agencyId: { type: 'integer' },
         },
       },
       Session: {
         type: 'object',
         properties: {
           id: { type: 'integer' },
+          userAgent: { type: 'string', nullable: true },
+          ip: { type: 'string', nullable: true },
           createdAt: { type: 'string', format: 'date-time' },
-          lastActiveAt: { type: 'string', format: 'date-time' },
-          closedAt: { type: 'string', format: 'date-time', nullable: true },
+          lastActivityAt: { type: 'string', format: 'date-time' },
+          expiresAt: { type: 'string', format: 'date-time' },
           isCurrent: { type: 'boolean' },
+        },
+      },
+      Media: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          url: { type: 'string' },
+          isPrimary: { type: 'boolean' },
+          position: { type: 'integer' },
+        },
+      },
+      ClientAgent: {
+        type: 'object',
+        nullable: true,
+        properties: {
+          id: { type: 'integer' },
+          displayName: { type: 'string' },
+          kind: { type: 'string', enum: ['HUMAN', 'AI'] },
+          autonomy: { type: 'string', enum: ['SUGGEST_ONLY', 'ACT_WITH_APPROVAL', 'AUTONOMOUS'], nullable: true },
+          capabilities: { type: 'array', items: { type: 'string' } },
         },
       },
       PayoutAccount: {
@@ -403,7 +485,56 @@ const document = {
           aiConfig: { type: 'object', nullable: true },
           autonomy: { type: 'string', enum: ['SUGGEST_ONLY', 'ACT_WITH_APPROVAL', 'AUTONOMOUS'] },
           isActive: { type: 'boolean' },
-          capabilities: { type: 'array', items: { type: 'string' } },
+          capabilities: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                capability: {
+                  type: 'object',
+                  properties: { code: { type: 'string' }, label: { type: 'string' } },
+                },
+              },
+            },
+          },
+          user: {
+            type: 'object',
+            nullable: true,
+            properties: {
+              id: { type: 'integer' },
+              firstname: { type: 'string' },
+              lastname: { type: 'string' },
+              email: { type: 'string' },
+            },
+            AdminUser: {
+              type: 'object',
+              properties: {
+                id: { type: 'integer' },
+                firstname: { type: 'string' },
+                lastname: { type: 'string' },
+                phone: { type: 'string' },
+                email: { type: 'string' },
+                role: {
+                  type: 'object',
+                  properties: {
+                    code: { type: 'string', enum: ['ROOT', 'ADMIN', 'AGENT', 'SUPPLIER', 'BUYER', 'DRIVER'] },
+                    label: { type: 'string' },
+                    level: { type: 'integer' },
+                  },
+                },
+                userStatus: {
+                  type: 'object',
+                  properties: { code: { type: 'string' }, label: { type: 'string' } },
+                },
+                location: { type: 'string', nullable: true },
+                profileVerificationStatus: {
+                  type: 'string',
+                  enum: ['UNVERIFIED', 'PENDING', 'VERIFIED', 'REJECTED'],
+                },
+                createdAt: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
         },
       },
       Category: {
@@ -412,7 +543,58 @@ const document = {
           id: { type: 'integer' },
           code: { type: 'string' },
           label: { type: 'string' },
-          isActive: { type: 'boolean' },
+        },
+      },
+      ReferenceCategory: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          code: { type: 'string' },
+          label: { type: 'string' },
+        },
+      },
+      ReferenceUnit: {
+        type: 'object',
+        description: 'Unit n’a pas de colonne isActive dans le schéma Prisma.',
+        properties: {
+          id: { type: 'integer' },
+          code: { type: 'string' },
+          label: { type: 'string' },
+        },
+      },
+      ReferenceProduct: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          description: { type: 'string', nullable: true },
+          isPerishable: { type: 'boolean' },
+          imageUrl: { type: 'string', nullable: true },
+          category: { $ref: '#/components/schemas/ReferenceCategory' },
+          unit: { $ref: '#/components/schemas/ReferenceUnit' },
+        },
+      },
+      ReferenceZone: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          city: { type: 'string', nullable: true },
+          region: { type: 'string', nullable: true },
+        },
+      },
+      ReferenceHub: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          name: { type: 'string' },
+          address: { type: 'string' },
+          city: { type: 'string', nullable: true },
+          latitude: { type: 'number' },
+          longitude: { type: 'number' },
+          zoneId: { type: 'integer' },
+          acceptsDropoff: { type: 'boolean' },
+          acceptsPickup: { type: 'boolean' },
         },
       },
       LotQualityCheck: {
@@ -499,18 +681,71 @@ const document = {
           title: { type: 'string' },
           description: { type: 'string', nullable: true },
           unitPrice: { type: 'number' },
-          product: { type: 'object' },
-          media: { type: 'array', items: { type: 'object' } },
-          zone: { type: 'object' },
+          category: {
+            type: 'object',
+            properties: { code: { type: 'string' }, label: { type: 'string' } },
+          },
+          unit: {
+            type: 'object',
+            properties: { code: { type: 'string' }, label: { type: 'string' } },
+          },
+          unitPrice: { type: 'number' },
+          quantityAvailable: { type: 'number' },
+          expiresAt: { type: 'string', format: 'date-time', nullable: true },
+          zone: {
+            type: 'object',
+            properties: {
+              id: { type: 'integer' },
+              name: { type: 'string' },
+              city: { type: 'string', nullable: true },
+            },
+          },
+          images: { type: 'array', items: { type: 'string' } },
+          qualityGrade: { type: 'string', enum: ['A', 'B', 'C'], nullable: true },
         },
       },
       Conversation: {
         type: 'object',
         properties: {
           id: { type: 'integer' },
-          type: { type: 'string', enum: ['BUYER', 'SUPPLIER'] },
-          status: { type: 'string', enum: ['OPEN', 'ASSIGNED', 'ESCALATED', 'CLOSED'] },
-          assigneeAgentId: { type: 'integer', nullable: true },
+          type: { type: 'string', enum: ['BUYER_SUPPORT', 'SUPPLIER_SUPPORT'] },
+          status: { type: 'string', enum: ['OPEN', 'WAITING_CUSTOMER', 'CLOSED'] },
+          subject: { type: 'string', nullable: true },
+          listingId: { type: 'integer', nullable: true },
+          escalatedAt: { type: 'string', format: 'date-time', nullable: true },
+          escalationReason: { type: 'string', nullable: true },
+          lastMessageAt: { type: 'string', format: 'date-time' },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      StaffConversation: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          type: { type: 'string', enum: ['BUYER_SUPPORT', 'SUPPLIER_SUPPORT'] },
+          status: { type: 'string', enum: ['OPEN', 'WAITING_CUSTOMER', 'CLOSED'] },
+          subject: { type: 'string', nullable: true },
+          listingId: { type: 'integer', nullable: true },
+          lotId: { type: 'integer', nullable: true },
+          customer: {
+            type: 'object',
+            nullable: true,
+            properties: {
+              id: { type: 'integer' },
+              firstname: { type: 'string' },
+              lastname: { type: 'string' },
+            },
+          },
+          assignedAgentId: { type: 'integer', nullable: true },
+          assignedAgent: {
+            type: 'object',
+            nullable: true,
+            properties: { id: { type: 'integer' }, displayName: { type: 'string' } },
+          },
+          escalatedAt: { type: 'string', format: 'date-time', nullable: true },
+          escalationReason: { type: 'string', nullable: true },
+          lastMessageAt: { type: 'string', format: 'date-time' },
+          createdAt: { type: 'string', format: 'date-time' },
         },
       },
       Message: {
@@ -518,7 +753,34 @@ const document = {
         properties: {
           id: { type: 'integer' },
           content: { type: 'string' },
-          isInternal: { type: 'boolean', description: 'Visible par l\'équipe uniquement' },
+          senderLabel: { type: 'string', enum: ['Vous', 'Équipe AgriConnect'] },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      StaffMessage: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          conversationId: { type: 'integer' },
+          senderType: { type: 'string', enum: ['CUSTOMER', 'AGENT', 'SYSTEM'] },
+          senderUserId: { type: 'integer', nullable: true },
+          senderAgentId: { type: 'integer', nullable: true },
+          content: { type: 'string' },
+          isInternal: { type: 'boolean' },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      StockMovement: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          lotId: { type: 'integer' },
+          type: { type: 'string' },
+          quantityDelta: { type: 'number' },
+          orderItemId: { type: 'integer', nullable: true },
+          note: { type: 'string', nullable: true },
+          actorUserId: { type: 'integer', nullable: true },
+          actorAgentId: { type: 'integer', nullable: true },
           createdAt: { type: 'string', format: 'date-time' },
         },
       },
@@ -563,12 +825,90 @@ const document = {
         type: 'object',
         properties: {
           id: { type: 'integer' },
+          orderId: { type: 'integer' },
+          agencyId: { type: 'integer' },
+          agencyName: { type: 'string', nullable: true },
           status: {
             type: 'string',
             enum: ['PENDING', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'FAILED', 'CANCELLED'],
           },
+          pickupHubId: { type: 'integer', nullable: true },
+          pickupAddress: { type: 'string', nullable: true },
+          pickupLatitude: { type: 'number', nullable: true },
+          pickupLongitude: { type: 'number', nullable: true },
+          dropoffAddress: { type: 'string' },
+          dropoffLatitude: { type: 'number', nullable: true },
+          dropoffLongitude: { type: 'number', nullable: true },
+          distanceKm: { type: 'number', nullable: true },
+          agencyCost: { type: 'number' },
+          deliveryFee: { type: 'number' },
+          insuredValue: { type: 'number' },
+          insurancePolicyNumber: { type: 'string', nullable: true },
+          acceptedAt: { type: 'string', format: 'date-time', nullable: true },
+          pickedUpAt: { type: 'string', format: 'date-time', nullable: true },
+          deliveredAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
+      DriverDelivery: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          status: { type: 'string', enum: ['PENDING', 'ACCEPTED', 'PICKED_UP', 'IN_TRANSIT', 'DELIVERED', 'FAILED', 'CANCELLED'] },
+          pickupAddress: { type: 'string', nullable: true },
+          pickupLatitude: { type: 'number', nullable: true },
+          pickupLongitude: { type: 'number', nullable: true },
+          dropoffAddress: { type: 'string' },
+          dropoffLatitude: { type: 'number', nullable: true },
+          dropoffLongitude: { type: 'number', nullable: true },
+          distanceKm: { type: 'number', nullable: true },
+          buyer: {
+            type: 'object',
+            nullable: true,
+            properties: {
+              firstname: { type: 'string' },
+              lastname: { type: 'string' },
+              phone: { type: 'string' },
+            },
+          },
+          items: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                productName: { type: 'string', nullable: true },
+                categoryName: { type: 'string', nullable: true },
+                quantity: { type: 'number' },
+              },
+            },
+          },
+          acceptedAt: { type: 'string', format: 'date-time', nullable: true },
+          pickedUpAt: { type: 'string', format: 'date-time', nullable: true },
+          deliveredAt: { type: 'string', format: 'date-time', nullable: true },
           failureReason: { type: 'string', nullable: true },
-          driver: { type: 'object', nullable: true },
+        },
+      },
+      Compensation: {
+        type: 'object',
+        properties: {
+          id: { type: 'integer' },
+          supplierId: { type: 'integer' },
+          lotId: { type: 'integer' },
+          deliveryId: { type: 'integer', nullable: true },
+          reason: { type: 'string' },
+          quantity: { type: 'number' },
+          unitPrice: { type: 'number' },
+          rate: { type: 'number' },
+          amount: { type: 'number' },
+          status: { type: 'string', enum: ['PENDING_APPROVAL', 'APPROVED', 'PAID', 'REJECTED'] },
+          note: { type: 'string', nullable: true },
+          reference: { type: 'string', nullable: true },
+          approvedById: { type: 'integer', nullable: true },
+          approvedAt: { type: 'string', format: 'date-time', nullable: true },
+          paidById: { type: 'integer', nullable: true },
+          paidAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+          supplier: { type: 'object', nullable: true },
         },
       },
     },

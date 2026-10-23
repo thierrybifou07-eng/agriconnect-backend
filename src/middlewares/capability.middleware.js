@@ -34,7 +34,7 @@ export const requireCapability = (...codes) => async (req, res, next) => {
   const held = agent ? agent.capabilities.map((link) => link.capability.code) : [];
 
   if (!agent || !codes.some((code) => held.includes(code))) {
-    return res.status(403).json({ error: 'Capacité requise' });
+    return res.status(403).json({ error: 'Capacité requise', code: 'CAPABILITY_REQUIRED' });
   }
 
   req.agent = { id: agent.id, kind: agent.kind, capabilities: held };

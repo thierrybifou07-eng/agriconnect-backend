@@ -48,7 +48,8 @@ export const registerSchema = Joi.object({
 });
 
 export const loginSchema = Joi.object({
-  email: Joi.string().email().required().messages({
+  // Les comptes de démonstration utilisent le domaine réservé .test.
+  email: Joi.string().email({ tlds: { allow: false } }).required().messages({
     "string.empty": "email is required",
     "string.email": "email must be a valid email address",
     "string.base": "email must be a string",

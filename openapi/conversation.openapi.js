@@ -30,10 +30,26 @@ export default {
       get: {
         tags: ['Conversations'],
         summary: 'Conversations du connecté',
+        parameters: [
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': {
             description: 'Conversations de l\'utilisateur (ou de l\'équipe pour un agent)',
-            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Conversation' } } } },
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    items: { type: 'array', items: { $ref: '#/components/schemas/Conversation' } },
+                    page: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    total: { type: 'integer' },
+                  },
+                },
+              },
+            },
           },
           '401': R('Unauthorized'),
         },
@@ -44,11 +60,27 @@ export default {
       get: {
         tags: ['Conversations'],
         summary: 'Messages du fil public',
-        parameters: [{ $ref: '#/components/parameters/IdParam' }],
+        parameters: [
+          { $ref: '#/components/parameters/IdParam' },
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
         responses: {
           '200': {
             description: 'Messages (fil public)',
-            content: { 'application/json': { schema: { type: 'array', items: { $ref: '#/components/schemas/Message' } } } },
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  properties: {
+                    items: { type: 'array', items: { $ref: '#/components/schemas/Message' } },
+                    page: { type: 'integer' },
+                    limit: { type: 'integer' },
+                    total: { type: 'integer' },
+                  },
+                },
+              },
+            },
           },
           '401': R('Unauthorized'),
           '404': R('NotFound'),

@@ -41,6 +41,8 @@ tags:
   description: Cycle de vie de la commande côté acheteur
 - name: Livreur
   description: Courses du livreur connecté
+- name: Référentiels
+  description: Listes paginées des données de référence actives accessibles aux comptes connectés
 paths:
   /auth/register:
     post:
@@ -384,13 +386,16 @@ paths:
       description: Identifie l'appareil courant par le sessionId du jeton d'accès.
       responses:
         '200':
-          description: Liste des sessions avec isCurrent
+          description: Sessions ouvertes avec isCurrent
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Session'
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Session'
         '401':
           $ref: '#/components/responses/Unauthorized'
   /auth/sessions/{id}:
@@ -426,7 +431,7 @@ paths:
       tags:
       - Utilisateur
       summary: Profil de l'utilisateur connecté
-      description: userToApi + objet profile selon le rôle (SupplierProfile, BuyerProfile, DriverProfile).
+      description: userToApi + media et agent (actif si le rôle est AGENT, sinon null) + objet profile selon le rôle.
       responses:
         '200':
           description: Utilisateur courant
@@ -492,8 +497,12 @@ paths:
               required:
               - avatar
       responses:
-        '200':
+        '201':
           description: Avatar remplacé
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Media'
         '400':
           $ref: '#/components/responses/UploadBadRequest'
         '401':
@@ -793,27 +802,42 @@ paths:
               schema:
                 type: object
                 properties:
-                  referralCode:
+                  code:
                     type: string
+                    nullable: true
+                  totals:
+                    type: object
+                    properties:
+                      pending:
+                        type: integer
+                      eligible:
+                        type: integer
+                      paid:
+                        type: integer
                   referrals:
                     type: array
                     items:
                       type: object
                       properties:
-                        id:
-                          type: integer
+                        status:
+                          type: string
+                          enum:
+                          - PENDING
+                          - ELIGIBLE
+                          - PAID
+                          - REJECTED
                         kind:
                           type: string
                           enum:
                           - SUPPLIER
                           - BUYER
-                        status:
+                        rewardAmount:
+                          type: number
+                          nullable: true
+                        createdAt:
                           type: string
-                          enum:
-                          - PENDING
-                          - APPROVED
-                          - REJECTED
-                        firstname:
+                          format: date-time
+                        referredFirstname:
                           type: string
         '401':
           $ref: '#/components/responses/Unauthorized'
@@ -1058,6 +1082,28 @@ paths:
       summary: Liste des utilisateurs (ADMIN et plus)
       parameters:
       - in: query
+        name: role
+        schema:
+          type: string
+          enum:
+          - ROOT
+          - ADMIN
+          - AGENT
+          - SUPPLIER
+          - BUYER
+          - DRIVER
+      - in: query
+        name: search
+        schema:
+          type: string
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - ACTIVE
+          - SUSPENDED
+      - in: query
         name: profileVerificationStatus
         schema:
           type: string
@@ -1074,7 +1120,7 @@ paths:
               schema:
                 type: array
                 items:
-                  $ref: '#/components/schemas/User'
+                  $ref: '#/components/schemas/AdminUser'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1288,6 +1334,13 @@ paths:
       - Admin
       summary: Reversements fournisseurs (ADMIN humain)
       description: requireHumanActor — un agent IA ne peut pas déplacer de l'argent.
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           $ref: '#/components/responses/PaginatedPayouts'
@@ -2211,6 +2264,18 @@ paths:
       - Admin
       summary: Parrainages (ADMIN humain)
       description: requireHumanActor — un agent IA ne peut pas déplacer de l'argent.
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - ELIGIBLE
+          - PAID
+          - REJECTED
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           $ref: '#/components/responses/PaginatedReferrals'
@@ -2299,6 +2364,18 @@ paths:
       - Admin
       summary: Indemnisations fournisseurs (ADMIN humain)
       description: La vue admin affiche le compte de paiement par défaut du fournisseur (numéro complet).
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - PENDING_APPROVAL
+          - APPROVED
+          - PAID
+          - REJECTED
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           $ref: '#/components/responses/PaginatedCompensations'
@@ -2401,6 +2478,17 @@ paths:
       tags:
       - Admin
       summary: Tableau de bord
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
       responses:
         '200':
           description: Statistiques agrégées
@@ -2418,6 +2506,32 @@ paths:
       - Admin
       summary: Journal d'audit
       parameters:
+      - in: query
+        name: entityType
+        schema:
+          type: string
+      - in: query
+        name: entityId
+        schema:
+          type: integer
+      - in: query
+        name: actorUserId
+        schema:
+          type: integer
+      - in: query
+        name: actorAgentId
+        schema:
+          type: integer
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date-time
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date-time
       - $ref: '#/components/parameters/PageParam'
       - $ref: '#/components/parameters/LimitParam'
       responses:
@@ -3054,9 +3168,18 @@ paths:
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  type: object
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StockMovement'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3342,6 +3465,26 @@ paths:
       summary: Conversations (BUYER_SUPPORT ou SUPPLIER_SUPPORT requis)
       description: Un agent n'agit ensuite que sur les conversations de son type (vérifié dans le contrôleur).
       parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - OPEN
+          - WAITING_CUSTOMER
+          - CLOSED
+      - in: query
+        name: unassigned
+        schema:
+          type: boolean
+      - in: query
+        name: mine
+        schema:
+          type: boolean
+      - in: query
+        name: escalated
+        schema:
+          type: boolean
       - $ref: '#/components/parameters/PageParam'
       - $ref: '#/components/parameters/LimitParam'
       responses:
@@ -3364,7 +3507,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Conversation'
+                $ref: '#/components/schemas/StaffConversation'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3378,15 +3521,26 @@ paths:
       summary: Messages d'une conversation (fil public)
       parameters:
       - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           description: Messages
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Message'
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/StaffMessage'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -3421,7 +3575,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Message'
+                $ref: '#/components/schemas/StaffMessage'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -3626,6 +3780,10 @@ paths:
       - Équipe
       summary: Commandes (paginé)
       parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
       - $ref: '#/components/parameters/PageParam'
       - $ref: '#/components/parameters/LimitParam'
       responses:
@@ -3909,6 +4067,14 @@ paths:
       - Équipe
       summary: Livraisons (paginé)
       parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+      - in: query
+        name: orderId
+        schema:
+          type: integer
       - $ref: '#/components/parameters/PageParam'
       - $ref: '#/components/parameters/LimitParam'
       responses:
@@ -4103,9 +4269,20 @@ paths:
         schema:
           type: integer
       - in: query
-        name: productId
+        name: zoneId
         schema:
           type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+      - in: query
+        name: sort
+        schema:
+          type: string
+          enum:
+          - price
+          - expiry
       - $ref: '#/components/parameters/PageParam'
       - $ref: '#/components/parameters/LimitParam'
       responses:
@@ -4187,15 +4364,27 @@ paths:
       tags:
       - Conversations
       summary: Conversations du connecté
+      parameters:
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           description: Conversations de l'utilisateur (ou de l'équipe pour un agent)
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Conversation'
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Conversation'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
   /conversations/{id}/messages:
@@ -4205,15 +4394,26 @@ paths:
       summary: Messages du fil public
       parameters:
       - $ref: '#/components/parameters/IdParam'
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           description: Messages (fil public)
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Message'
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Message'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -4347,15 +4547,27 @@ paths:
       tags:
       - Livreur
       summary: Courses disponibles (PENDING, non assignées)
+      parameters:
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           description: Courses disponibles
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Delivery'
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DriverDelivery'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4365,15 +4577,31 @@ paths:
       tags:
       - Livreur
       summary: Courses du livreur connecté
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
           description: Courses du livreur
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Delivery'
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/DriverDelivery'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4392,7 +4620,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Delivery'
+                $ref: '#/components/schemas/DriverDelivery'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4443,7 +4671,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Delivery'
+                $ref: '#/components/schemas/DriverDelivery'
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -4462,6 +4690,198 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /reference/categories:
+    get:
+      tags:
+      - Référentiels
+      summary: Catégories actives
+      security:
+      - bearerAuth: []
+      parameters: &a1
+        - &a2
+          $ref: '#/components/parameters/PageParam'
+        - &a3
+          $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Référentiel actif paginé, trié par ordre alphabétique
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReferenceCategory'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reference/units:
+    get:
+      tags:
+      - Référentiels
+      summary: Unités
+      security:
+      - bearerAuth: []
+      parameters: *a1
+      responses:
+        '200':
+          description: Unités du référentiel, paginées et triées alphabétiquement (le modèle n’a pas de isActive)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReferenceUnit'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reference/products:
+    get:
+      tags:
+      - Référentiels
+      summary: Produits actifs
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: query
+        name: categoryId
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: q
+        schema:
+          type: string
+          minLength: 1
+          maxLength: 120
+      - *a2
+      - *a3
+      responses:
+        '200':
+          description: Référentiel actif paginé, trié par ordre alphabétique
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReferenceProduct'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reference/zones:
+    get:
+      tags:
+      - Référentiels
+      summary: Zones actives
+      security:
+      - bearerAuth: []
+      parameters: *a1
+      responses:
+        '200':
+          description: Référentiel actif paginé, trié par ordre alphabétique
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReferenceZone'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /reference/hubs:
+    get:
+      tags:
+      - Référentiels
+      summary: Points de dépôt actifs
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: query
+        name: zoneId
+        schema:
+          type: integer
+          minimum: 1
+      - in: query
+        name: acceptsDropoff
+        schema:
+          type: boolean
+      - in: query
+        name: acceptsPickup
+        schema:
+          type: boolean
+      - *a2
+      - *a3
+      responses:
+        '200':
+          description: Référentiel actif paginé, trié par ordre alphabétique
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReferenceHub'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 components:
   securitySchemes:
     bearerAuth:
@@ -4636,7 +5056,18 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Paginated'
+            type: object
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/StaffConversation'
+              page:
+                type: integer
+              limit:
+                type: integer
+              total:
+                type: integer
     PaginatedOrders:
       description: Commandes paginées
       content:
@@ -4654,19 +5085,52 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Paginated'
+            type: object
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Compensation'
+              page:
+                type: integer
+              limit:
+                type: integer
+              total:
+                type: integer
     PaginatedDeliveries:
       description: Livraisons paginées
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Paginated'
+            type: object
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Delivery'
+              page:
+                type: integer
+              limit:
+                type: integer
+              total:
+                type: integer
     PaginatedCatalogListings:
       description: Annonces du catalogue paginées
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Paginated'
+            type: object
+            properties:
+              items:
+                type: array
+                items:
+                  $ref: '#/components/schemas/CatalogListing'
+              page:
+                type: integer
+              limit:
+                type: integer
+              total:
+                type: integer
     PaginatedAuditLogs:
       description: Journal d'audit paginé
       content:
@@ -4682,8 +5146,18 @@ components:
           description: Message en français
         code:
           type: string
-          description: Code MAJUSCULES_AVEC_UNDERSCORES quand l'erreur en porte un
-          example: INSUFFICIENT_STOCK
+          description: 'Code stable. Authentification/autorisation: TOKEN_MISSING, TOKEN_INVALID, ACCOUNT_SUSPENDED, ROLE_FORBIDDEN, LEVEL_FORBIDDEN, CAPABILITY_REQUIRED, HUMAN_ACTOR_REQUIRED. Limitation: RATE_LIMITED.'
+          example: TOKEN_INVALID
+        details:
+          type: array
+          description: Détails de validation Joi (présent sur les erreurs 400)
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              message:
+                type: string
     ProfileNotVerifiedError:
       type: object
       properties:
@@ -4755,11 +5229,6 @@ components:
           - DRIVER
         label:
           type: string
-        level:
-          type: integer
-          description: 10 opérationnel, 30 AGENT, 50 ADMIN, 100 ROOT
-        isActive:
-          type: boolean
     UserStatus:
       type: object
       properties:
@@ -4767,8 +5236,6 @@ components:
           type: string
         label:
           type: string
-        isActive:
-          type: boolean
     User:
       type: object
       properties:
@@ -4805,8 +5272,15 @@ components:
           $ref: '#/components/schemas/Role'
         userStatus:
           $ref: '#/components/schemas/UserStatus'
+        media:
+          type: array
+          items:
+            $ref: '#/components/schemas/Media'
+        agent:
+          $ref: '#/components/schemas/ClientAgent'
         profile:
           description: SupplierProfile, BuyerProfile ou DriverProfile selon le rôle ; sinon null
+          nullable: true
           oneOf:
           - $ref: '#/components/schemas/SupplierProfile'
           - $ref: '#/components/schemas/BuyerProfile'
@@ -4814,8 +5288,6 @@ components:
     SupplierProfile:
       type: object
       properties:
-        id:
-          type: integer
         farmName:
           type: string
         description:
@@ -4827,8 +5299,6 @@ components:
     BuyerProfile:
       type: object
       properties:
-        id:
-          type: integer
         buyerType:
           type: string
           enum:
@@ -4845,31 +5315,71 @@ components:
     DriverProfile:
       type: object
       properties:
-        id:
-          type: integer
         vehicleType:
           type: string
           nullable: true
         plateNumber:
           type: string
           nullable: true
+        agencyId:
+          type: integer
     Session:
       type: object
       properties:
         id:
           type: integer
+        userAgent:
+          type: string
+          nullable: true
+        ip:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
-        lastActiveAt:
+        lastActivityAt:
           type: string
           format: date-time
-        closedAt:
+        expiresAt:
           type: string
           format: date-time
-          nullable: true
         isCurrent:
           type: boolean
+    Media:
+      type: object
+      properties:
+        id:
+          type: integer
+        url:
+          type: string
+        isPrimary:
+          type: boolean
+        position:
+          type: integer
+    ClientAgent:
+      type: object
+      nullable: true
+      properties:
+        id:
+          type: integer
+        displayName:
+          type: string
+        kind:
+          type: string
+          enum:
+          - HUMAN
+          - AI
+        autonomy:
+          type: string
+          enum:
+          - SUGGEST_ONLY
+          - ACT_WITH_APPROVAL
+          - AUTONOMOUS
+          nullable: true
+        capabilities:
+          type: array
+          items:
+            type: string
     PayoutAccount:
       type: object
       properties:
@@ -4953,7 +5463,76 @@ components:
         capabilities:
           type: array
           items:
-            type: string
+            type: object
+            properties:
+              capability:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  label:
+                    type: string
+        user:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            firstname:
+              type: string
+            lastname:
+              type: string
+            email:
+              type: string
+          AdminUser:
+            type: object
+            properties:
+              id:
+                type: integer
+              firstname:
+                type: string
+              lastname:
+                type: string
+              phone:
+                type: string
+              email:
+                type: string
+              role:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum:
+                    - ROOT
+                    - ADMIN
+                    - AGENT
+                    - SUPPLIER
+                    - BUYER
+                    - DRIVER
+                  label:
+                    type: string
+                  level:
+                    type: integer
+              userStatus:
+                type: object
+                properties:
+                  code:
+                    type: string
+                  label:
+                    type: string
+              location:
+                type: string
+                nullable: true
+              profileVerificationStatus:
+                type: string
+                enum:
+                - UNVERIFIED
+                - PENDING
+                - VERIFIED
+                - REJECTED
+              createdAt:
+                type: string
+                format: date-time
     Category:
       type: object
       properties:
@@ -4963,7 +5542,78 @@ components:
           type: string
         label:
           type: string
-        isActive:
+    ReferenceCategory:
+      type: object
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        label:
+          type: string
+    ReferenceUnit:
+      type: object
+      description: Unit n’a pas de colonne isActive dans le schéma Prisma.
+      properties:
+        id:
+          type: integer
+        code:
+          type: string
+        label:
+          type: string
+    ReferenceProduct:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        isPerishable:
+          type: boolean
+        imageUrl:
+          type: string
+          nullable: true
+        category:
+          $ref: '#/components/schemas/ReferenceCategory'
+        unit:
+          $ref: '#/components/schemas/ReferenceUnit'
+    ReferenceZone:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        city:
+          type: string
+          nullable: true
+        region:
+          type: string
+          nullable: true
+    ReferenceHub:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        address:
+          type: string
+        city:
+          type: string
+          nullable: true
+        latitude:
+          type: number
+        longitude:
+          type: number
+        zoneId:
+          type: integer
+        acceptsDropoff:
+          type: boolean
+        acceptsPickup:
           type: boolean
     LotQualityCheck:
       type: object
@@ -5126,14 +5776,47 @@ components:
           nullable: true
         unitPrice:
           type: number
-        product:
+        category:
           type: object
-        media:
-          type: array
-          items:
-            type: object
+          properties:
+            code:
+              type: string
+            label:
+              type: string
+        unit:
+          type: object
+          properties:
+            code:
+              type: string
+            label:
+              type: string
+        quantityAvailable:
+          type: number
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
         zone:
           type: object
+          properties:
+            id:
+              type: integer
+            name:
+              type: string
+            city:
+              type: string
+              nullable: true
+        images:
+          type: array
+          items:
+            type: string
+        qualityGrade:
+          type: string
+          enum:
+          - A
+          - B
+          - C
+          nullable: true
     Conversation:
       type: object
       properties:
@@ -5142,18 +5825,92 @@ components:
         type:
           type: string
           enum:
-          - BUYER
-          - SUPPLIER
+          - BUYER_SUPPORT
+          - SUPPLIER_SUPPORT
         status:
           type: string
           enum:
           - OPEN
-          - ASSIGNED
-          - ESCALATED
+          - WAITING_CUSTOMER
           - CLOSED
-        assigneeAgentId:
+        subject:
+          type: string
+          nullable: true
+        listingId:
           type: integer
           nullable: true
+        escalatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        escalationReason:
+          type: string
+          nullable: true
+        lastMessageAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
+    StaffConversation:
+      type: object
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+          enum:
+          - BUYER_SUPPORT
+          - SUPPLIER_SUPPORT
+        status:
+          type: string
+          enum:
+          - OPEN
+          - WAITING_CUSTOMER
+          - CLOSED
+        subject:
+          type: string
+          nullable: true
+        listingId:
+          type: integer
+          nullable: true
+        lotId:
+          type: integer
+          nullable: true
+        customer:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            firstname:
+              type: string
+            lastname:
+              type: string
+        assignedAgentId:
+          type: integer
+          nullable: true
+        assignedAgent:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: integer
+            displayName:
+              type: string
+        escalatedAt:
+          type: string
+          format: date-time
+          nullable: true
+        escalationReason:
+          type: string
+          nullable: true
+        lastMessageAt:
+          type: string
+          format: date-time
+        createdAt:
+          type: string
+          format: date-time
     Message:
       type: object
       properties:
@@ -5161,9 +5918,63 @@ components:
           type: integer
         content:
           type: string
+        senderLabel:
+          type: string
+          enum:
+          - Vous
+          - Équipe AgriConnect
+        createdAt:
+          type: string
+          format: date-time
+    StaffMessage:
+      type: object
+      properties:
+        id:
+          type: integer
+        conversationId:
+          type: integer
+        senderType:
+          type: string
+          enum:
+          - CUSTOMER
+          - AGENT
+          - SYSTEM
+        senderUserId:
+          type: integer
+          nullable: true
+        senderAgentId:
+          type: integer
+          nullable: true
+        content:
+          type: string
         isInternal:
           type: boolean
-          description: Visible par l'équipe uniquement
+        createdAt:
+          type: string
+          format: date-time
+    StockMovement:
+      type: object
+      properties:
+        id:
+          type: integer
+        lotId:
+          type: integer
+        type:
+          type: string
+        quantityDelta:
+          type: number
+        orderItemId:
+          type: integer
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        actorUserId:
+          type: integer
+          nullable: true
+        actorAgentId:
+          type: integer
+          nullable: true
         createdAt:
           type: string
           format: date-time
@@ -5233,6 +6044,13 @@ components:
       properties:
         id:
           type: integer
+        orderId:
+          type: integer
+        agencyId:
+          type: integer
+        agencyName:
+          type: string
+          nullable: true
         status:
           type: string
           enum:
@@ -5243,9 +6061,178 @@ components:
           - DELIVERED
           - FAILED
           - CANCELLED
+        pickupHubId:
+          type: integer
+          nullable: true
+        pickupAddress:
+          type: string
+          nullable: true
+        pickupLatitude:
+          type: number
+          nullable: true
+        pickupLongitude:
+          type: number
+          nullable: true
+        dropoffAddress:
+          type: string
+        dropoffLatitude:
+          type: number
+          nullable: true
+        dropoffLongitude:
+          type: number
+          nullable: true
+        distanceKm:
+          type: number
+          nullable: true
+        agencyCost:
+          type: number
+        deliveryFee:
+          type: number
+        insuredValue:
+          type: number
+        insurancePolicyNumber:
+          type: string
+          nullable: true
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pickedUpAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    DriverDelivery:
+      type: object
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum:
+          - PENDING
+          - ACCEPTED
+          - PICKED_UP
+          - IN_TRANSIT
+          - DELIVERED
+          - FAILED
+          - CANCELLED
+        pickupAddress:
+          type: string
+          nullable: true
+        pickupLatitude:
+          type: number
+          nullable: true
+        pickupLongitude:
+          type: number
+          nullable: true
+        dropoffAddress:
+          type: string
+        dropoffLatitude:
+          type: number
+          nullable: true
+        dropoffLongitude:
+          type: number
+          nullable: true
+        distanceKm:
+          type: number
+          nullable: true
+        buyer:
+          type: object
+          nullable: true
+          properties:
+            firstname:
+              type: string
+            lastname:
+              type: string
+            phone:
+              type: string
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productName:
+                type: string
+                nullable: true
+              categoryName:
+                type: string
+                nullable: true
+              quantity:
+                type: number
+        acceptedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pickedUpAt:
+          type: string
+          format: date-time
+          nullable: true
+        deliveredAt:
+          type: string
+          format: date-time
+          nullable: true
         failureReason:
           type: string
           nullable: true
-        driver:
+    Compensation:
+      type: object
+      properties:
+        id:
+          type: integer
+        supplierId:
+          type: integer
+        lotId:
+          type: integer
+        deliveryId:
+          type: integer
+          nullable: true
+        reason:
+          type: string
+        quantity:
+          type: number
+        unitPrice:
+          type: number
+        rate:
+          type: number
+        amount:
+          type: number
+        status:
+          type: string
+          enum:
+          - PENDING_APPROVAL
+          - APPROVED
+          - PAID
+          - REJECTED
+        note:
+          type: string
+          nullable: true
+        reference:
+          type: string
+          nullable: true
+        approvedById:
+          type: integer
+          nullable: true
+        approvedAt:
+          type: string
+          format: date-time
+          nullable: true
+        paidById:
+          type: integer
+          nullable: true
+        paidAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        supplier:
           type: object
           nullable: true

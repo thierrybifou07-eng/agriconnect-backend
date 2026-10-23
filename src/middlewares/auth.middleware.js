@@ -12,14 +12,18 @@ import {UserStatusCode} from "../utils/enums/enums.helpers.js";
 // jeton anterieur a une suspension est donc refuse, et un jeton anterieur a une
 // verification reste utilisable parce que la base, elle, a rattrape.
 export const protect = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Authentification requise' });
-    }
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Authentification requise', code: 'TOKEN_MISSING' });
+  }
 
+  let decoded;
+  try {
     const token = authHeader.split(' ')[1];
-    const decoded = verifyToken(token);
+    decoded = verifyToken(token);
+  } catch {
+    return res.status(401).json({ error: 'Token invalide ou expiré', code: 'TOKEN_INVALID' });
+  }
 
     // Selection explicite, sans `password`. Le middleware ne peut pas se fier a
     // la discrétion de chaque controleur : il suffit qu'un jour quelqu'un
@@ -49,28 +53,25 @@ export const protect = async (req, res, next) => {
     });
 
     if (!user) {
-      return res.status(401).json({ error: 'Utilisateur introuvable' });
+      return res.status(401).json({ error: 'Utilisateur introuvable', code: 'TOKEN_INVALID' });
     }
     if (user.userStatus.code === UserStatusCode.SUSPENDED) {
-      return res.status(403).json({ error: 'Ce compte a été suspendu' });
+      return res.status(403).json({ error: 'Ce compte a été suspendu', code: 'ACCOUNT_SUSPENDED' });
     }
 
-    req.user = user;
-    // La session est conservee telle qu'elle est dans le jeton, sans
-    // relecture : elle sert au client a reconnaitre son appareil, pas a
-    // autoriser quoi que ce soit. Une session fermee est traitee par les routes
-    // qui controlent un acces prolonge (refresh, liste des sessions).
-    req.sessionId = decoded.sessionId ?? null;
-    next();
-  } catch (err) {
-    return res.status(401).json({ error: 'Token invalide ou expiré' });
-  }
+  req.user = user;
+  // La session est conservee telle qu'elle est dans le jeton, sans
+  // relecture : elle sert au client a reconnaitre son appareil, pas a
+  // autoriser quoi que ce soit. Une session fermee est traitee par les routes
+  // qui controlent un acces prolonge (refresh, liste des sessions).
+  req.sessionId = decoded.sessionId ?? null;
+  next();
 };
 
 // Restreint l'accès à des rôles précis (ex: requireRole('FARMER'))
 export const requireRole = (...codes) => (req, res, next) => {
   if (!req.user || !codes.includes(req.user.role.code)) {
-    return res.status(403).json({ error: 'Accès refusé pour ce rôle' });
+    return res.status(403).json({ error: 'Accès refusé pour ce rôle', code: 'ROLE_FORBIDDEN' });
   }
   next();
 };
@@ -78,7 +79,7 @@ export const requireRole = (...codes) => (req, res, next) => {
 // Restreint l'accès par niveau hiérarchique (ex: requireMinLevel(50) => ADMIN ou ROOT)
 export const requireMinLevel = (minLevel) => (req, res, next) => {
   if (!req.user || req.user.role.level < minLevel) {
-    return res.status(403).json({ error: 'Privilèges insuffisants' });
+    return res.status(403).json({ error: 'Privilèges insuffisants', code: 'LEVEL_FORBIDDEN' });
   }
   next();
 };
