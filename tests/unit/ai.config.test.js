@@ -9,6 +9,7 @@ describe('configuration IA', () => {
     overrideAiConfigForTests({ enabled: false, model: '' });
     expect(getAiConfig()).toMatchObject({
       enabled: false,
+      provider: 'ollama',
       baseUrl: 'http://127.0.0.1:11434',
       timeoutMs: 120000,
       numCtx: 4096,
@@ -16,12 +17,23 @@ describe('configuration IA', () => {
       maxConcurrency: 1,
       autonomousEnabled: false,
       minConfidence: 0.8,
+      maxRpm: 8,
+      dailyBudget: 200,
+      autoSuggestEnabled: false,
     });
   });
 
   it('exige un modèle lorsque le moteur est activé', () => {
     overrideAiConfigForTests({ enabled: true, model: '' });
     expect(() => getAiConfig()).toThrowError(expect.objectContaining({ code: 'AI_CONFIG_INVALID' }));
+  });
+
+  it('exige la clé et le modèle Gemini quand le fournisseur est activé', () => {
+    overrideAiConfigForTests({ enabled: true, provider: 'gemini', gemini: { model: '', timeoutMs: 30000, maxOutputTokens: 1024 } });
+    expect(() => getAiConfig()).toThrowError(expect.objectContaining({ code: 'AI_CONFIG_INVALID' }));
+    overrideAiConfigForTests({ enabled: true, provider: 'gemini', gemini: { model: 'gemini-2.5-flash', timeoutMs: 30000, maxOutputTokens: 1024 }, GEMINI_API_KEY: 'secret' });
+    expect(getAiConfig()).toMatchObject({ provider: 'gemini', gemini: { model: 'gemini-2.5-flash', hasKey: true } });
+    expect(getAiConfig()).not.toHaveProperty('GEMINI_API_KEY');
   });
 
   it('signale un fournisseur agent non pris en charge', () => {

@@ -28,6 +28,7 @@
     "seed": "node prisma/seed.js"
   },
   "dependencies": {
+    "@google/genai": "^2.31.0",
     "@prisma/client": "^6.0.0",
     "@scalar/express-api-reference": "^0.10.29",
     "bcrypt": "^6.0.0",
