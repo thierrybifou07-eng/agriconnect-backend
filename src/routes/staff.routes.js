@@ -65,6 +65,19 @@ import {
   escalateSchema,
   staffMessageSchema,
 } from '../validators/conversation.validator.js';
+import {
+  aiSuggestionApproveSchema,
+  aiSuggestionListQuerySchema,
+  aiSuggestionRejectSchema,
+} from '../validators/ai.validator.js';
+import {
+  approveAiSuggestion,
+  getAiSuggestion,
+  listAiSuggestions,
+  rejectAiSuggestion,
+  requestListingDraft,
+  requestReplySuggestion,
+} from '../controllers/staff/staffAi.controller.js';
 import Joi from 'joi';
 
 const router = Router();
@@ -180,6 +193,12 @@ router.post('/conversations/:id/assign', STAFF_CONVERSATIONS, validate(assignSch
 router.post('/conversations/:id/escalate', STAFF_CONVERSATIONS, validate(escalateSchema), escalateConversation);
 router.post('/conversations/:id/close', STAFF_CONVERSATIONS, closeConversation);
 router.post('/conversations/:id/messages', STAFF_CONVERSATIONS, validate(staffMessageSchema), sendStaffMessage);
+router.post('/conversations/:id/ai-suggest', STAFF_CONVERSATIONS, requestReplySuggestion);
+router.get('/ai/suggestions', protect, requireCapability('BUYER_SUPPORT', 'SUPPLIER_SUPPORT', 'LISTING_MANAGEMENT'), validate(aiSuggestionListQuerySchema, 'query'), listAiSuggestions);
+router.get('/ai/suggestions/:id', protect, requireCapability('BUYER_SUPPORT', 'SUPPLIER_SUPPORT', 'LISTING_MANAGEMENT'), getAiSuggestion);
+router.post('/ai/suggestions/:id/approve', protect, requireCapability('BUYER_SUPPORT', 'SUPPLIER_SUPPORT', 'LISTING_MANAGEMENT'), requireHumanActor, validate(aiSuggestionApproveSchema), approveAiSuggestion);
+router.post('/ai/suggestions/:id/reject', protect, requireCapability('BUYER_SUPPORT', 'SUPPLIER_SUPPORT', 'LISTING_MANAGEMENT'), requireHumanActor, validate(aiSuggestionRejectSchema), rejectAiSuggestion);
+router.post('/lots/:id/ai-listing-draft', STAFF_LISTING, requestListingDraft);
 
 // Devis (P3.4) : l'équipe émet un devis qui réserve le stock et fige les prix.
 router.post('/orders', STAFF_ORDERS, validate(orderCreateSchema), createOrder);

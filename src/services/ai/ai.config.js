@@ -96,6 +96,7 @@ function buildConfig(value) {
     provider,
     baseUrl: value.OLLAMA_BASE_URL,
     model,
+    ollamaModel: String(value.OLLAMA_MODEL ?? ''),
     timeoutMs: value.OLLAMA_TIMEOUT_MS,
     numCtx: value.OLLAMA_NUM_CTX,
     keepAlive: value.OLLAMA_KEEP_ALIVE,
@@ -117,7 +118,7 @@ function buildConfig(value) {
 
 /**
  * Read and validate the AI environment configuration.
- * @returns {{enabled:boolean,provider:'ollama'|'gemini',baseUrl:string,model:string,timeoutMs:number,numCtx:number,keepAlive:string,maxConcurrency:number,autonomousEnabled:boolean,minConfidence:number,maxRpm:number,dailyBudget:number,autoSuggestEnabled:boolean,gemini:{model:string,timeoutMs:number,maxOutputTokens:number,hasKey:boolean}}}
+ * @returns {{enabled:boolean,provider:'ollama'|'gemini',baseUrl:string,model:string,ollamaModel:string,timeoutMs:number,numCtx:number,keepAlive:string,maxConcurrency:number,autonomousEnabled:boolean,minConfidence:number,maxRpm:number,dailyBudget:number,autoSuggestEnabled:boolean,gemini:{model:string,timeoutMs:number,maxOutputTokens:number,hasKey:boolean}}}
  */
 export function getAiConfig() {
   const env = applyTestOverrides({ ...process.env });

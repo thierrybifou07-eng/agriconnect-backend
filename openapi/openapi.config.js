@@ -55,7 +55,7 @@ const document = {
     { name: 'Commandes', description: 'Cycle de vie de la commande côté acheteur' },
     { name: 'Livreur', description: 'Courses du livreur connecté' },
     { name: 'Référentiels', description: 'Listes paginées des données de référence actives accessibles aux comptes connectés' },
-    { name: 'IA', description: 'État et test du fournisseur IA local Ollama (administration)' },
+    { name: 'IA', description: 'Fournisseurs IA, état du moteur et suggestions staff asynchrones' },
   ],
   paths: output.paths,
   components: {
@@ -267,6 +267,29 @@ const document = {
       },
     },
     schemas: {
+      AiSuggestion: {
+        type: 'object',
+        required: ['id', 'kind', 'status', 'conversationId', 'lotId', 'agent', 'model', 'latencyMs', 'payload', 'error', 'decidedAt', 'executedAt', 'createdAt'],
+        properties: {
+          id: { type: 'integer' },
+          kind: { type: 'string', enum: ['REPLY', 'TRIAGE', 'LISTING_DRAFT'] },
+          status: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'EXECUTED', 'FAILED', 'EXPIRED'] },
+          conversationId: { type: 'integer', nullable: true },
+          lotId: { type: 'integer', nullable: true },
+          agent: {
+            type: 'object',
+            required: ['id', 'displayName'],
+            properties: { id: { type: 'integer' }, displayName: { type: 'string' } },
+          },
+          model: { type: 'string' },
+          latencyMs: { type: 'integer', nullable: true },
+          payload: { type: 'object', nullable: true, additionalProperties: true },
+          error: { type: 'string', nullable: true },
+          decidedAt: { type: 'string', format: 'date-time', nullable: true },
+          executedAt: { type: 'string', format: 'date-time', nullable: true },
+          createdAt: { type: 'string', format: 'date-time' },
+        },
+      },
       Error: {
         type: 'object',
         properties: {
@@ -274,7 +297,7 @@ const document = {
           code: {
             type: 'string',
             description:
-              'Code stable. Authentification/autorisation: TOKEN_MISSING, TOKEN_INVALID, ACCOUNT_SUSPENDED, ROLE_FORBIDDEN, LEVEL_FORBIDDEN, CAPABILITY_REQUIRED, HUMAN_ACTOR_REQUIRED. Limitation: RATE_LIMITED.',
+              'Codes stables d’authentification et d’autorisation, de limitation, et d’erreurs du moteur IA / cycle des suggestions.',
             example: 'TOKEN_INVALID',
           },
           details: {

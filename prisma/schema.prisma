@@ -169,6 +169,21 @@ enum AgentAutonomy {
   AUTONOMOUS
 }
 
+enum AiSuggestionKind {
+  REPLY
+  TRIAGE
+  LISTING_DRAFT
+}
+
+enum AiSuggestionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXECUTED
+  FAILED
+  EXPIRED
+}
+
 enum ConversationType {
   BUYER_SUPPORT
   SUPPLIER_SUPPORT
@@ -640,6 +655,7 @@ model Agent {
   auditLogs      AuditLog[]
   lotQualityChecks LotQualityCheck[]
   listingsCreated Listing[] @relation("ListingCreatedByAgent")
+  suggestions      AgentSuggestion[]
 
   @@index([kind, isActive])
 }
@@ -937,6 +953,27 @@ model Message {
   readAt         DateTime?
   createdAt      DateTime     @default(now())
 
+  @@index([conversationId, createdAt])
+}
+
+model AgentSuggestion {
+  id               Int                @id @default(autoincrement())
+  agentId          Int
+  agent            Agent              @relation(fields: [agentId], references: [id])
+  kind             AiSuggestionKind
+  status           AiSuggestionStatus @default(PENDING)
+  conversationId   Int?
+  lotId            Int?
+  payload          Json?
+  model            String             @db.VarChar(120)
+  latencyMs        Int?
+  error            String?            @db.VarChar(500)
+  decidedByUserId  Int?
+  decidedAt        DateTime?
+  executedAt       DateTime?
+  createdAt        DateTime           @default(now())
+
+  @@index([status, createdAt])
   @@index([conversationId, createdAt])
 }
 

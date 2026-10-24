@@ -6,6 +6,7 @@ import { supportReplySchema } from './ai.schemas.js';
 import { parseAndValidateSupportOutput } from './ai.guard.js';
 import { getLastAiLatencyMs } from './ai.runtime.js';
 import { getThrottle } from './ai.throttle.js';
+import { getAiQueueSnapshot } from './ai.queue.js';
 
 const escapePromptData = (value) => String(value ?? '').replaceAll('<', '&lt;').replaceAll('>', '&gt;');
 
@@ -28,7 +29,7 @@ export async function getAiStatus(req, res) {
     authenticated: health.authenticated ?? null,
     capabilities: model.capabilities,
     lastLatencyMs: getLastAiLatencyMs(),
-    queue: { pending: 0, running: 0 },
+    queue: getAiQueueSnapshot(),
     autonomousEnabled: config.autonomousEnabled,
     quota: providerName === 'gemini' ? getThrottle(config).getSnapshot() : null,
   });

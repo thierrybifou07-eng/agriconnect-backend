@@ -21,3 +21,13 @@ export const supportReplySchema = {
     reasons: { type: 'array', items: { type: 'string' } },
   },
 };
+
+export const listingDraftSchema = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['title', 'description'],
+  properties: {
+    title: { type: 'string', maxLength: 140 },
+    description: { type: 'string', maxLength: 2000 },
+  },
+};

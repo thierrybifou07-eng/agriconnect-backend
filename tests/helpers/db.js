@@ -22,6 +22,7 @@ export const BUSINESS_TABLES = [
   'VerificationDocument',
   'TermsAcceptance',
   // agents
+  'AgentSuggestion',
   'Agent',
   'AgentCapabilityLink',
   // géographie et logistique

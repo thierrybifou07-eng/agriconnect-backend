@@ -141,6 +141,7 @@ export const listMessages = async (req, res) => {
       orderBy: { createdAt: 'asc' },
       skip: (page - 1) * limit,
       take: limit,
+      include: { senderAgent: { select: { kind: true } } },
     }),
     prisma.message.count({ where }),
   ]);

@@ -44,7 +44,7 @@ tags:
 - name: Référentiels
   description: Listes paginées des données de référence actives accessibles aux comptes connectés
 - name: IA
-  description: État et test du fournisseur IA local Ollama (administration)
+  description: Fournisseurs IA, état du moteur et suggestions staff asynchrones
 paths:
   /auth/register:
     post:
@@ -4240,6 +4240,228 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+  /staff/conversations/{id}/ai-suggest:
+    post:
+      tags:
+      - Équipe
+      summary: Demande une suggestion de réponse IA
+      description: Une seule suggestion PENDING par conversation. Génération asynchrone; activée uniquement avec AI_ENABLED=true.
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '202':
+          description: Suggestion mise en file
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - suggestionId
+                - status
+                properties:
+                  suggestionId:
+                    type: integer
+                  status:
+                    type: string
+                    enum:
+                    - PENDING
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Moteur désactivé (AI_DISABLED), agent absent (AI_NO_AGENT) ou suggestion en cours (AI_BUSY)
+          content:
+            application/json:
+              schema: &a1
+                $ref: '#/components/schemas/Error'
+        '429':
+          description: Quota fournisseur atteint (AI_RATE_LIMITED)
+          content:
+            application/json:
+              schema: *a1
+  /staff/lots/{id}/ai-listing-draft:
+    post:
+      tags:
+      - Équipe
+      summary: Génère un brouillon IA pour une annonce
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '202':
+          description: Brouillon mis en file
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Moteur désactivé (AI_DISABLED) ou agent absent (AI_NO_AGENT)
+          content:
+            application/json:
+              schema: *a1
+        '429':
+          description: Quota fournisseur atteint (AI_RATE_LIMITED)
+          content:
+            application/json:
+              schema: *a1
+  /staff/ai/suggestions:
+    get:
+      tags:
+      - IA
+      summary: Liste les suggestions visibles selon les capacités du staff
+      parameters:
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+          - REJECTED
+          - EXECUTED
+          - FAILED
+          - EXPIRED
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - REPLY
+          - TRIAGE
+          - LISTING_DRAFT
+      - in: query
+        name: conversationId
+        schema:
+          type: integer
+          minimum: 1
+      - $ref: '#/components/parameters/PageParam'
+      - $ref: '#/components/parameters/LimitParam'
+      responses:
+        '200':
+          description: Suggestions paginées
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                - items
+                - page
+                - limit
+                - total
+                properties:
+                  items:
+                    type: array
+                    items: &a2
+                      $ref: '#/components/schemas/AiSuggestion'
+                  page:
+                    type: integer
+                  limit:
+                    type: integer
+                  total:
+                    type: integer
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /staff/ai/suggestions/{id}:
+    get:
+      tags:
+      - IA
+      summary: Détail d’une suggestion accessible selon les capacités du staff
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      responses:
+        '200':
+          description: Suggestion IA
+          content:
+            application/json:
+              schema: *a2
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /staff/ai/suggestions/{id}/approve:
+    post:
+      tags:
+      - IA
+      summary: Approuve une suggestion
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                editedContent:
+                  type: string
+                  maxLength: 5000
+                  nullable: true
+      responses:
+        '200':
+          description: Suggestion approuvée ou réponse publiée
+          content:
+            application/json:
+              schema: *a2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Suggestion en génération, déjà décidée ou conversation fermée
+          content:
+            application/json:
+              schema: *a1
+  /staff/ai/suggestions/{id}/reject:
+    post:
+      tags:
+      - IA
+      summary: Rejette une suggestion
+      parameters:
+      - $ref: '#/components/parameters/IdParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason:
+                  type: string
+                  maxLength: 500
+                  nullable: true
+      responses:
+        '200':
+          description: Suggestion rejetée
+          content:
+            application/json:
+              schema: *a2
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: Transition de statut invalide
+          content:
+            application/json:
+              schema: *a1
   /catalog/categories:
     get:
       tags:
@@ -4699,10 +4921,10 @@ paths:
       summary: Catégories actives
       security:
       - bearerAuth: []
-      parameters: &a1
-        - &a2
+      parameters: &a3
+        - &a4
           $ref: '#/components/parameters/PageParam'
-        - &a3
+        - &a5
           $ref: '#/components/parameters/LimitParam'
       responses:
         '200':
@@ -4735,7 +4957,7 @@ paths:
       summary: Unités
       security:
       - bearerAuth: []
-      parameters: *a1
+      parameters: *a3
       responses:
         '200':
           description: Unités du référentiel, paginées et triées alphabétiquement (le modèle n’a pas de isActive)
@@ -4779,8 +5001,8 @@ paths:
           type: string
           minLength: 1
           maxLength: 120
-      - *a2
-      - *a3
+      - *a4
+      - *a5
       responses:
         '200':
           description: Référentiel actif paginé, trié par ordre alphabétique
@@ -4812,7 +5034,7 @@ paths:
       summary: Zones actives
       security:
       - bearerAuth: []
-      parameters: *a1
+      parameters: *a3
       responses:
         '200':
           description: Référentiel actif paginé, trié par ordre alphabétique
@@ -4858,8 +5080,8 @@ paths:
         name: acceptsPickup
         schema:
           type: boolean
-      - *a2
-      - *a3
+      - *a4
+      - *a5
       responses:
         '200':
           description: Référentiel actif paginé, trié par ordre alphabétique
@@ -4888,7 +5110,7 @@ paths:
     get:
       tags:
       - IA
-      summary: État du moteur IA local
+      summary: État du moteur IA
       security:
       - bearerAuth: []
       responses:
@@ -4905,10 +5127,12 @@ paths:
                 - model
                 - reachable
                 - modelInstalled
+                - authenticated
                 - capabilities
                 - lastLatencyMs
                 - queue
                 - autonomousEnabled
+                - quota
                 properties:
                   enabled:
                     type: boolean
@@ -4916,9 +5140,11 @@ paths:
                     type: string
                     enum:
                     - ollama
+                    - gemini
                   baseUrl:
                     type: string
                     format: uri
+                    nullable: true
                   model:
                     type: string
                     nullable: true
@@ -4926,6 +5152,9 @@ paths:
                     type: boolean
                   modelInstalled:
                     type: boolean
+                  authenticated:
+                    type: boolean
+                    nullable: true
                   capabilities:
                     type: array
                     items:
@@ -4942,6 +5171,18 @@ paths:
                         type: integer
                   autonomousEnabled:
                     type: boolean
+                  quota:
+                    type: object
+                    nullable: true
+                    properties:
+                      maxRpm:
+                        type: integer
+                      dailyBudget:
+                        type: integer
+                      usedToday:
+                        type: integer
+                      resetsAt:
+                        type: integer
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -4950,7 +5191,7 @@ paths:
     post:
       tags:
       - IA
-      summary: Teste une génération structurée sur le modèle local
+      summary: Teste une génération structurée sur le fournisseur actif
       security:
       - bearerAuth: []
       requestBody:
@@ -5038,18 +5279,18 @@ paths:
           description: Moteur IA désactivé
           content:
             application/json:
-              schema: &a4
+              schema: &a6
                 $ref: '#/components/schemas/Error'
         '429':
-          description: Limite de test atteinte
+          description: Quota dépassé
           content:
             application/json:
-              schema: *a4
+              schema: *a6
         '502':
-          description: Ollama inaccessible, modèle absent ou sortie invalide
+          description: Fournisseur IA inaccessible, modèle absent ou sortie invalide
           content:
             application/json:
-              schema: *a4
+              schema: *a6
 components:
   securitySchemes:
     bearerAuth:
@@ -5306,6 +5547,79 @@ components:
           schema:
             $ref: '#/components/schemas/Paginated'
   schemas:
+    AiSuggestion:
+      type: object
+      required:
+      - id
+      - kind
+      - status
+      - conversationId
+      - lotId
+      - agent
+      - model
+      - latencyMs
+      - payload
+      - error
+      - decidedAt
+      - executedAt
+      - createdAt
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum:
+          - REPLY
+          - TRIAGE
+          - LISTING_DRAFT
+        status:
+          type: string
+          enum:
+          - PENDING
+          - APPROVED
+          - REJECTED
+          - EXECUTED
+          - FAILED
+          - EXPIRED
+        conversationId:
+          type: integer
+          nullable: true
+        lotId:
+          type: integer
+          nullable: true
+        agent:
+          type: object
+          required:
+          - id
+          - displayName
+          properties:
+            id:
+              type: integer
+            displayName:
+              type: string
+        model:
+          type: string
+        latencyMs:
+          type: integer
+          nullable: true
+        payload:
+          type: object
+          nullable: true
+          additionalProperties: true
+        error:
+          type: string
+          nullable: true
+        decidedAt:
+          type: string
+          format: date-time
+          nullable: true
+        executedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
     Error:
       type: object
       properties:
@@ -5314,7 +5628,7 @@ components:
           description: Message en français
         code:
           type: string
-          description: 'Code stable. Authentification/autorisation: TOKEN_MISSING, TOKEN_INVALID, ACCOUNT_SUSPENDED, ROLE_FORBIDDEN, LEVEL_FORBIDDEN, CAPABILITY_REQUIRED, HUMAN_ACTOR_REQUIRED. Limitation: RATE_LIMITED.'
+          description: Codes stables d’authentification et d’autorisation, de limitation, et d’erreurs du moteur IA / cycle des suggestions.
           example: TOKEN_INVALID
         details:
           type: array

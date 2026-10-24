@@ -9,6 +9,8 @@ import { socketCorsOptions } from './utils/cors.js';
 import { startJobs } from './jobs/index.js';
 import openapiDocument from '../openapi/openapi.config.js';
 import { assertFileTokenSecret } from './utils/fileToken.js';
+import { setIo } from './sockets/ioRegistry.js';
+import { initializeAiOrchestrator } from './services/ai/ai.orchestrator.js';
 
 // Garde de démarrage : un secret de fichier absent, ou égal à JWT_SECRET,
 // rendrait les jetons de fichiers échangeables avec les jetons d'accès. En
@@ -24,7 +26,10 @@ const io = new Server(server, {
 });
 
 app.set('io', io);
+setIo(io);
 initChatSocket(io);
+
+await initializeAiOrchestrator();
 
 server.listen(PORT, () => {
   console.log(`AgriConnect API démarrée sur le port http://localhost:${PORT}`);

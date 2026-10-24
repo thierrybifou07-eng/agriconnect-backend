@@ -1,12 +1,9 @@
-import { createRequire } from 'node:module';
+import { GoogleGenAI } from '@google/genai';
 import { getAiConfig } from './ai.config.js';
 import { AiError } from './ai.error.js';
 import { recordAiLatency } from './ai.runtime.js';
 import { getThrottle } from './ai.throttle.js';
 import { redactClientBlocks } from './ai.redact.js';
-
-const require = createRequire(import.meta.url);
-const { GoogleGenAI } = require('@google/genai');
 
 function extractText(response) {
   if (!response) return '';

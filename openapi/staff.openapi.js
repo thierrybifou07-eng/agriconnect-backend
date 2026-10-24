@@ -12,9 +12,15 @@ import {
   escalateSchema,
   staffMessageSchema,
 } from '../src/validators/conversation.validator.js';
+import {
+  aiSuggestionApproveSchema,
+  aiSuggestionRejectSchema,
+} from '../src/validators/ai.validator.js';
 import { jsonBody, jsonSchema, multipartBody } from './openapi.helpers.js';
 
 const R = (ref) => ({ $ref: `#/components/responses/${ref}` });
+const error = { $ref: '#/components/schemas/Error' };
+const aiSuggestion = { $ref: '#/components/schemas/AiSuggestion' };
 
 // Schémas inline définis dans staff.routes.js (pas dans des fichiers validator) :
 // ils sont recopiés ici à l'identique pour que le document reflète le code.
@@ -718,6 +724,117 @@ export default {
           '403': R('Forbidden'),
           '404': R('NotFound'),
           '409': { description: 'Taux nul (COMPENSATION_RATE_ZERO)', content: { 'application/json': { schema: { $ref: '#/components/schemas/Error' } } } },
+        },
+      },
+    },
+    '/staff/conversations/{id}/ai-suggest': {
+      post: {
+        tags: ['Équipe'],
+        summary: 'Demande une suggestion de réponse IA',
+        description: 'Une seule suggestion PENDING par conversation. Génération asynchrone; activée uniquement avec AI_ENABLED=true.',
+        parameters: [{ $ref: '#/components/parameters/IdParam' }],
+        responses: {
+          '202': {
+            description: 'Suggestion mise en file',
+            content: { 'application/json': { schema: {
+              type: 'object',
+              required: ['suggestionId', 'status'],
+              properties: { suggestionId: { type: 'integer' }, status: { type: 'string', enum: ['PENDING'] } },
+            } } },
+          },
+          '401': R('Unauthorized'),
+          '403': R('Forbidden'),
+          '404': R('NotFound'),
+          '409': { description: 'Moteur désactivé (AI_DISABLED), agent absent (AI_NO_AGENT) ou suggestion en cours (AI_BUSY)', content: { 'application/json': { schema: error } } },
+          '429': { description: 'Quota fournisseur atteint (AI_RATE_LIMITED)', content: { 'application/json': { schema: error } } },
+        },
+      },
+    },
+    '/staff/lots/{id}/ai-listing-draft': {
+      post: {
+        tags: ['Équipe'],
+        summary: 'Génère un brouillon IA pour une annonce',
+        parameters: [{ $ref: '#/components/parameters/IdParam' }],
+        responses: {
+          '202': { description: 'Brouillon mis en file' },
+          '401': R('Unauthorized'),
+          '403': R('Forbidden'),
+          '404': R('NotFound'),
+          '409': { description: 'Moteur désactivé (AI_DISABLED) ou agent absent (AI_NO_AGENT)', content: { 'application/json': { schema: error } } },
+          '429': { description: 'Quota fournisseur atteint (AI_RATE_LIMITED)', content: { 'application/json': { schema: error } } },
+        },
+      },
+    },
+    '/staff/ai/suggestions': {
+      get: {
+        tags: ['IA'],
+        summary: 'Liste les suggestions visibles selon les capacités du staff',
+        parameters: [
+          { in: 'query', name: 'status', schema: { type: 'string', enum: ['PENDING', 'APPROVED', 'REJECTED', 'EXECUTED', 'FAILED', 'EXPIRED'] } },
+          { in: 'query', name: 'kind', schema: { type: 'string', enum: ['REPLY', 'TRIAGE', 'LISTING_DRAFT'] } },
+          { in: 'query', name: 'conversationId', schema: { type: 'integer', minimum: 1 } },
+          { $ref: '#/components/parameters/PageParam' },
+          { $ref: '#/components/parameters/LimitParam' },
+        ],
+        responses: {
+          '200': { description: 'Suggestions paginées', content: { 'application/json': { schema: {
+            type: 'object',
+            required: ['items', 'page', 'limit', 'total'],
+            properties: {
+              items: { type: 'array', items: aiSuggestion },
+              page: { type: 'integer' },
+              limit: { type: 'integer' },
+              total: { type: 'integer' },
+            },
+          } } } },
+          '400': R('BadRequest'),
+          '401': R('Unauthorized'),
+          '403': R('Forbidden'),
+        },
+      },
+    },
+    '/staff/ai/suggestions/{id}': {
+      get: {
+        tags: ['IA'],
+        summary: 'Détail d’une suggestion accessible selon les capacités du staff',
+        parameters: [{ $ref: '#/components/parameters/IdParam' }],
+        responses: {
+          '200': { description: 'Suggestion IA', content: { 'application/json': { schema: aiSuggestion } } },
+          '401': R('Unauthorized'),
+          '403': R('Forbidden'),
+          '404': R('NotFound'),
+        },
+      },
+    },
+    '/staff/ai/suggestions/{id}/approve': {
+      post: {
+        tags: ['IA'],
+        summary: 'Approuve une suggestion',
+        parameters: [{ $ref: '#/components/parameters/IdParam' }],
+        requestBody: jsonBody(aiSuggestionApproveSchema),
+        responses: {
+          '200': { description: 'Suggestion approuvée ou réponse publiée', content: { 'application/json': { schema: aiSuggestion } } },
+          '400': R('BadRequest'),
+          '401': R('Unauthorized'),
+          '403': R('Forbidden'),
+          '404': R('NotFound'),
+          '409': { description: 'Suggestion en génération, déjà décidée ou conversation fermée', content: { 'application/json': { schema: error } } },
+        },
+      },
+    },
+    '/staff/ai/suggestions/{id}/reject': {
+      post: {
+        tags: ['IA'],
+        summary: 'Rejette une suggestion',
+        parameters: [{ $ref: '#/components/parameters/IdParam' }],
+        requestBody: jsonBody(aiSuggestionRejectSchema),
+        responses: {
+          '200': { description: 'Suggestion rejetée', content: { 'application/json': { schema: aiSuggestion } } },
+          '400': R('BadRequest'),
+          '401': R('Unauthorized'),
+          '403': R('Forbidden'),
+          '404': R('NotFound'),
+          '409': { description: 'Transition de statut invalide', content: { 'application/json': { schema: error } } },
         },
       },
     },

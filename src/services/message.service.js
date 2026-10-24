@@ -49,6 +49,7 @@ export async function createMessageTx(tx, { conversationId, senderType, senderUs
       content,
       isInternal,
     },
+    include: { senderAgent: { select: { kind: true } } },
   });
   await tx.conversation.update({
     where: { id: conversationId },
@@ -83,6 +84,16 @@ export function emitNewMessage(io, message) {
     io.to(STAFF_ROOM).emit(MESSAGE_NEW, messageToStaffDto(message));
   } else {
     io.to(conversationRoom(message.conversationId)).emit(MESSAGE_NEW, messageToClientDto(message));
+  }
+  if (!message.isInternal && message.senderType === 'CUSTOMER') {
+    import('./ai/ai.orchestrator.js')
+      .then(({ maybeAutoSuggest }) => maybeAutoSuggest(message.conversationId))
+      .catch((error) => {
+        console.error('Échec du déclenchement automatique IA', {
+          conversationId: message.conversationId,
+          code: error?.code ?? 'AI_INTERNAL_ERROR',
+        });
+      });
   }
   return true;
 }

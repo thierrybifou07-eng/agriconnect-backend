@@ -99,18 +99,12 @@ export function createThrottle({
 export const getThrottle = (() => {
   let instance = null;
   return (config = null) => {
-    if (!config) {
-      if (!instance) {
-        instance = createThrottle({
-          maxRpm: Number(process.env.AI_MAX_RPM ?? 8),
-          dailyBudget: Number(process.env.AI_DAILY_BUDGET ?? 200),
-        });
-      }
-      return instance;
+    if (!instance) {
+      instance = createThrottle({
+        maxRpm: Number(config?.maxRpm ?? process.env.AI_MAX_RPM ?? 8),
+        dailyBudget: Number(config?.dailyBudget ?? process.env.AI_DAILY_BUDGET ?? 200),
+      });
     }
-    return createThrottle({
-      maxRpm: Number(config.maxRpm ?? 8),
-      dailyBudget: Number(config.dailyBudget ?? 200),
-    });
+    return instance;
   };
 })();

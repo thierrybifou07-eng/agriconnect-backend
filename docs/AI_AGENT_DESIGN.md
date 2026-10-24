@@ -108,9 +108,15 @@ interne récent (auto, seulement si une fiche IA **active** possède la capacit�
 `AiSuggestion` (DTO) — **`payload: null` + `status: PENDING` = « génération en cours »** ; `payload` renseigné + `PENDING` = « prête, en attente de décision humaine » : `{id, kind, status, conversationId|null, lotId|null, agent:{id,displayName}, model, latencyMs|null,
 payload:{intent?, language?, confidence?, reply?, needsHuman?, reasons?[], listing?:{title,description}, action?:{type}},
 error|null, decidedAt|null, executedAt|null, createdAt}`.
-Codes d'erreur nouveaux : `AI_DISABLED`, `AI_BUSY`, `AI_UNREACHABLE`, `AI_MODEL_MISSING`, `AI_INVALID_OUTPUT`.
+Codes d'erreur nouveaux : `AI_DISABLED`, `AI_BUSY`, `AI_NO_AGENT`, `AI_RATE_LIMITED`, `AI_AUTH_FAILED`, `AI_UNREACHABLE`, `AI_MODEL_MISSING`, `AI_INVALID_OUTPUT`, `INVALID_STATE_TRANSITION`.
 Socket (room `staff`) : `ai:suggestion` (créée) et `ai:suggestion_updated` → `{id, kind, status, conversationId}`.
 `messageToClientDto` : si l'expéditeur est un agent `AI` → `senderLabel = 'Assistant AgriConnect (IA)'`.
+
+L'auto-déclenchement après un message client est désactivé tant que `AI_AUTO_SUGGEST_ENABLED=false`.
+Les générations manuelles et les brouillons d'annonce sont asynchrones; le fournisseur est résolu par
+`getProvider(agent)`. Une suggestion en génération et une suggestion prête partagent `PENDING`, distinguées
+par `payload: null` ou un payload validé. Au démarrage, les suggestions `PENDING` sont marquées `EXPIRED`
+et ne sont jamais rejouées.
 
 ## 7. Garde-fous (non négociables)
 

@@ -17,6 +17,11 @@ const supportReplyJoiSchema = Joi.object({
   reasons: Joi.array().items(Joi.string().max(160)).max(5).required(),
 }).unknown(false);
 
+const listingDraftJoiSchema = Joi.object({
+  title: Joi.string().max(140).required(),
+  description: Joi.string().max(2000).required(),
+}).unknown(false);
+
 const normalizeNumber = (value) => value.replace(/[\s,]/g, '').replace(/[.]+$/, '');
 
 export function validateSupportOutput(raw, { allowedNumbers = new Set() } = {}) {
@@ -53,4 +58,14 @@ export function parseAndValidateSupportOutput(raw, options) {
   const result = validateSupportOutput(raw, options);
   if (!result.ok) throw new AiError('AI_INVALID_OUTPUT', 'La sortie IA ne respecte pas les règles de sécurité');
   return result;
+}
+
+export function validateListingDraftOutput(raw) {
+  const { error, value } = listingDraftJoiSchema.validate(raw, { abortEarly: false });
+  if (error) return { ok: false, data: null, warnings: ['AI_INVALID_OUTPUT'] };
+  const text = `${value.title}\n${value.description}`;
+  if (/https?:\/\/|www\./i.test(text) || /[\w.+-]+@[\w.-]+\.[a-z]{2,}/i.test(text) || /\+?\d[\d\s().-]{7,}/.test(text)) {
+    return { ok: false, data: null, warnings: ['AI_INVALID_OUTPUT'] };
+  }
+  return { ok: true, data: value, warnings: [] };
 }

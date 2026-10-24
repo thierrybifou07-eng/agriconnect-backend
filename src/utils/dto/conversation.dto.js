@@ -31,7 +31,9 @@ export function messageToClientDto(message) {
   return {
     id: message.id,
     content: message.content,
-    senderLabel: message.senderType === 'CUSTOMER' ? 'Vous' : 'Équipe AgriConnect',
+    senderLabel: message.senderType === 'CUSTOMER'
+      ? 'Vous'
+      : message.senderAgent?.kind === 'AI' ? 'Assistant AgriConnect (IA)' : 'Équipe AgriConnect',
     createdAt: message.createdAt,
   };
 }
